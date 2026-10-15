@@ -122,22 +122,14 @@ FalkorDB's `algo.maxFlow` takes `sourceNodes`, `targetNodes`, `relationshipTypes
 
 Build a thin Python MCP server (official MCP SDK) exposing fixed tools. Optionally run FalkorDB's own MCP server alongside for exploration; it supports read-only mode via `FALKORDB_DEFAULT_READONLY=true` **(verified Oct 14)**.
 
-| Tool | Does |
-|---|---|
-| `find_experts(topic, n)` | Q1 |
-| `tie_report(expert_id)` | Q2 plus tier, evidence DOIs, profile flag |
-| `prove_independence(expert_id, k)` | Q3 with coverage stats in the answer |
-| `bridges(expert_id)` | Q4 |
-| `record_verdict(...)` | Writes a `Verdict`, returns Q5 impact ("changed N experts across M checks") |
-| `recheck(expert_id)` | Compares a stored `Check` to a fresh run and reports what changed |
+**Superseded (Oct 15):** the full tool contract, roles and diagrams now live in [`docs/mcp-spec.md`](docs/mcp-spec.md). Summary:
 
-Agent roles (all one MCP client plus the deterministic Verifier):
-- **Scout and Tie-Checker:** the LLM picks tools.
-- **Verifier (no LLM):** rejects any claim without stored edge and DOI.
-- **Writer:** drafts the sourcing note and disclosure line. **Human approves before anything is exported.**
-- **Review Desk:** surfaces the 3 papers or profiles whose rulings would change the most scores (a count over current cases).
-
-Client: Claude Desktop or any MCP-compatible client as the agent, plus FalkorDB Browser to show the graph. No custom UI unless there is spare time. Decide tonight which LLM and credits you will use.
+- **Tools:** `resolve_experts`, `find_experts` (Q1), `check_case` (batch run of Q2 and Q3 for a whole case), `tie_report` (Q2), `check_no_tie` (Q3; renamed from `prove_independence`), `bridges` (Q4), `open_case`, `recall`, `recheck`, `record_verdict` (Q5), `review_queue`, `draft_note`, `approve_note`, `set_policy`.
+- **Orchestrator:** the main Claude Code session. It reads the journalist's input, extracts company, topic and names, and picks tools.
+- **Tie-checking is a server tool, not an agent.** It is deterministic, so it needs no LLM.
+- **Writer:** a Claude Code subagent that drafts the note. **Review Desk:** a subagent (stretch).
+- **Verifier:** plain code in the server, no LLM. **The human approves before anything is exported.**
+- **Client:** Claude Code (subscription login, no API key), plus FalkorDB Browser to show the graph. No custom UI and no crawler: journalist URLs are read with WebFetch.
 
 ---
 
@@ -266,7 +258,7 @@ If the loader isn't producing Tier-A paths by Oct 15 hour 8: switch to **Layover
 
 ## 15. Review notes: open risks (v2.1)
 
-- **Track 2 is thin and crowded.** The memory story is only `recheck` plus verdict impact. Keep both tracks named, but present Track 1 as the main entry and say plainly what the memory graph does.
+- **Track 2 is thin and crowded.** Partly addressed in `docs/mcp-spec.md`: episodic, semantic and procedural memory, cross-session `prior_memory`, one graph per newsroom, and E9-E11. Still present Track 1 as the main entry.
 - **Oct 16 is the heaviest day** (E1, E2, E3, E5, E8, tools, MCP). If it slips, drop E5 and E8 to a short list before touching E1/E2 or the Verifier.
 - **Old numbers (16% direct vs 69% within 2 hops) came from throwaway scripts in v1.** Do not quote them anywhere until E1 reproduces them.
 - **E4 can still drop max flow.** That is fine now, because Q3 uses `algo.BFS` and counts as the native algorithm.
