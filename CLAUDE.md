@@ -3,6 +3,16 @@
 FalkorDB Graph Hacks entry (Tracks 1 and 2). **Submit by Oct 18 2026, 6 PM IST.**
 TieTrace checks how connected an expert is to the company in a story, using an OpenAlex research graph in FalkorDB. Every tie comes with its DOI, and every "no tie found" comes with its scope.
 
+## Team and attribution (two people: Abdul and Aryan)
+- **Who is working:** find out at the start of each session from `git config user.name` (Abdul = `23abdul23`); if it does not clearly say Abdul or Aryan, ask once and remember it for the session. Both are beginners and must be able to explain everything (rules 12-13).
+- **Record who did what, in every doc you touch:**
+  - `checkpoints.md`: each ticked box ends with `(Abdul)` or `(Aryan)` plus the date; the checkpoint table has an Owner column. Never tick a box on someone else's behalf without naming who actually did it.
+  - `AI_USE.md`: every new row has a `Who` column value; `Learned` lines end with `[Abdul]` or `[Aryan]`.
+  - Other docs (spec, redesign, README, `eval/results.md`): put a one-line `Last updated by <name>, <date>: <what>` at the top when you change them. Decisions in the spec/redesign get `(decided by <name>)`.
+  - Commits: name the person in the message body (`Work by: Abdul`); the git author already shows it.
+- **Avoid collisions:** before starting a checkpoint, check its Owner in `checkpoints.md`. If it belongs to the other person, do not edit it without asking. Claim work by writing `(→ name)` on the item, and pull/merge before editing shared docs.
+- **Hand-off:** when stopping mid-checkpoint, leave a one-line note under that checkpoint in `checkpoints.md` saying what is done and what is next.
+
 ## Read first
 - `tietrace-v2-redesign.md`: tiers, graph model, queries Q1-Q5, evaluation E1-E8, build plan, ethics.
 - `docs/mcp-spec.md`: the MCP tool contract (inputs, outputs, errors) and the diagrams. **Code follows this file.** If the code needs to differ, update the spec in the same change.
@@ -23,16 +33,41 @@ TieTrace checks how connected an expert is to the company in a story, using an O
 - **Banned output words:** "independent" and "conflicted". Say "ties found in the research record".
 - **Experts appear as "Expert #n"** unless the case has `public_case=true` (the GEBN case).
 - **Time-based fields are precomputed at load**, because FalkorDB has no temporal arithmetic.
-- **`COAUTH` is stored in both directions.**
+- **`COAUTH` is stored in both directions; always match it with `->`.** FalkorDB counts undirected matches inconsistently (see `AI_USE.md`).
+- **Tier rules** (decided Oct 15, redesign section 3):
+  - Tier A counts Coca-Cola money on any topic, with each piece of evidence labelled on-topic or off-topic;
+  - an affiliation with a bottler (`PARENT_OF.rel = "bottler"`) is Tier A2;
+  - "recent" means 2021 onwards (`Meta.recent_year`);
+  - Tier C traverses `COAUTH_B` only.
+- **FalkorDB quirks** (details in `AI_USE.md`):
+  - results are capped at 10,000 rows, so count in Cypher;
+  - to traverse from a list of IDs, use `WHERE x.oa_id IN $ids`; `UNWIND` plus an inline map followed by a traversal skips the index;
+  - after a variable-length pattern, pass relationship properties through `WITH`;
+  - `algo.BFS` takes no property filter; use `COAUTH_B`;
+  - `algo.BFS` returns no row when nothing is reached.
+- **Never fabricate data.** Every node and edge comes from OpenAlex (or the hand-checked `COKE_FAMILY` list). If the API is down, build from the `data/raw/` cache and mark the missing fields as unknown. Synthetic data belongs only in test fixtures.
 - **Score formula is fixed** (redesign section 4). Do not tune it after seeing E1/E2 results.
 - **Human-only tools never get allowlisted:** `record_verdict`, `approve_note`, `set_policy`. Claude Code's permission prompt is the human gate.
 
 ## Working style
 - **The author is a beginner** and must be able to explain every query and decision to the judges (rules 12-13). Keep the code boring and small, and prefer plain Cypher over clever abstractions.
+- **Each checkpoint runs as a Builder/Reviewer loop.**
+  - A Builder agent writes and runs the code.
+  - A separate, strict Reviewer agent verifies it against the spec (correctness, efficiency, alignment) and writes the tests.
+  - Must-fix findings go back to the Builder until the Reviewer passes the work.
+  - Tests are never weakened to make them pass.
+  - Then tick `checkpoints.md`.
 - **Log AI help in `AI_USE.md`:** what was decided, what the AI wrote, and what was verified.
 - **Report evaluation results honestly**, including failures. Never put a number in the README or demo that was not computed.
 - **Cut order if behind:** second topic, deployment, blog post, Review Desk, `set_policy`, the max-flow test (E4).
 
 ## Commands
-- **FalkorDB:** `docker run -p 6379:6379 -p 3000:3000 -it --rm falkordb/falkordb:latest` (Browser at http://localhost:3000)
+- **FalkorDB:** `docker run -d --name falkordb -p 6379:6379 -p 3000:3000 -v falkordb-data:/var/lib/falkordb/data falkordb/falkordb:latest` (Browser at http://localhost:3000)
+- **Ports on this machine (Oct 15):** 6379 and 3000 are taken by other containers, so FalkorDB runs on host ports 6380 and 3001 (`-p 6380:6379 -p 3001:3000`). Set `FALKORDB_PORT=6380` for `loader.py`, tests and the server (default 6379). Browser: http://localhost:3001.
+- **FalkorDB data persistence:** the container is named `falkordb` and uses the named volume `falkordb-data`, so data survives restarts. Start it with `docker start falkordb`.
+- **Build the research graph:**
+  - `uv run python loader.py --rebuild` rebuilds from the `data/raw/` cache, with zero API calls once the cache exists;
+  - add `--refresh` to re-download;
+  - the OpenAlex key lives in `.env` (`OPENALEX_API_KEY`). Never print or log it.
+- **Tests:** `uv run python tests/test_loader.py` (plain asserts, no pytest).
 - **Register the server:** `claude mcp add tietrace-alpha -e TIETRACE_NEWSROOM=alpha -- python server.py`

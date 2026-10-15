@@ -1,5 +1,7 @@
 # TieTrace v2: redesign (Graph Hacks, Oct 15-18 2026)
 
+*Last updated by Abdul, Oct 15: added team attribution convention (see CLAUDE.md). Past content authored in Abdul's sessions.*
+
 Written Oct 14 2026, about 5 hours before the event starts. Notes and sketches only; all code is written during the event.
 Facts marked **(verified Oct 14)** were checked against live pages today. Everything else is a day-1 test, listed in section 11.
 
@@ -40,10 +42,10 @@ Tracks: **1 (primary) and 2** (per-newsroom memory, verdicts that change later c
 
 | Tier | Definition | Wording in output | Used in a sourcing note? |
 |---|---|---|---|
-| **A1: explicit record, company** | Authored a work (**25 or fewer authors**) whose funder is the company itself, or lists an affiliation with the company or its corporate family on a work, on this topic | "OpenAlex records X as author of a work funded by Y (DOI)" or "lists affiliation Z on a work (DOI)". Affiliations are per paper, not an employment record | Yes, after human approval |
-| **A2: explicit record, foundation or large paper** | Funder is the company's **foundation**, or the only A1 evidence is a work with more than 25 authors | Same wording plus "foundation grant" or "large multi-author paper" | Only with human approval and the label shown |
-| **B: repeated collaboration** | Co-authored **2+ papers** with a Tier-A person in the last 5 years, counting only papers with **25 or fewer authors** | "Co-authored 3 papers with a Tier-A person since 2021" | Only with human approval |
-| **C: network proximity** | Path of 2-3 co-authorship hops to a Tier-A person | "Within 3 hops (context only)" | Never |
+| **A1: explicit record, company** | Authored a work (**25 or fewer authors**) whose funder is the company itself, or lists an affiliation with the company or its subsidiaries on a work. **Any topic** (decided Oct 15); each piece of evidence is labelled on-topic or off-topic from the `ABOUT` edge | "OpenAlex records X as author of a work funded by Y (DOI)" or "lists affiliation Z on a work (DOI)". Affiliations are per paper, not an employment record | Yes, after human approval |
+| **A2: explicit record, foundation, bottler or large paper** | Funder is the company's **foundation**, or an affiliation with a **bottler** (`PARENT_OF.rel = "bottler"`; decided Oct 15), or the only A1 evidence is a work with more than 25 authors | Same wording plus "foundation grant" or "large multi-author paper" | Only with human approval and the label shown |
+| **B: repeated collaboration** | Co-authored **2+ papers** with a Tier-A person **since 2021** (decided Oct 15; `Meta.recent_year`), counting only papers with **25 or fewer authors** | "Co-authored 3 papers with a Tier-A person since 2021" | Only with human approval |
+| **C: network proximity** | Path of 2-3 hops to a Tier-A person over **filtered `COAUTH_B` edges only** (Tier-B-strength links). Decided Oct 15: unfiltered paths reach 56.9% of all people within 2 hops, which would make the tier meaningless | "Within 3 hops (context only)" | Never |
 
 Rules for every output:
 - Never say "conflicted" or "not independent". Say "ties found in the research record".
