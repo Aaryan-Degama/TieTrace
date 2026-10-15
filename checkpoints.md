@@ -10,7 +10,7 @@ Deadline: **submit by Oct 18, 6 PM IST.** Specs: `tietrace-v2-redesign.md`, `doc
 | 2 | Loader: research graph built | Oct 15, by hour 8 | ✅ | Abdul |
 | 3 | Research queries Q1-Q4 + Verifier | Oct 16 morning | ✅ | Abdul |
 | 4 | Evaluation E1, E2, E3, E7 | Oct 16 afternoon | ✅ | Abdul |
-| 5 | MCP server: Track 1 tools | Oct 16 evening | ⬜ | unassigned |
+| 5 | MCP server: Track 1 tools | Oct 16 evening | 🟨 | Abdul |
 | 6 | Memory graph: Track 2 tools | Oct 17 morning | ⬜ | unassigned |
 | 7 | Verdicts, notes, Writer | Oct 17 midday | ⬜ | unassigned |
 | 8 | Remaining evaluation + golden tests | Oct 17 afternoon | ⬜ | unassigned |
@@ -90,11 +90,15 @@ Result: Reviewer fixes applied; `tests/test_eval.py` 13/13. Details in `eval/res
 **Gate (E3 passes for the four public names, E1 number known):**  E3 passes and the E1 number is known. If E1 and E2 both fail, cut the Tier B claims and keep the evidence-viewer framing.
 
 ## 5. MCP server: Track 1 tools
-- [ ] `server.py` with the shared response format and the RO guard (timeout, row cap)
-- [ ] `resolve_experts`, `find_experts`, `tie_report`, `check_no_tie`, `bridges`
-- [ ] `check_case` (batch run)
-- [ ] Registered with `claude mcp add`; tools are visible in Claude Code
-- [ ] Orchestrator test: paste a draft story and get tiers back
+- [x] `server.py` with the shared response format and the RO guard (timeout, row cap) (Abdul, Oct 15)
+- [x] `resolve_experts`, `find_experts`, `tie_report`, `check_no_tie`, `bridges` (Abdul, Oct 15)
+- [x] `check_case` (batch run) (Abdul, Oct 15)
+- [x] Registered with `claude mcp add`; tools are visible in Claude Code (Abdul, Oct 15)
+- [ ] Orchestrator test: paste a draft story and get tiers back (→ Abdul: open a NEW Claude Code session in this folder; `claude -p` failed here with an expired login)
+
+Hand-off (Abdul, Oct 16): everything is built, reviewed and registered. Only the orchestrator test is left: Abdul runs it in a new Claude Code session.
+
+Result: `tests/test_server.py` 26/26 (Reviewer PASS in round 2); server registered and `claude mcp list` shows it Connected.
 
 **Gate:** a full question works end to end from Claude Code.
 
