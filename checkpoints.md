@@ -43,10 +43,10 @@ Status key: ⬜ not started · 🟨 in progress · ✅ done · ✂️ cut
 **Gate:** every item above has a one-line note in `AI_USE.md` saying what was learned.
 
 ## 2. Loader: research graph built
-- [ ] `loader.py` loads all works funded by Coca-Cola or its foundation (any topic)
-- [ ] Loads topic works since 2010 (obesity / physical activity)
+- [ ] `loader.py` loads works for a configurable target organization, funder, or domain/URL
+- [ ] Loads works matching the configured topic(s) since 2010; topic filters are optional and configurable
 - [ ] Person, Work, Org, Funder, Topic nodes plus `AUTHORED`, `AFFILIATED`, `FUNDED_BY`, `ABOUT` edges
-- [ ] `PARENT_OF` corporate family for Coca-Cola entities
+- [ ] `PARENT_OF` relationships for the configured organization and its related entities, when applicable
 - [ ] `COAUTH` derived with `n_papers`, `w`, `recency_w`, `small_papers`, `dois[]`
 - [ ] `profile_flag` set on Person
 - [ ] Node and edge counts recorded
