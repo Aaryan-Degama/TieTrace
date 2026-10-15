@@ -5,7 +5,7 @@ Deadline: **submit by Oct 18, 6 PM IST.** Specs: `tietrace-v2-redesign.md`, `doc
 
 | # | Checkpoint | Target (IST) | Status |
 |---|---|---|---|
-| 0 | Setup | Oct 15 morning | ⬜ |
+| 0 | Setup | Oct 15 morning | 🟨 |
 | 1 | Toy graph: assumptions tested | Oct 15, hours 1-2 | ⬜ |
 | 2 | Loader: research graph built | Oct 15, by hour 8 | ⬜ |
 | 3 | Research queries Q1-Q4 + Verifier | Oct 16 morning | ⬜ |
@@ -24,10 +24,10 @@ Status key: ⬜ not started · 🟨 in progress · ✅ done · ✂️ cut
 - [x] GitHub repo created
 - [x] Spec written (`docs/mcp-spec.md`) and `CLAUDE.md` added
 - [ ] Registered on WeMakeDevs and joined the FalkorDB Discord
-- [ ] FalkorDB running in Docker; Browser opens at http://localhost:3000
+- [x] FalkorDB running in Docker; Browser opens at http://localhost:3000
 - [ ] OpenAlex API key obtained
-- [ ] Python env with `falkordb` and `mcp` installed
-- [ ] `AI_USE.md` started
+- [x] Python env with `falkordb` and `mcp` installed
+- [x] `AI_USE.md` started
 
 **Gate:** `GRAPH.QUERY test "RETURN 1"` works from Python.
 
