@@ -9,7 +9,7 @@ Deadline: **submit by Oct 18, 6 PM IST.** Specs: `tietrace-v2-redesign.md`, `doc
 | 1 | Toy graph: assumptions tested | Oct 15, hours 1-2 | ✅ | Abdul |
 | 2 | Loader: research graph built | Oct 15, by hour 8 | ✅ | Abdul |
 | 3 | Research queries Q1-Q4 + Verifier | Oct 16 morning | ✅ | Abdul |
-| 4 | Evaluation E1, E2, E3, E7 | Oct 16 afternoon | ⬜ | unassigned |
+| 4 | Evaluation E1, E2, E3, E7 | Oct 16 afternoon | ✅ | Abdul |
 | 5 | MCP server: Track 1 tools | Oct 16 evening | ⬜ | unassigned |
 | 6 | Memory graph: Track 2 tools | Oct 17 morning | ⬜ | unassigned |
 | 7 | Verdicts, notes, Writer | Oct 17 midday | ⬜ | unassigned |
@@ -79,13 +79,15 @@ Result: all queries under 3 s cold (depth-3 bridges on the biggest hub is the sl
 **Gate (passed):** each query runs in Browser in under 3 s, and you can explain it in plain words.
 
 ## 4. Evaluation E1, E2, E3, E7
-- [ ] **E3** known case: all five GEBN scientists show as Tier A with DOIs
-- [ ] **E7** coverage: share of topic works with funder and affiliation data
-- [ ] **E1** placebo lift for Tier B, with a 95% interval
-- [ ] **E2** temporal hold-out AUC against the baselines (or "underpowered")
-- [ ] Results written to `eval/results.md`, losses included
+- [x] **E3** known case: the four GEBN leaders named in public sources (Hill, Blair, Hand, Peters) show as Tier A with DOIs; no public source names a fifth, so "all five" is not testable (Abdul, Oct 15)
+- [x] **E7** coverage: share of topic works with funder and affiliation data (Abdul, Oct 15)
+- [x] **E1** placebo lift for Tier B, with a 95% interval: **FAIL**, 0.96x (0.84-1.09) (Abdul, Oct 15)
+- [x] **E2** temporal hold-out AUC against the baselines (or "underpowered") (Abdul, Oct 15)
+- [x] Results written to `eval/results.md`, losses included (Abdul, Oct 15)
 
-**Gate:** E3 passes and the E1 number is known. If E1 and E2 both fail, cut the Tier B claims and keep the evidence-viewer framing.
+Result: Reviewer fixes applied; `tests/test_eval.py` 13/13. Details in `eval/results.md`.
+
+**Gate (E3 passes for the four public names, E1 number known):**  E3 passes and the E1 number is known. If E1 and E2 both fail, cut the Tier B claims and keep the evidence-viewer framing.
 
 ## 5. MCP server: Track 1 tools
 - [ ] `server.py` with the shared response format and the RO guard (timeout, row cap)
