@@ -6,8 +6,8 @@ Deadline: **submit by Oct 18, 6 PM IST.** Specs: `tietrace-v2-redesign.md`, `doc
 | # | Checkpoint | Target (IST) | Status |
 |---|---|---|---|
 | 0 | Setup | Oct 15 morning | 🟨 |
-| 1 | Toy graph: assumptions tested | Oct 15, hours 1-2 | ⬜ |
-| 2 | Loader: research graph built | Oct 15, by hour 8 | ⬜ |
+| 1 | Toy graph: assumptions tested | Oct 15, hours 1-2 | ✅ |
+| 2 | Loader: research graph built | Oct 15, by hour 8 | ✅ |
 | 3 | Research queries Q1-Q4 + Verifier | Oct 16 morning | ⬜ |
 | 4 | Evaluation E1, E2, E3, E7 | Oct 16 afternoon | ⬜ |
 | 5 | MCP server: Track 1 tools | Oct 16 evening | ⬜ |
@@ -25,35 +25,46 @@ Status key: ⬜ not started · 🟨 in progress · ✅ done · ✂️ cut
 - [x] Spec written (`docs/mcp-spec.md`) and `CLAUDE.md` added
 - [ ] Registered on WeMakeDevs and joined the FalkorDB Discord
 - [x] FalkorDB running in Docker; Browser opens at http://localhost:3000
-- [ ] OpenAlex API key obtained
+- [x] OpenAlex API key obtained
 - [x] Python env with `falkordb` and `mcp` installed
 - [x] `AI_USE.md` started
 
 **Gate:** `GRAPH.QUERY test "RETURN 1"` works from Python.
 
 ## 1. Toy graph: assumptions tested
-- [ ] 10-node toy graph built (Person, Work, Org, Funder)
-- [ ] `COAUTH` in both directions; undirected matching behaves as expected
-- [ ] Bounded variable-length path `[:PARENT_OF*0..3]` works
-- [ ] `algo.BFS` runs and returns reached nodes
-- [ ] `algo.maxFlow` direction and parameters understood
-- [ ] `GRAPH.RO_QUERY` rejects a write
-- [ ] OpenAlex funder filter and `select` param confirmed (redesign section 11)
+- [x] 10-node toy graph built (Person, Work, Org, Funder)
+- [x] `COAUTH` in both directions (finding: undirected matching is inconsistent, so always use `->`)
+- [x] Bounded variable-length path `[:PARENT_OF*0..3]` works
+- [x] `algo.BFS` runs and returns reached nodes
+- [x] `algo.maxFlow` direction and parameters understood
+- [x] `GRAPH.RO_QUERY` rejects a write
+- [x] OpenAlex funder filter and `select` param confirmed (redesign section 11)
 
 **Gate:** every item above has a one-line note in `AI_USE.md` saying what was learned.
 
 ## 2. Loader: research graph built
-- [ ] `loader.py` loads all works funded by Coca-Cola or its foundation (any topic)
-- [ ] Loads topic works since 2010 (obesity / physical activity)
-- [ ] Person, Work, Org, Funder, Topic nodes plus `AUTHORED`, `AFFILIATED`, `FUNDED_BY`, `ABOUT` edges
-- [ ] `PARENT_OF` corporate family for Coca-Cola entities
-- [ ] `COAUTH` derived with `n_papers`, `w`, `recency_w`, `small_papers`, `dois[]`
-- [ ] `profile_flag` set on Person
-- [ ] Node and edge counts recorded
+- [x] `loader.py` loads all works funded by Coca-Cola or its foundation (any topic)
+- [x] Loads topic works since 2010 (obesity / physical activity)
+- [x] Person, Work, Org, Funder, Topic nodes plus `AUTHORED`, `AFFILIATED`, `FUNDED_BY`, `ABOUT` edges
+- [x] `PARENT_OF` corporate family for Coca-Cola entities
+- [x] `COAUTH` derived with `n_papers`, `w`, `recency_w`, `small_papers`, `dois[]`
+- [x] `profile_flag` set on Person
+- [x] Node and edge counts recorded
 
-**Gate (hour 8):** one Cypher query returns a dated Tier-A path with a DOI. **If not, switch to the backup (LayoverGuard).**
+Counts: 85,511 Person, 31,291 Work, 1,326,566 COAUTH, 50,492 COAUTH_B (reviewed: PASS in round 2, 49/49 tests).
+
+**Gate (hour 8, passed):** one Cypher query returns a dated Tier-A path with a DOI. **If not, switch to the backup (LayoverGuard).**
 
 ## 3. Research queries Q1-Q4 + Verifier
+
+**Carried forward from the checkpoint 2 review (handle in checkpoint 3):**
+- [ ] Tier B evidence: COAUTH_B `dois[]` lists all shared papers, so filter to recent, small ones through the Work nodes (or add `recent_small_dois` to the loader)
+- [ ] Exclude F1000 peer-review reports and errata from Tier A evidence
+- [ ] Label the bottler affiliations (2 edges) as A2
+- [ ] The coverage note must mention the 52 leftover duplicate groups (228 COAUTH_B edges depend on them) and the 25 author lists cut off at 100
+- [ ] Loader nits: the dedupe tie-break should prefer the record with a DOI; speed up `test_coauth_b_matches_filter` (268 s; use OPTIONAL MATCH) and make it compare all properties
+- [ ] E1: the placebo circles must match the 3,041 Tier A people; fix the bootstrap interval method before running it
+
 - [ ] Q1 `find_experts` query
 - [ ] Q2 tier and score query (A1 / A2 / B / C / NONE)
 - [ ] Q3 `algo.BFS` no-tie proof with scope
