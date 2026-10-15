@@ -70,4 +70,4 @@ TieTrace checks how connected an expert is to the company in a story, using an O
   - add `--refresh` to re-download;
   - the OpenAlex key lives in `.env` (`OPENALEX_API_KEY`). Never print or log it.
 - **Tests:** `uv run python tests/test_loader.py` (plain asserts, no pytest).
-- **Register the server:** `claude mcp add tietrace-alpha -e TIETRACE_NEWSROOM=alpha -- python server.py`
+- **Register the server:** `claude mcp add tietrace-alpha -e TIETRACE_NEWSROOM=alpha -e FALKORDB_PORT=6380 -- uv run --directory C:\Users\Azeem\Desktop\TieTrace python server.py` (`uv run --directory` finds the venv from any folder; drop `FALKORDB_PORT` if FalkorDB is on 6379). The server exits at once if `TIETRACE_NEWSROOM` is unset.

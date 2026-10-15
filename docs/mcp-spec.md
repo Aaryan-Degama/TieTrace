@@ -1,6 +1,6 @@
 # TieTrace MCP spec (Tracks 1 & 2)
 
-*Last updated by Abdul, Oct 16: section 9 note on the `eval/` scripts (no contract change). Before that, Oct 15: checkpoint 3 (review fixes applied, round 3: non-paper records flagged not dropped, bridges time budget; error codes, name lookup, junk rule, coverage wording), `research.py` and `verifier.py` written; section 9 lists where the code adds to or differs from this contract (decided by Abdul). Earlier: team attribution convention (see CLAUDE.md). Past content authored in Abdul's sessions.*
+*Last updated by Abdul, Oct 16: section 9b checkpoint 5 notes (`server.py`: labels, `check_case` by `expert_ids`, `INTERNAL` code). Before that, Oct 16: section 9 note on the `eval/` scripts (no contract change). Before that, Oct 15: checkpoint 3 (review fixes applied, round 3: non-paper records flagged not dropped, bridges time budget; error codes, name lookup, junk rule, coverage wording), `research.py` and `verifier.py` written; section 9 lists where the code adds to or differs from this contract (decided by Abdul). Earlier: team attribution convention (see CLAUDE.md). Past content authored in Abdul's sessions.*
 
 ## Context
 Graph Hacks (FalkorDB, Oct 15-18 2026). `tietrace-v2-redesign.md` fixes the data model, tiers and evaluation. This file defines every MCP tool (inputs, outputs, errors, which graph it touches, read or write) and diagrams the whole system, so the code can be written straight from it.
@@ -139,7 +139,7 @@ erDiagram
 }
 ```
 On failure: `{"ok": false, "error": {"code": "...", "message": "..."}}`.
-Error codes: `INVALID_ARG`, `NOT_FOUND`, `AMBIGUOUS`, `TIMEOUT`, `ROW_LIMIT`, `VERIFIER_REJECT`, `NOT_APPROVED`, `READ_ONLY`, `DB_ERROR` (any other database or connection error; added by Abdul, Oct 15).
+Error codes: `INVALID_ARG`, `NOT_FOUND`, `AMBIGUOUS`, `TIMEOUT`, `ROW_LIMIT`, `VERIFIER_REJECT`, `NOT_APPROVED`, `READ_ONLY`, `DB_ERROR` (any other database or connection error; added by Abdul, Oct 15), `INTERNAL` (an unexpected server bug; message has no traceback; added by Abdul, Oct 16).
 
 **Defaults** come from `Policy`: `hops=3`, `years=5`, `author_cap=25`, `show_tier_c=true`, `row_limit=500`, `timeout_ms=3000`.
 
@@ -296,3 +296,18 @@ stateDiagram-v2
 - **Loader change:** `COAUTH_B` also stores `recent_small_dois` and `recent_small_works` (only the papers that count toward Tier B), and `dedupe` prefers the record with a DOI when two records tie on scope.
 - **Verifier** (`verifier.py`): `verify_claims(claims, {expert_id: [dois]})` returns `{"status", "rejections": [{claim_index, reason, code: "VERIFIER_REJECT"}]}`. A claim is `no_tie` when `kind == "no_tie"` or it carries `query_name` or `scope`; the only known `query_name` is `q3_bfs_v1`.
 - **Evaluation scripts (checkpoint 4, no contract change):** `eval/*.py` call `research.ro_query` directly with a longer `timeout_ms` (120 s) and `row_cap=9000` for bulk reads, paged by year or id slices so no page reaches the server's 10,000-row cut-off, and reuse `research._tier_a` / `_staff` / `tie_report` / `resolve_experts` unchanged. `eval/e2.py` rebuilds Tier A per cut year from raw Work / FUNDED_BY / AFFILIATED data and checks that the all-years rebuild equals `research._tier_a`. (decided by Abdul)
+
+---
+
+## 9b. Checkpoint 5 notes: where `server.py` differs from sections 4-5
+*Last updated by Abdul, Oct 16 (decided by Abdul).* `server.py` (stdio, `MCPServer` from the `mcp` 2.x SDK) exposes `resolve_experts`, `find_experts`, `tie_report`, `check_no_tie`, `bridges`, `check_case`. Every tool is read-only and returns the section-4 envelope (structured output). The memory tools come in checkpoints 6-7.
+
+- **Newsroom:** `TIETRACE_NEWSROOM` (`[a-z0-9_-]+`) must be set or the server exits with a message. It is logged on stderr and held, but nothing is written to the newsroom graph yet (checkpoint 6).
+- **Labels and `public_case` (deviation, until `open_case` exists):** no tool takes a name, a label string or `public_case`, except `check_case`.
+  - `tie_report`, `check_no_tie`, `bridges` take `expert_number: int = 1` (1-99) and label the expert `Expert #<n>`. Co-authors stay `Co-author #i.j` / `Tier-A #i`. No name is ever shown by these three.
+  - `check_case(expert_ids, public_case=false)` labels `Expert #1..#n` in input order. `public_case=true` puts the name of each listed expert in its label, but only when every id is in the hard-coded `GEBN_PUBLIC_IDS` set in `server.py` (Hill, Blair, Hand, Peters). Otherwise the flag is ignored, labels stay `Expert #n` and a warning says so, because a model-set flag has no human gate (decided by Abdul, Oct 16). Checkpoint 6 replaces this with `case.public_case`. It returns only label, id, tier, score and no-tie result, so no co-author names appear.
+  - An extra argument such as `public_case` on a single-expert tool is ignored by the SDK. Checkpoint 6 replaces `expert_number` and `public_case` with the label and flag stored on the case.
+- **`check_case(expert_ids)` instead of `case_id` (deviation):** `expert_ids: str[]` (1-25 distinct ids; `INVALID_ARG` otherwise). `case_id` support and saved Checks come with `open_case`; until then `check_id` is `null`. Experts run one after another; tier NONE also runs `check_no_tie`. After 90 s no new expert is started and the rest are listed in `data.not_checked` with a warning. Rows with the same tier and score keep the input order. Every row has an `error` key (null when fine). An unknown id gives a row with `tier: null` and an `error` object, ranked last, and the batch goes on; if every row fails with `DB_ERROR`, the whole answer is `ok: false`, `DB_ERROR`. `data.counts` is `{A1, A2, B, C, NONE}`. `cypher` has one entry per distinct query text: `params` of the first run, `runs` (how many times it ran) and `other_params` (the params of the other runs), which keeps 25 experts near 40 KB instead of 88 KB; `scope` is merged and `warnings` de-duplicated.
+- **Not yet built (later checkpoints):** the optional `agent` argument, `case_id` on `tie_report`, Event logging, and the `Policy` defaults (the code uses fixed `research.py` defaults).
+- **Errors:** a bug inside a tool becomes `{"ok": false, "error": {"code": "INTERNAL"}}` without a traceback. An argument of the wrong JSON type (for example a number as `expert_id`) is rejected by the SDK before our code runs and comes back as an MCP tool error (`isError`) with a short validation message, not as an envelope.
+- **Start-up:** the server loads Meta, the Tier-A map and the staff list once (about 0.6 s) so the first call is fast. If the database is down it still starts; tools then return `DB_ERROR`. Calls are serialised with a lock because `research.py` keeps one connection and one cache.
