@@ -13,7 +13,7 @@ Deadline: **submit by Oct 18, 6 PM IST.** Specs: `tietrace-v2-redesign.md`, `doc
 | 5 | MCP server: Track 1 tools | Oct 16 evening | ✅ |
 | 5b | Persistence fix (AOF) | Oct 16 | ✅ |
 | 5c-5f | Any company/topic: case config, case-aware tools, discover, Philip Morris demo | Oct 16-17 | ✅ |
-| 6 | Memory graph: Track 2 tools | Oct 17 morning | ⬜ |
+| 6 | Memory graph: Track 2 tools | Oct 17 morning | ✅ |
 | 7 | Verdicts, notes, Writer | Oct 17 midday | ⬜ |
 | 8 | Remaining evaluation + golden tests | Oct 17 afternoon | ⬜ |
 | 9 | README, video, submit | Oct 18, by 6 PM | ⬜ |
@@ -128,7 +128,7 @@ Claimed (→ Aaryan, Oct 16).
 - [x] `recall` timeline (Aaryan, Oct 16)
 - [x] Staged load: works up to year Y, save a check, load the newer slice (Aaryan, Oct 16): `cases/obesity-coke-staged`, `loader.py --until-year 2023`, 0 API calls; steps in spec 9d
 - [x] `recheck` shows the diff (Aaryan, Oct 16): e.g. an expert went C → A1 after the 2024-26 slice (a 2026 Coca-Cola-funded paper). Review: round 1 FAIL (5 must-fix: NONE checks without scope, public-case name leak, forked SUPERSEDES chains, recall on unknown ids, tests writing into newsroom:alpha) → round 2 PASS; suites: loader 49, research 51, server 26, eval 13, cases 27, discover 26, memory 24
-- [ ] Gate E11 in real Claude Code: session 1 opens and checks a case, a fresh session's `open_case` shows `prior_memory` (→ Aaryan; passed with two fresh server processes, not yet in Claude Code)
+- [x] Gate E11 in real Claude Code (Aaryan, Oct 16): session 1 opened "Soda tax story" and checked Blair (A1 105.05) and Hill (A2 50.11); a fresh session's `open_case` on Hill showed the earlier check (tier A2, chk_…cb). Follow-up for checkpoint 7: session 2 wrongly explained A2 as "bottler affiliation" (it is Coca-Cola Foundation funding) because `prior_memory` carries only tier and score; add the evidence kind to the summary so the model never guesses
 
 **Gate:** a new Claude Code session recalls an earlier case (E11).
 
