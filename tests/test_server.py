@@ -33,15 +33,17 @@ import test_research as tr  # noqa: E402  (independent model of the graph: tr.ex
 
 BANNED = re.compile(r"\b(independent|conflicted)\b", re.IGNORECASE)
 ERROR_CODES = {"INVALID_ARG", "NOT_FOUND", "AMBIGUOUS", "TIMEOUT", "ROW_LIMIT", "VERIFIER_REJECT",
-               "NOT_APPROVED", "READ_ONLY", "DB_ERROR", "INTERNAL"}
-TOOLS = {"resolve_experts", "find_experts", "tie_report", "check_no_tie", "bridges", "check_case"}
-SPEC_INPUTS = {  # name -> (required, allowed) according to docs/mcp-spec.md section 5 + 9b
-    "resolve_experts": ({"names", "topic"}, {"names", "topic"}),
-    "find_experts": ({"topic"}, {"topic", "n", "exclude_target_staff"}),
-    "tie_report": ({"expert_id"}, {"expert_id", "expert_number"}),
-    "check_no_tie": ({"expert_id"}, {"expert_id", "k", "years", "expert_number"}),
-    "bridges": ({"expert_id"}, {"expert_id", "depth", "limit", "expert_number"}),
-    "check_case": ({"expert_ids"}, {"expert_ids", "public_case"}),
+               "NOT_APPROVED", "READ_ONLY", "DB_ERROR", "INTERNAL", "NO_GRAPH"}  # NO_GRAPH: spec s4, checkpoint 5d
+TOOLS = {"resolve_experts", "find_experts", "tie_report", "check_no_tie", "bridges", "check_case",
+         "list_cases"}  # list_cases: spec s5, checkpoint 5d
+SPEC_INPUTS = {  # name -> (required, allowed) according to docs/mcp-spec.md sections 4, 5, 9b, 9c
+    "resolve_experts": ({"names", "topic"}, {"names", "topic", "case"}),
+    "find_experts": ({"topic"}, {"topic", "n", "exclude_target_staff", "case"}),
+    "tie_report": ({"expert_id"}, {"expert_id", "expert_number", "case"}),
+    "check_no_tie": ({"expert_id"}, {"expert_id", "k", "years", "expert_number", "case"}),
+    "bridges": ({"expert_id"}, {"expert_id", "depth", "limit", "expert_number", "case"}),
+    "check_case": ({"expert_ids"}, {"expert_ids", "public_case", "case"}),
+    "list_cases": (set(), set()),
 }
 GEBN = {"James O. Hill": "A5031318756", "Steven N. Blair": "A5105003630",
         "Gregory A. Hand": "A5046953968", "John C. Peters": "A5045252457"}
@@ -177,7 +179,7 @@ def picked():
 
 # ---------- 1. tool list, schemas, descriptions ----------
 
-def test_exactly_the_six_tools_with_spec_inputs_and_read_only_hints():
+def test_exactly_the_seven_tools_with_spec_inputs_and_read_only_hints():
     tools = {t.name: t for t in client().tools()}
     assert set(tools) == TOOLS, sorted(tools)
     for name, t in tools.items():
@@ -459,6 +461,9 @@ def test_newsroom_comes_from_env_only_and_is_validated_at_startup():
 # ---------- 5. protocol: stdout cleanliness, shutdown, no orphans ----------
 
 def test_stdout_is_only_json_rpc_and_shutdown_is_clean_with_no_orphans():
+    if os.name != "nt":  # server_processes() uses PowerShell/Win32_Process; runs in full on Windows
+        print("      SKIP: needs Windows (PowerShell process listing)")
+        return
     before = server_processes()
     p = subprocess.Popen(CMD, env=server_env(), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     msgs = [{"jsonrpc": "2.0", "id": 1, "method": "initialize",
@@ -740,7 +745,7 @@ def test_parallel_calls_do_not_corrupt_or_deadlock_and_list_tools_stays_responsi
     futs += [("fe", c.start("find_experts", {"topic": "obesity", "n": 10})) for _ in range(3)]
     t = time.time()
     tools = c.tools()  # must not wait for the batch
-    assert len(tools) == 6 and time.time() - t < 3, time.time() - t
+    assert len(tools) == len(TOOLS) and time.time() - t < 3, (len(tools), time.time() - t)
     for pid, f in futs:
         r = f.result(120)
         assert not r.is_error

@@ -3,3 +3,6 @@ __pycache__/
 .env
 data/
 tietrace-data.zip
+cases/*/raw/
+cases/*/status.json
+cases/*/status.tmp

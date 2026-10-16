@@ -1,6 +1,7 @@
 # TieTrace MCP spec (Tracks 1 & 2)
 
-*Last updated by Abdul, Oct 16: section 9b checkpoint 5 notes (`server.py`: labels, `check_case` by `expert_ids`, `INTERNAL` code). Before that, Oct 16: section 9 note on the `eval/` scripts (no contract change). Before that, Oct 15: checkpoint 3 (review fixes applied, round 3: non-paper records flagged not dropped, bridges time budget; error codes, name lookup, junk rule, coverage wording), `research.py` and `verifier.py` written; section 9 lists where the code adds to or differs from this contract (decided by Abdul). Earlier: team attribution convention (see CLAUDE.md). Past content authored in Abdul's sessions.*
+*Last updated by Aaryan, Oct 16 2026: checkpoints 5c-5d review fixes (decided by Aaryan): `Work.junk` precomputed at load, build lock, stale-cache check, `list_cases` scope exception and staging warning, `TIETRACE_CASE` checked at start-up. Before that, same day: checkpoints 5c-5d: case config `cases/<slug>/case.json` and staging+RENAME build (section 3), `NO_GRAPH` error code and graph + `data_version` in every scope (section 4), optional `case` argument on every research tool and the new `list_cases` tool (section 5), details in section 9c; section 9b public ids now come from the case config.*
+*Earlier: Abdul, Oct 16: section 9b checkpoint 5 notes (`server.py`: labels, `check_case` by `expert_ids`, `INTERNAL` code). Before that, Oct 16: section 9 note on the `eval/` scripts (no contract change). Before that, Oct 15: checkpoint 3 (review fixes applied, round 3: non-paper records flagged not dropped, bridges time budget; error codes, name lookup, junk rule, coverage wording), `research.py` and `verifier.py` written; section 9 lists where the code adds to or differs from this contract (decided by Abdul). Earlier: team attribution convention (see CLAUDE.md). Past content authored in Abdul's sessions.*
 
 ## Context
 Graph Hacks (FalkorDB, Oct 15-18 2026). `tietrace-v2-redesign.md` fixes the data model, tiers and evaluation. This file defines every MCP tool (inputs, outputs, errors, which graph it touches, read or write) and diagrams the whole system, so the code can be written straight from it.
@@ -64,7 +65,7 @@ flowchart LR
   SRV --> FDB
 
   subgraph FDB["FalkorDB - one instance, multigraph"]
-    RG[("research:obesity-coke<br/>read-only")]
+    RG[("research:&lt;slug&gt; one per case<br/>default obesity-coke, read-only")]
     NA[("newsroom:alpha")]
     NB[("newsroom:beta")]
   end
@@ -79,7 +80,14 @@ Tenant rule: the server is started with `TIETRACE_NEWSROOM=alpha`. No tool takes
 
 ## 3. Graph schema
 
-Research graph `research:<topic>` (as defined in redesign section 4):
+Research graph `research:<slug>`, one per case (as defined in redesign section 4). The slug matches `^[a-z0-9][a-z0-9-]{1,39}$`; the first case is `obesity-coke`.
+
+**Case config and registry (checkpoint 5c).** Each case is a folder `cases/<slug>/`:
+- `case.json` (in git, human-approved): `company`; `funders[] {id, name, kind: company|foundation}`; `institutions[] {id, name, rel: parent|subsidiary|bottler}` (exactly one `parent` if any); `topics[] {id, name}`; `years [first, last]`; `topic_cap`; `public_ids[]` (the only experts `check_case(public_case=true)` may name); `small_paper`; `recent_year`; `works_count_anomaly`; `max_api_calls`; `decided_by {decision: "Name, Mon D"}` for each of those ten decisions; optional `notes` and `rejected[] {id, name, reason}`. `loader.check_config` rejects unknown or missing keys, files of 20 KB or more, ID lists over 20 and malformed IDs.
+- `raw/` (gitignored): the OpenAlex page cache. `obesity-coke` falls back to the checkpoint-2 cache `data/raw/`, so it rebuilds with zero API calls.
+- `status.json` (gitignored, written by the loader): `status` (`building | ready | failed`), `updated_at`, and for the last good build `built_at`, `data_version`, `config_hash`, `counts`, `total_graph_sz_mb` (`GRAPH.MEMORY USAGE`), `graph`; `error` when failed.
+
+**Build (loader, a human-run CLI, never a tool).** `loader.py --case <slug> --dry-run` writes nothing and prints expected works, API calls, cost and projected RAM from `per_page=1` count probes. `loader.py --case <slug> --rebuild` builds `staging:<slug>`, self-checks it (Person, Work, Topic, AUTHORED counts above 0; one `Meta` with `build_status = "complete"`, `data_version`, `recent_year`), then swaps it in with Redis `RENAME staging:<slug> research:<slug>`. If any step fails, the staging graph is dropped and the old `research:<slug>` is untouched. `Meta` also stores `slug` and `config_hash`.
 
 ```mermaid
 erDiagram
@@ -133,13 +141,15 @@ erDiagram
   "ok": true,
   "data": { },
   "cypher": [{"graph": "research:obesity-coke", "query": "MATCH …", "params": {}}],
-  "scope": {"hops": 3, "years": "2021-2026", "coverage": 0.61, "load_scope": "…"},
+  "scope": {"graph": "research:obesity-coke", "data_version": "openalex@2026-10-15", "hops": 3, "years": "2021-2026", "coverage": 0.61, "load_scope": "…"},
   "verdicts_applied": ["vrd_…"],
   "warnings": ["profile_flag=no_orcid"]
 }
 ```
 On failure: `{"ok": false, "error": {"code": "...", "message": "..."}}`.
-Error codes: `INVALID_ARG`, `NOT_FOUND`, `AMBIGUOUS`, `TIMEOUT`, `ROW_LIMIT`, `VERIFIER_REJECT`, `NOT_APPROVED`, `READ_ONLY`, `DB_ERROR` (any other database or connection error; added by Abdul, Oct 15), `INTERNAL` (an unexpected server bug; message has no traceback; added by Abdul, Oct 16).
+Error codes: `INVALID_ARG`, `NOT_FOUND`, `AMBIGUOUS`, `TIMEOUT`, `ROW_LIMIT`, `VERIFIER_REJECT`, `NOT_APPROVED`, `READ_ONLY`, `DB_ERROR` (any other database or connection error; added by Abdul, Oct 15), `INTERNAL` (an unexpected server bug; message has no traceback; added by Abdul, Oct 16), `NO_GRAPH` (the case has no `case.json`, or its graph `research:<slug>` does not exist; FalkorDB's "Invalid graph operation on empty key" maps to it; the message lists the known cases; added by Aaryan, Oct 16).
+
+**Case.** Every research tool takes an optional `case: str` (a slug, never a graph name). A malformed slug gives `INVALID_ARG`; a slug with no `cases/<slug>/case.json` gives `NO_GRAPH`. Default: env `TIETRACE_CASE`, else `obesity-coke`. The newsroom still comes only from `TIETRACE_NEWSROOM`. Every `ok` envelope's `scope` names the `graph` and its `data_version` (except `list_cases`, see section 5). An invalid `TIETRACE_CASE` stops the server at start-up, like a missing `TIETRACE_NEWSROOM`.
 
 **Defaults** come from `Policy`: `hops=3`, `years=5`, `author_cap=25`, `show_tier_c=true`, `row_limit=500`, `timeout_ms=3000`.
 
@@ -150,6 +160,11 @@ Error codes: `INVALID_ARG`, `NOT_FOUND`, `AMBIGUOUS`, `TIMEOUT`, `ROW_LIMIT`, `V
 ## 5. Tools
 
 ### Track 1: research tools (read-only on `research:*`)
+
+All tools below except `list_cases` also take the optional `case` slug (section 4).
+
+**`list_cases`** (read-only, no arguments): which cases exist
+- Out: `data.cases[]: {case, graph, registered, graph_exists, status, meta: {built_at, data_version, config_hash, counts, topic_ids, funder_ids, build_status} | null, total_graph_sz_mb}`, `data.default_case`. Built from `GRAPH.LIST` (only `research:*` names), each graph's `Meta` node and `cases/*/status.json`. Exception to the section-4 scope rule: it spans all graphs, so `scope` has `source` instead of `graph`/`data_version` (each case row has its own `meta.data_version`). `warnings` lists leftover `staging:*` graphs (an unfinished build still holding RAM).
 
 **`resolve_experts`**: names from the journalist's input to OpenAlex IDs
 - In: `names: str[]`, `topic: str`
@@ -288,7 +303,7 @@ stateDiagram-v2
 - **`ro_query` guard:** `GRAPH.RO_QUERY` with `timeout_ms=3000` and `row_cap=500`. More than `row_cap` rows, or reaching the server's own 10,000-row cut-off (which FalkorDB applies silently), raises `ROW_LIMIT`; a read with no `LIMIT` of its own gets `LIMIT row_cap+1`. Any other database error becomes `DB_ERROR` in the envelope. A write raises `READ_ONLY`. The two "who is Tier A" queries use `row_cap=10000` because they return about 2,600 rows; they are cached once per process (restart the server after a graph rebuild).
 - **`find_experts`:** a topic ID (`T10010`) counts authors over `ABOUT`; any other text uses the full-text index on `Work.title` (all words must match), then counts authors over `ABOUT`. `exclude_target_staff` removes anyone with an affiliation to the company family.
 - **`tie_report` extras:** each `evidence[]` item also has `work_id`, `tier` (A1 or A2), `reason` ("company-funded work", "foundation grant", "bottler affiliation", "large multi-author paper (n authors)") and `topic_label` ("on-topic" or "off-topic"). `family_path` is the funder name, or the org and its parent. `data` also has `score_parts {tier_weight, coauth_w, tier_a_links}`, `nearest {hops, anchor_count}` (tier C only) and `orcid`. `coauth_ties[]` also has `to_expert_id` and `anchor_tier`, lists Tier B links only (2+ recent papers with 25 or fewer authors; `dois` are only those papers), and the score counts every recent small-paper link to a Tier-A person.
-- **Junk rule (one definition, `loader.is_junk_work`, reused by `research.py`):** F1000 peer-review reports (DOI prefix `10.5256/`) and works whose title starts with "Correction:", "Corrigendum", "Erratum", "Peer Review Report" or "Notice of Retraction" are not Tier A evidence and are skipped when `COAUTH`/`COAUTH_B` are built (a correction repeats the original's authors, so it looked like a second joint paper). Records titled "Index" or "Front Matter" stay in the graph with `Work.non_paper = true`; they are neither Tier A evidence nor part of `COAUTH`/`COAUTH_B` (`Meta.non_paper_works`). Records with no title stay as ordinary works with `Work.title_unknown = true` (`Meta.title_unknown_works`); they count as evidence and their wording says "untitled work" (evidence items carry `untitled`).
+- **Junk rule (one definition, `loader.is_junk_work`, reused by `research.py`):** F1000 peer-review reports (DOI prefix `10.5256/`) and works whose title starts with "Correction:", "Corrigendum", "Erratum", "Peer Review Report" or "Notice of Retraction" are not Tier A evidence and are skipped when `COAUTH`/`COAUTH_B` are built (a correction repeats the original's authors, so it looked like a second joint paper). Since Oct 16 (Aaryan) the rule is applied once at load time and stored as `Work.junk` (true for these reports, corrections, retraction notices and Index/Front Matter records); `research.NOT_JUNK` is `NOT w.junk`, so no query calls `toLower(title)` (FalkorDB 6.0.2 crashed there), and a graph whose `Meta` lacks `work_junk_flag` gives `DB_ERROR` "rebuild it". Records titled "Index" or "Front Matter" stay in the graph with `Work.non_paper = true`; they are neither Tier A evidence nor part of `COAUTH`/`COAUTH_B` (`Meta.non_paper_works`). Records with no title stay as ordinary works with `Work.title_unknown = true` (`Meta.title_unknown_works`); they count as evidence and their wording says "untitled work" (evidence items carry `untitled`).
 - **Name lookup:** `Person.name_norm` (accents folded, lower case, indexed) is matched against the folded input. One exact name with works on the topic is `MATCHED`; several are `AMBIGUOUS`. If no exact name exists, people whose first and last word match as whole words are returned as `AMBIGUOUS` with a warning, never `MATCHED`. A single person with 0 works on the topic is `AMBIGUOUS` with a warning. Initials only match records written with the same initial.
 - **Coverage and caveats:** the counts (topic works, with funder, with funder or affiliation, leftover duplicate groups by the loader's `norm_title`, links that rest on them) are computed in the loader and stored on the `Meta` node; `research.py` only reads them.
 - **`check_no_tie`:** runs `algo.BFS` over `COAUTH_B` at depth 1, 2, 3 and stops at the first depth that reaches a Tier-A person (BFS gives no row when nothing is reached). `nearest.hops` is 0 when the expert has direct Tier A evidence. Also returns `tier_a_id`, `anchor_tier`, `label`, `wording`. `years` must be 5: the graph is precomputed for `Meta.recent_year` onward, and any other value returns `INVALID_ARG`. The `scope` block has `hops`, `years`, `coverage` (computed from the graph: topic works with funder or affiliation data), `coverage_funder_only`, `load_scope` and `caveats[]` (leftover possible duplicate records, author lists cut at 100, co-authors' other works not loaded).
@@ -305,9 +320,22 @@ stateDiagram-v2
 - **Newsroom:** `TIETRACE_NEWSROOM` (`[a-z0-9_-]+`) must be set or the server exits with a message. It is logged on stderr and held, but nothing is written to the newsroom graph yet (checkpoint 6).
 - **Labels and `public_case` (deviation, until `open_case` exists):** no tool takes a name, a label string or `public_case`, except `check_case`.
   - `tie_report`, `check_no_tie`, `bridges` take `expert_number: int = 1` (1-99) and label the expert `Expert #<n>`. Co-authors stay `Co-author #i.j` / `Tier-A #i`. No name is ever shown by these three.
-  - `check_case(expert_ids, public_case=false)` labels `Expert #1..#n` in input order. `public_case=true` puts the name of each listed expert in its label, but only when every id is in the hard-coded `GEBN_PUBLIC_IDS` set in `server.py` (Hill, Blair, Hand, Peters). Otherwise the flag is ignored, labels stay `Expert #n` and a warning says so, because a model-set flag has no human gate (decided by Abdul, Oct 16). Checkpoint 6 replaces this with `case.public_case`. It returns only label, id, tier, score and no-tie result, so no co-author names appear.
+  - `check_case(expert_ids, public_case=false)` labels `Expert #1..#n` in input order. `public_case=true` puts the name of each listed expert in its label, but only when every id is in the case's `public_ids` list in `cases/<slug>/case.json` (for `obesity-coke`: Hill, Blair, Hand, Peters; until Oct 16 this was the hard-coded `GEBN_PUBLIC_IDS` set in `server.py`). Otherwise the flag is ignored, labels stay `Expert #n` and a warning says so, because a model-set flag has no human gate (decided by Abdul, Oct 16). Checkpoint 6 replaces this with `case.public_case`. It returns only label, id, tier, score and no-tie result, so no co-author names appear.
   - An extra argument such as `public_case` on a single-expert tool is ignored by the SDK. Checkpoint 6 replaces `expert_number` and `public_case` with the label and flag stored on the case.
 - **`check_case(expert_ids)` instead of `case_id` (deviation):** `expert_ids: str[]` (1-25 distinct ids; `INVALID_ARG` otherwise). `case_id` support and saved Checks come with `open_case`; until then `check_id` is `null`. Experts run one after another; tier NONE also runs `check_no_tie`. After 90 s no new expert is started and the rest are listed in `data.not_checked` with a warning. Rows with the same tier and score keep the input order. Every row has an `error` key (null when fine). An unknown id gives a row with `tier: null` and an `error` object, ranked last, and the batch goes on; if every row fails with `DB_ERROR`, the whole answer is `ok: false`, `DB_ERROR`. `data.counts` is `{A1, A2, B, C, NONE}`. `cypher` has one entry per distinct query text: `params` of the first run, `runs` (how many times it ran) and `other_params` (the params of the other runs), which keeps 25 experts near 40 KB instead of 88 KB; `scope` is merged and `warnings` de-duplicated.
 - **Not yet built (later checkpoints):** the optional `agent` argument, `case_id` on `tie_report`, Event logging, and the `Policy` defaults (the code uses fixed `research.py` defaults).
 - **Errors:** a bug inside a tool becomes `{"ok": false, "error": {"code": "INTERNAL"}}` without a traceback. An argument of the wrong JSON type (for example a number as `expert_id`) is rejected by the SDK before our code runs and comes back as an MCP tool error (`isError`) with a short validation message, not as an envelope.
 - **Start-up:** the server loads Meta, the Tier-A map and the staff list once (about 0.6 s) so the first call is fast. If the database is down it still starts; tools then return `DB_ERROR`. Calls are serialised with a lock because `research.py` keeps one connection and one cache.
+
+---
+
+## 9c. Checkpoints 5c-5d notes: cases
+*Last updated by Aaryan, Oct 16 2026 (decided by Aaryan).*
+
+- **Graph selection:** `research.on_graph(graph)` sets the graph for the calls inside it (a contextvar; default `research.GRAPH` = `research:obesity-coke`). The server resolves `case` to `research:<slug>` once per call, under its lock. Cached facts (Meta, Tier-A map, staff) are keyed by `(graph, name)`, so one case never sees another case's Tier-A map; `research.clear_cache(graph=None)` clears one graph or all.
+- **Second guard in `ro_query`:** the graph name must match `^research:[a-z0-9][a-z0-9-]{1,39}$` (the slug rule), otherwise `INVALID_ARG` before any query runs. `GRAPH.RO_QUERY` never creates a key, so a typo cannot create a graph; it gives `NO_GRAPH`.
+- **Registry:** a case exists when `cases/<slug>/case.json` passes `loader.load_config`. `status.json` is informational (shown by `list_cases`); a failed rebuild leaves the previous graph usable.
+- **`check_case`:** if every expert fails with the same `DB_ERROR` or `NO_GRAPH`, the whole answer is that error.
+- **One build per case:** the loader takes the Redis key `build-lock:<slug>` (`SET NX EX` 4 h) and releases it at the end; a second build of the same case exits with a message.
+- **Rebuild while the server runs:** before each call the server reads `cases/<slug>/status.json` (a file, no query); if `built_at` or `config_hash` changed since it last looked, it clears that graph's cache. The loader also prints a notice after the swap.
+- **Not built yet:** a `--build` flag (the loader keeps `--rebuild`), ACLs, the pre-flight RAM check against Docker's memory, and `--case` for the `eval/` scripts (E1-E8 stay obesity-coke only).

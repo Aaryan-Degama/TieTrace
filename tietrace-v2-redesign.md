@@ -1,6 +1,7 @@
 # TieTrace v2: redesign (Graph Hacks, Oct 15-18 2026)
 
-*Last updated by Abdul, Oct 15: added team attribution convention (see CLAUDE.md). Past content authored in Abdul's sessions.*
+*Last updated by Aaryan, Oct 16 2026: `Work.junk` added to the graph model (decided by Aaryan).*
+*Earlier: Abdul, Oct 15: added team attribution convention (see CLAUDE.md). Past content authored in Abdul's sessions.*
 
 Written Oct 14 2026, about 5 hours before the event starts. Notes and sketches only; all code is written during the event.
 Facts marked **(verified Oct 14)** were checked against live pages today. Everything else is a day-1 test, listed in section 11.
@@ -63,7 +64,7 @@ Rules for every output:
 | Node | Properties |
 |---|---|
 | `Person` | oa_id, name, orcid, works_count, `profile_flag` (ok / no_orcid / works_count_anomaly) |
-| `Work` | oa_id, doi, year, n_authors, title |
+| `Work` | oa_id, doi, year, n_authors, title, junk (bool, set at load: peer-review report, correction, retraction notice, Index/Front Matter; never Tier A evidence) |
 | `Org` | oa_id, name, type, `target` (true for the company family) |
 | `Funder` | oa_id, name, `target` |
 | `Topic` | oa_id, name |

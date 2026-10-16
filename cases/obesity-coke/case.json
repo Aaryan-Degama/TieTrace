@@ -1,0 +1,37 @@
+{
+  "slug": "obesity-coke",
+  "company": "The Coca-Cola Company",
+  "funders": [
+    {"id": "F4320307807", "name": "Coca-Cola (the company)", "kind": "company"},
+    {"id": "F4320308599", "name": "Coca-Cola Foundation", "kind": "foundation"}
+  ],
+  "institutions": [
+    {"id": "I1312732213", "name": "Coca Cola (United States)", "rel": "parent"},
+    {"id": "I4405274843", "name": "Coca-Cola Bottlers Japan Inc. (Japan)", "rel": "bottler"},
+    {"id": "I4405273583", "name": "COCA-COLA WEST Company, Limited (Japan)", "rel": "bottler"}
+  ],
+  "topics": [
+    {"id": "T10010", "name": "Obesity, Physical Activity, Diet"},
+    {"id": "T10352", "name": "Physical Activity and Health"}
+  ],
+  "years": [2010, 2026],
+  "topic_cap": 30000,
+  "public_ids": ["A5031318756", "A5105003630", "A5046953968", "A5045252457"],
+  "small_paper": 25,
+  "recent_year": 2021,
+  "works_count_anomaly": 2000,
+  "max_api_calls": 3000,
+  "decided_by": {
+    "funders": "Abdul, Oct 15",
+    "institutions": "Abdul, Oct 15",
+    "topics": "Abdul, Oct 15",
+    "years": "Abdul, Oct 15",
+    "topic_cap": "Abdul, Oct 15",
+    "public_ids": "Abdul, Oct 16",
+    "small_paper": "Abdul, Oct 15",
+    "recent_year": "Abdul, Oct 15",
+    "works_count_anomaly": "Abdul, Oct 15",
+    "max_api_calls": "Aaryan, Oct 16"
+  },
+  "notes": "Reproduces the loader constants of checkpoint 2 exactly. The institution family was hand-checked on 2026-10-15 from /institutions?search=coca-cola, ?search=coca cola and display_name.search:coca / :cola; OpenAlex gives I1312732213 no associated institutions and no Coca-Cola Foundation institution exists. public_ids are the documented GEBN case (Hill, Blair, Hand, Peters; eval/results.md E3)."
+}

@@ -112,8 +112,8 @@ Result: `tests/test_server.py` 26/26 (Reviewer PASS in round 2); server register
 - [ ] Abdul: migrate your container the same way (steps in `CLAUDE.md` Commands; uses your ports 6380/3001) (→ Abdul)
 
 ## 5c-5f. Any company and topic (from `IMPROVEMENT.md`)
-- [ ] 5c `cases/<slug>/case.json`, `loader.py --case`, staging + RENAME swap, `--dry-run` (→ Aaryan)
-- [ ] 5d `case` argument on tools, `list_cases`, `NO_GRAPH`, per-graph caches (→ Aaryan)
+- [x] 5c `cases/<slug>/case.json`, `loader.py --case`, staging + RENAME swap, `--dry-run`, build lock, `Work.junk` precomputed (Aaryan, Oct 16)
+- [x] 5d `case` argument on tools, `list_cases`, `NO_GRAPH`, per-graph caches, cache dropped after a rebuild (Aaryan, Oct 16). Review: round 1 FAIL (1 must-fix), round 2 PASS; suites on v4.22.1: cases 23/23, loader 49/49, research 51/51, server 26/26, eval 13/13, discover 26/26
 - [x] 5e `discover.py` CLI (funders, institutions, topics, authors): Reviewer FAIL (5 must-fix) → fixed → PASS; 26/26 tests offline and live; never auto-picks, shows split-profile siblings (strong/weak) (Aaryan, Oct 16)
 - [ ] 5f Philip Morris × lung cancer case: human-approved `case.json`, real build, results in `eval/results.md` (→ Aaryan)
 

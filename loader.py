@@ -1,13 +1,17 @@
-"""Checkpoint 2: build the research graph `research:obesity-coke` from OpenAlex.
+"""Checkpoints 2 and 5c: build the research graph `research:<slug>` for one case from OpenAlex.
 
-Run:  uv run python loader.py --rebuild
-      uv run python loader.py --rebuild --refresh   # ignore data/raw/ and call the API again
+Run:  uv run python loader.py --case obesity-coke --dry-run   # counts, calls, cost, RAM; writes nothing
+      uv run python loader.py --case obesity-coke --rebuild   # build (default case: obesity-coke)
+      uv run python loader.py --rebuild --refresh             # ignore the raw cache and call the API again
 
-The graph is dropped and rebuilt from scratch on every load (--rebuild is required if it
-already exists), so re-running gives the same graph. Raw API pages are cached in data/raw/
-as JSONL (line 1 = query params + fetch date), so a re-run costs zero API calls.
+The case (company, topics, thresholds) comes from cases/<slug>/case.json. The graph is built from
+scratch as staging:<slug>, self-checked, then swapped over research:<slug> with Redis RENAME, so a
+failed build leaves the old graph untouched (--rebuild is required if it already exists). Raw API
+pages are cached in cases/<slug>/raw/ (obesity-coke: data/raw/) as JSONL (line 1 = query params +
+fetch date), so a re-run costs zero API calls. cases/<slug>/status.json records the last build.
 """
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -22,43 +26,133 @@ from pathlib import Path
 import httpx
 from falkordb import FalkorDB
 
-GRAPH = "research:obesity-coke"
-RAW = Path(__file__).parent / "data" / "raw"
 API = "https://api.openalex.org/"
 WORK_FIELDS = "id,doi,title,publication_year,authorships,funders,topics,primary_topic"
+ROOT = Path(__file__).parent
+CASES = ROOT / "cases"
+DEFAULT_CASE = "obesity-coke"
+SLUG_RE = re.compile(r"[a-z0-9][a-z0-9-]{1,39}")  # graph name is research:<slug>
 
-COMPANY_FUNDER = "F4320307807"     # Coca-Cola (the company): Tier A1
-FOUNDATION_FUNDER = "F4320308599"  # Coca-Cola Foundation: Tier A2
-FUNDER_KIND = {COMPANY_FUNDER: "company", FOUNDATION_FUNDER: "foundation"}
+# ---------- the case config: cases/<slug>/case.json (checkpoint 5c) ----------
+# One file per case says which company, topics and thresholds a graph is built for. The model may
+# propose a file; check_config decides what is legal. Every decision names who made it and when.
+DECISIONS = ("funders", "institutions", "topics", "years", "topic_cap", "public_ids", "small_paper",
+             "recent_year", "works_count_anomaly", "max_api_calls")
+CASE_KEYS = {"slug", "company", "decided_by", *DECISIONS}
+OPTIONAL_KEYS = {"notes", "rejected"}  # free text; candidates turned down, each with a reason
+ITEM_KEYS = {"funders": {"id", "name", "kind"}, "institutions": {"id", "name", "rel"},
+             "topics": {"id", "name"}, "rejected": {"id", "name", "reason"}}
+ID_RE = {"funders": r"F\d+", "institutions": r"I\d+", "topics": r"T\d+", "public_ids": r"A\d+",
+         "rejected": r"[FITA]\d+"}
+KINDS = {"company", "foundation"}            # Funder.kind: company money is A1, foundation money A2
+RELS = {"parent", "subsidiary", "bottler"}   # PARENT_OF.rel; a bottler affiliation is A2
+MAX_CONFIG_BYTES, MAX_IDS = 20_000, 20
 
-# Chosen from /topics?search=obesity and ?search=physical activity (see AI_USE.md / report).
-TOPICS = {
-    "T10010": "Obesity, Physical Activity, Diet",
-    "T10352": "Physical Activity and Health",
-}
-TOPIC_YEARS = range(2010, 2027)  # topic works "since 2010", up to the current year 2026
-# ponytail: topic works capped at 30,000 of ~260k: the TOPIC_CAP // 17 most cited per year,
-# so recent years are not crowded out. Raise TOPIC_CAP (1 API call per 100 works) for coverage.
-TOPIC_CAP = 30000
-PER_YEAR = TOPIC_CAP // len(TOPIC_YEARS)
 
-# Coca-Cola corporate family. OpenAlex gives I1312732213 no associated_institutions, so this
-# list was hand-checked on 2026-10-15 from /institutions?search=coca-cola, ?search=coca cola
-# and filter=display_name.search:coca / :cola. No Coca-Cola Foundation institution exists.
-COKE_PARENT = "I1312732213"
-COKE_FAMILY = {
-    "I1312732213": "Coca Cola (United States)",
-    "I4405274843": "Coca-Cola Bottlers Japan Inc. (Japan)",
-    "I4405273583": "COCA-COLA WEST Company, Limited (Japan)",
-}
-# PARENT_OF.rel: "subsidiary" (owned) or "bottler" (franchise bottler, TCCC a minority owner).
-COKE_CHILD_REL = {"I4405274843": "bottler", "I4405273583": "bottler"}
+def check_config(cfg, slug):
+    """Plain dict checks. Raises ValueError naming the first problem."""
+    def need(ok, msg):
+        if not ok:
+            raise ValueError(f"case {slug}: {msg}")
 
-SMALL_PAPER = 25       # Tier rules: papers with more authors are "large"
-RECENT_YEAR = 2021     # "last 5 years" relative to 2026; to be confirmed by the human
+    def is_int(v, low, high):
+        return isinstance(v, int) and not isinstance(v, bool) and low <= v <= high
+
+    need(isinstance(cfg, dict), "case.json must be an object")
+    need(not set(cfg) - CASE_KEYS - OPTIONAL_KEYS, f"unknown keys {sorted(set(cfg) - CASE_KEYS - OPTIONAL_KEYS)}")
+    need(not CASE_KEYS - set(cfg), f"missing keys {sorted(CASE_KEYS - set(cfg))}")
+    need(cfg["slug"] == slug, "slug must equal the folder name")
+    need(isinstance(cfg["company"], str) and cfg["company"].strip(), "company must be a non-empty string")
+    need(isinstance(cfg.get("notes", ""), str), "notes must be a string")
+    for key in ("funders", "institutions", "topics", "rejected"):
+        items = cfg.get(key, [])
+        need(isinstance(items, list) and len(items) <= MAX_IDS, f"{key} must be a list of at most {MAX_IDS}")
+        for it in items:
+            need(isinstance(it, dict) and set(it) == ITEM_KEYS[key], f"each {key} item needs exactly {sorted(ITEM_KEYS[key])}")
+            need(isinstance(it["id"], str) and re.fullmatch(ID_RE[key], it["id"]), f"bad {key} id {it['id']!r}")
+            need(all(isinstance(v, str) and v.strip() for v in it.values()), f"{key} values must be non-empty strings")
+        need(len({it["id"] for it in items}) == len(items), f"duplicate ids in {key}")
+    need(all(f["kind"] in KINDS for f in cfg["funders"]), f"funder kind must be one of {sorted(KINDS)}")
+    need(all(i["rel"] in RELS for i in cfg["institutions"]), f"institution rel must be one of {sorted(RELS)}")
+    parents = [i for i in cfg["institutions"] if i["rel"] == "parent"]
+    need(len(parents) == (1 if cfg["institutions"] else 0), "institutions need exactly one rel=parent")
+    need(cfg["funders"] or cfg["institutions"], "need at least one funder or institution")
+    need(cfg["topics"], "need at least one topic")
+    ids = cfg["public_ids"]
+    need(isinstance(ids, list) and len(ids) <= MAX_IDS and len(set(ids)) == len(ids)
+         and all(isinstance(i, str) and re.fullmatch(ID_RE["public_ids"], i) for i in ids),
+         f"public_ids must be at most {MAX_IDS} distinct author ids (A...)")
+    years = cfg["years"]
+    need(isinstance(years, list) and len(years) == 2 and all(is_int(y, 1900, 2100) for y in years)
+         and years[0] <= years[1], "years must be [first, last]")
+    need(is_int(cfg["recent_year"], years[0], years[1]), "recent_year must lie within years")
+    need(is_int(cfg["topic_cap"], years[1] - years[0] + 1, 200_000), "topic_cap must be an integer, at least 1 per year")
+    need(is_int(cfg["small_paper"], 2, 1000), "small_paper must be an integer from 2 to 1000")
+    need(is_int(cfg["works_count_anomaly"], 1, 10**6), "works_count_anomaly must be a positive integer")
+    need(is_int(cfg["max_api_calls"], 1, 100_000), "max_api_calls must be an integer from 1 to 100000")
+    who = cfg["decided_by"]
+    need(isinstance(who, dict) and set(who) == set(DECISIONS), f"decided_by needs exactly {list(DECISIONS)}")
+    need(all(isinstance(v, str) and re.fullmatch(r"[A-Za-z][A-Za-z .'-]*, [A-Z][a-z]{2} \d{1,2}( \d{4})?", v)
+             for v in who.values()), "each decided_by value is 'Name, Mon D' (for example 'Aaryan, Oct 16')")
+
+
+def load_config(slug):
+    """Read and check cases/<slug>/case.json. Raises ValueError (bad slug or config) or OSError (no file)."""
+    if not isinstance(slug, str) or not SLUG_RE.fullmatch(slug):
+        raise ValueError(f"bad case slug {slug!r}: lower case letters, digits and -, 2 to 40 characters")
+    path = CASES / slug / "case.json"
+    if path.stat().st_size >= MAX_CONFIG_BYTES:
+        raise ValueError(f"case {slug}: case.json must be under {MAX_CONFIG_BYTES} bytes")
+    try:
+        cfg = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        raise ValueError(f"case {slug}: case.json is not valid JSON ({e.msg})") from None
+    check_config(cfg, slug)
+    return cfg
+
+
+def config_hash(cfg):
+    """Short hash of the config content (key order and spacing do not matter); stored in Meta and status.json."""
+    return hashlib.sha256(json.dumps(cfg, sort_keys=True).encode()).hexdigest()[:16]
+
+
+def use_case(slug):
+    """Set the module constants below from one case. Called once here for the default case, and by
+    main() for --case. The names are the checkpoint-2 ones (tests import them); COKE_* now mean
+    "the company family of the current case"."""
+    global CONFIG, SLUG, GRAPH, RAW, FUNDER_KIND, COMPANY_FUNDER, FOUNDATION_FUNDER, TOPICS, TOPIC_YEARS
+    global TOPIC_CAP, PER_YEAR, COKE_PARENT, COKE_FAMILY, COKE_CHILD_REL, SMALL_PAPER, RECENT_YEAR
+    global WORKS_COUNT_ANOMALY, MAX_API_CALLS
+    CONFIG = load_config(slug)
+    SLUG, GRAPH = slug, f"research:{slug}"
+    RAW = CASES / slug / "raw"
+    if slug == DEFAULT_CASE and not RAW.exists():
+        RAW = ROOT / "data" / "raw"  # the checkpoint-2 cache, so obesity-coke rebuilds with zero API calls
+    FUNDER_KIND = {f["id"]: f["kind"] for f in CONFIG["funders"]}
+    # Kept for tests and old scripts: the first company and the first foundation funder (None if absent).
+    COMPANY_FUNDER = next((f for f, k in FUNDER_KIND.items() if k == "company"), None)
+    FOUNDATION_FUNDER = next((f for f, k in FUNDER_KIND.items() if k == "foundation"), None)
+    TOPICS = {t["id"]: t["name"] for t in CONFIG["topics"]}
+    TOPIC_YEARS = range(CONFIG["years"][0], CONFIG["years"][1] + 1)
+    # ponytail: topic works capped at topic_cap (30,000 of ~260k for obesity-coke): the cap // years most
+    # cited per year, so recent years are not crowded out. Raise topic_cap (1 API call per 100 works).
+    TOPIC_CAP = CONFIG["topic_cap"]
+    PER_YEAR = TOPIC_CAP // len(TOPIC_YEARS)
+    # The company family. OpenAlex lineage is partial, so the list is hand-checked and approved per case.
+    COKE_FAMILY = {i["id"]: i["name"] for i in CONFIG["institutions"]}
+    COKE_PARENT = next((i["id"] for i in CONFIG["institutions"] if i["rel"] == "parent"), None)
+    # PARENT_OF.rel: "subsidiary" (owned) or "bottler" (franchise bottler, the company a minority owner).
+    COKE_CHILD_REL = {i["id"]: i["rel"] for i in CONFIG["institutions"] if i["rel"] != "parent"}
+    SMALL_PAPER = CONFIG["small_paper"]   # Tier rules: papers with more authors are "large"
+    RECENT_YEAR = CONFIG["recent_year"]   # "recent" = this year onwards (Meta.recent_year)
+    # ponytail: works_count above this is treated as a likely merged profile; a guess, not a study.
+    WORKS_COUNT_ANOMALY = CONFIG["works_count_anomaly"]
+    MAX_API_CALLS = CONFIG["max_api_calls"]  # get() stops the run past this many calls
+
+
+use_case(DEFAULT_CASE)
+
 LIST_TRUNCATION = 100  # OpenAlex list endpoints return at most 100 authorships per work
-# ponytail: works_count above this is treated as a likely merged profile; a guess, not a study.
-WORKS_COUNT_ANOMALY = 2000
 # Records that are not research papers. One shared rule: used here (not counted as a second paper in
 # COAUTH) and by research.py (not counted as Tier A evidence). A correction repeats the authors of
 # the paper it corrects, so it would otherwise look like a second joint paper.
@@ -84,6 +178,8 @@ def get(path, params):
     global api_calls
     for attempt in range(TRIES):
         with calls_lock:
+            if api_calls >= MAX_API_CALLS:
+                raise SystemExit(f"max_api_calls ({MAX_API_CALLS}) of case {SLUG} reached; stopping")
             api_calls += 1
         try:
             r = httpx.get(API + path, params={**params, "api_key": KEY}, timeout=TIMEOUT)
@@ -257,20 +353,31 @@ def dedupe(works, scope):
     return removed
 
 
-def load_works(refresh):
-    funded = fetch_pages("funded", {"filter": f"funders.id:{COMPANY_FUNDER}|{FOUNDATION_FUNDER}",
-                                    "select": WORK_FIELDS}, 10**9, refresh)
-    family = fetch_pages("family", {"filter": "authorships.institutions.lineage:" + "|".join(COKE_FAMILY),
-                                    "select": WORK_FIELDS}, 10**9, refresh)
-    topic_ids = "|".join(TOPICS)
-    topic = []
+def work_queries():
+    """(cache name, /works params, limit) for every list download of the current case, in fetch order.
+    The params are also the cache key, so they must not change for a case whose cache exists."""
+    queries = []
+    if FUNDER_KIND:
+        queries.append(("funded", {"filter": "funders.id:" + "|".join(FUNDER_KIND), "select": WORK_FIELDS}, 10**9))
+    if COKE_FAMILY:
+        queries.append(("family", {"filter": "authorships.institutions.lineage:" + "|".join(COKE_FAMILY),
+                                   "select": WORK_FIELDS}, 10**9))
     for year in TOPIC_YEARS:
-        topic += fetch_pages(f"topic_{year}", {"filter": f"primary_topic.id:{topic_ids},publication_year:{year}",
-                                               "select": WORK_FIELDS, "sort": "cited_by_count:desc"},
-                             PER_YEAR, refresh)
-    groups = fetch_one("topic_years", "works", {
-        "filter": f"primary_topic.id:{topic_ids},publication_year:{TOPIC_YEARS[0]}-{TOPIC_YEARS[-1]}",
-        "group_by": "publication_year"}, refresh)
+        queries.append((f"topic_{year}", {"filter": f"primary_topic.id:{'|'.join(TOPICS)},publication_year:{year}",
+                                          "select": WORK_FIELDS, "sort": "cited_by_count:desc"}, PER_YEAR))
+    return queries
+
+
+def topic_years_params():
+    return {"filter": f"primary_topic.id:{'|'.join(TOPICS)},publication_year:{TOPIC_YEARS[0]}-{TOPIC_YEARS[-1]}",
+            "group_by": "publication_year"}
+
+
+def load_works(refresh):
+    got = {name: fetch_pages(name, params, limit, refresh) for name, params, limit in work_queries()}
+    funded, family = got.get("funded", []), got.get("family", [])
+    topic = [w for name, recs in got.items() if name.startswith("topic_") for w in recs]
+    groups = fetch_one("topic_years", "works", topic_years_params(), refresh)
     year_totals = {int(g["key"]): g["count"] for g in groups["group_by"]}
 
     works, scope = {}, {}
@@ -298,7 +405,9 @@ def build_rows(works, truncated, works_counts, scope=None):
         if wid in truncated:  # the list stopped at 100 slots, so there are at least 100 authors
             n = max(n, LIST_TRUNCATION)
         row = {"oa_id": wid, "doi": doi, "year": year, "n_authors": n, "title": w.get("title"),
-               "scope": (scope or {}).get(wid)}
+               "scope": (scope or {}).get(wid),
+               # never Tier A evidence: the one junk rule, precomputed here so queries need no toLower(title)
+               "junk": is_junk_work(w) or is_non_paper(w)}
         if wid in truncated:
             row["authors_truncated"] = True  # n_authors is a lower bound (list API cap)
         if is_non_paper(w):
@@ -426,7 +535,7 @@ QUERIES = {
     "persons": "UNWIND $rows AS r CREATE (:Person {oa_id:r.oa_id, name:r.name, name_norm:r.name_norm, orcid:r.orcid, "
                "works_count:r.works_count, profile_flag:r.profile_flag})",
     "works": "UNWIND $rows AS r CREATE (w:Work {oa_id:r.oa_id, doi:r.doi, year:r.year, "
-             "n_authors:r.n_authors, title:r.title, scope:r.scope}) SET w.authors_truncated = r.authors_truncated, "
+             "n_authors:r.n_authors, title:r.title, scope:r.scope, junk:r.junk}) SET w.authors_truncated = r.authors_truncated, "
              "w.non_paper = r.non_paper, w.title_unknown = r.title_unknown",
     "orgs": "UNWIND $rows AS r CREATE (:Org {oa_id:r.oa_id, name:r.name, type:r.type, target:r.target})",
     "funders": "UNWIND $rows AS r CREATE (:Funder {oa_id:r.oa_id, name:r.name, target:r.target, kind:r.kind})",
@@ -461,40 +570,171 @@ INDEXES = [
 ]
 
 
+def staging_name(graph):
+    return graph.replace("research:", "staging:", 1)
+
+
 def write_graph(rows, meta, rebuild):
+    """Build the graph aside as staging:<slug>, check it, then swap it in with Redis RENAME.
+    If anything fails, staging is dropped and research:<slug> stays exactly as it was."""
     db = FalkorDB(port=int(os.environ.get("FALKORDB_PORT", 6379)))
-    if GRAPH in db.list_graphs():
-        if not rebuild:
-            raise SystemExit(f"{GRAPH} already exists; pass --rebuild to drop and rebuild it")
-        db.select_graph(GRAPH).delete()
-    g = db.select_graph(GRAPH)
-    for q in INDEXES:  # before the edge MATCHes, so they use the oa_id indexes
-        g.query(q)
-    for name, q in QUERIES.items():  # dict order: nodes first, then edges
-        data = rows[name]
-        print(f"writing {name}: {len(data)} rows", flush=True)
-        for i in range(0, len(data), BATCH):
-            g.query(q, {"rows": data[i:i + BATCH]})
-    counts = {}
-    for label in ("Person", "Work", "Org", "Funder", "Topic"):
-        counts[label] = g.query(f"MATCH (n:{label}) RETURN count(n)").result_set[0][0]
-    for rel in ("AUTHORED", "AFFILIATED", "FUNDED_BY", "PARENT_OF", "ABOUT", "COAUTH", "COAUTH_B"):
-        counts[rel] = g.query(f"MATCH ()-[r:{rel}]->() RETURN count(r)").result_set[0][0]
-    meta = {**meta, "counts": json.dumps(counts)}
-    g.query("CREATE (m:Meta) SET m = $meta", {"meta": meta})
-    return counts
+    staging = staging_name(GRAPH)
+    if GRAPH in db.list_graphs() and not rebuild:
+        raise SystemExit(f"{GRAPH} already exists; pass --rebuild to build a new copy and swap it in")
+    if staging in db.list_graphs():
+        db.select_graph(staging).delete()  # left over from a failed build
+    g = db.select_graph(staging)
+    try:
+        for q in INDEXES:  # before the edge MATCHes, so they use the oa_id indexes
+            g.query(q)
+        for name, q in QUERIES.items():  # dict order: nodes first, then edges
+            data = rows[name]
+            print(f"writing {name}: {len(data)} rows", flush=True)
+            for i in range(0, len(data), BATCH):
+                g.query(q, {"rows": data[i:i + BATCH]})
+        counts = {}
+        for label in ("Person", "Work", "Org", "Funder", "Topic"):
+            counts[label] = g.query(f"MATCH (n:{label}) RETURN count(n)").result_set[0][0]
+        for rel in ("AUTHORED", "AFFILIATED", "FUNDED_BY", "PARENT_OF", "ABOUT", "COAUTH", "COAUTH_B"):
+            counts[rel] = g.query(f"MATCH ()-[r:{rel}]->() RETURN count(r)").result_set[0][0]
+        meta = {**meta, "counts": json.dumps(counts), "build_status": "complete", "work_junk_flag": True}
+        g.query("CREATE (m:Meta) SET m = $meta", {"meta": meta})
+        self_check(g, counts)
+        # RENAME replaces research:<slug> in one step (pinned by a test; FalkorDB does not document it).
+        db.connection.rename(staging, GRAPH)
+    except BaseException:
+        if staging in db.list_graphs():
+            db.select_graph(staging).delete()
+        raise
+    return counts, graph_size_mb(db, GRAPH)
+
+
+def self_check(g, counts):
+    """The staging graph must have people, works and authorship, and one complete Meta node."""
+    empty = [k for k in ("Person", "Work", "Topic", "AUTHORED") if not counts.get(k)]
+    if empty:
+        raise RuntimeError(f"self-check failed: no {', '.join(empty)} in the new graph")
+    rows = g.ro_query("MATCH (m:Meta) RETURN m.build_status, m.data_version, m.recent_year").result_set
+    if len(rows) != 1 or rows[0][0] != "complete" or not rows[0][1] or rows[0][2] is None:
+        raise RuntimeError(f"self-check failed: Meta is {rows}")
+
+
+def graph_size_mb(db, graph):
+    """total_graph_sz_mb from GRAPH.MEMORY USAGE, or None if this FalkorDB has no such command."""
+    try:
+        reply = db.connection.execute_command("GRAPH.MEMORY", "USAGE", graph)
+        keys = [k.decode() if isinstance(k, bytes) else k for k in reply]
+        return reply[keys.index("total_graph_sz_mb") + 1]
+    except Exception:
+        return None
+
+
+def write_status(status, **fields):
+    """cases/<slug>/status.json: building / ready / failed. Fields of the last good build are kept,
+    because a failed build leaves that graph in place."""
+    path = CASES / SLUG / "status.json"
+    old = json.loads(path.read_text()) if path.exists() else {}
+    new = {**old, "status": status, "updated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+           **fields}
+    if status != "failed":
+        new.pop("error", None)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(new, indent=2) + "\n")
+    tmp.replace(path)
+
+
+# Ratios measured on obesity-coke (Oct 16 2026, FalkorDB module v4.22.1): 85,511 people and 780 MB
+# (GRAPH.MEMORY total_graph_sz_mb) for 31,291 works. The 6.0.2 module reported 1,453 MB for the same graph.
+# ponytail: a linear guess; COAUTH grows faster than linearly with big papers.
+PERSONS_PER_WORK, MB_PER_WORK = 85511 / 31291, 780 / 31291
+BUILD_LOCK_TTL = 4 * 3600  # seconds; a crashed build's lock expires by itself
+USD_PER_LIST_CALL = 0.0001  # OpenAlex: list and filter calls cost $0.10 per 1,000
+
+
+def cached(name, key):
+    """True when data/raw/<name>.jsonl exists for exactly these params (reads the header line only)."""
+    path = RAW / f"{name}.jsonl"
+    if not path.exists():
+        return False
+    with path.open() as f:
+        return json.loads(f.readline() or "{}").get("params") == key
+
+
+def dry_run():
+    """Counts only: per_page=1 probes read meta.count, plus one group_by for the topic years.
+    Writes nothing (no graph, no cache, no status). Prints the expected calls, works, cost and RAM."""
+    def count(params):
+        return get("works", {"filter": params["filter"], "per_page": 1, "select": "id"})["meta"]["count"]
+
+    per_year = {int(g["key"]): g["count"] for g in get("works", topic_years_params())["group_by"]}
+    rows, works, new_works, calls = [], 0, 0, 0
+    for name, params, limit in work_queries():
+        year = int(name[6:]) if name.startswith("topic_") else None
+        n = min(per_year.get(year, 0) if year else count(params), limit)
+        hit = cached(name, {**params, "limit": limit})
+        pages = -(-n // 100) if n >= limit else n // 100 + 1  # pages of 100; an uncapped run ends on an empty page
+        need = 0 if hit else pages
+        rows.append((name, n, "cached" if hit else f"{need} calls"))
+        works, calls = works + n, calls + need
+        new_works += 0 if hit else n
+    calls += 0 if cached("topic_years", {"path": "works", **topic_years_params()}) else 1
+    author_calls = round(new_works * PERSONS_PER_WORK / 100)  # works_count lookups, 100 ids per call
+    calls += author_calls
+    for name, n, how in rows:
+        print(f"  {name:12} {n:>7} works  {how}")
+    print(f"case {SLUG}: about {works} works before duplicates are merged "
+          f"(funded and family works may also be topic works)")
+    print(f"expected API list calls: about {calls} (including ~{author_calls} author lookups; single-work "
+          f"re-fetches of works with 100+ authors are extra and free); max_api_calls is {MAX_API_CALLS}")
+    print(f"expected cost: about ${calls * USD_PER_LIST_CALL:.3f}; projected graph RAM: about "
+          f"{works * MB_PER_WORK:.0f} MB (GRAPH.MEMORY; a rebuild needs this much again while the old graph lives)")
+    print(f"this dry run used {api_calls} API calls; it wrote nothing")
 
 
 def main():
     global KEY
     ap = argparse.ArgumentParser()
-    ap.add_argument("--refresh", action="store_true", help="ignore data/raw/ and call the API")
-    ap.add_argument("--rebuild", action="store_true", help="drop the graph if it exists")
+    ap.add_argument("--case", default=DEFAULT_CASE, help="case slug: reads cases/<slug>/case.json")
+    ap.add_argument("--refresh", action="store_true", help="ignore the raw cache and call the API")
+    ap.add_argument("--rebuild", action="store_true", help="replace the graph if it exists (built aside, then swapped)")
+    ap.add_argument("--dry-run", action="store_true", help="print counts, calls, cost and RAM; write nothing")
     args = ap.parse_args()
+    try:
+        use_case(args.case)
+    except (ValueError, OSError) as e:
+        raise SystemExit(f"cannot load case {args.case!r}: {e}")
     KEY = api_key()
-    RAW.mkdir(parents=True, exist_ok=True)
-    start = time.time()
+    if args.dry_run:
+        return dry_run()
+    db = FalkorDB(port=int(os.environ.get("FALKORDB_PORT", 6379)))
+    if GRAPH in db.list_graphs() and not args.rebuild:
+        raise SystemExit(f"{GRAPH} already exists; pass --rebuild to build a new copy and swap it in")
+    # One build per case at a time: two builds would share staging:<slug> and status.json.
+    lock, token = f"build-lock:{SLUG}", f"{os.getpid()}@{time.time():.0f}"
+    if not db.connection.set(lock, token, nx=True, ex=BUILD_LOCK_TTL):
+        raise SystemExit(f"another build of case {SLUG} is running (Redis key {lock}); wait for it, or if it "
+                         f"crashed, delete the key or wait up to {BUILD_LOCK_TTL // 3600} h for it to expire")
+    try:
+        RAW.mkdir(parents=True, exist_ok=True)
+        start = time.time()
+        write_status("building")
+        try:
+            counts, size_mb, meta = build(args)
+        except BaseException as e:
+            write_status("failed", error=f"{type(e).__name__}: {str(e)[:200]}")
+            raise
+        write_status("ready", built_at=meta["built_at"], data_version=meta["data_version"],
+                     config_hash=meta["config_hash"], counts=counts, total_graph_sz_mb=size_mb, graph=GRAPH)
+    finally:
+        if db.connection.get(lock) in (token, token.encode()):  # only release our own lock
+            db.connection.delete(lock)
+    print(f"graph size: {size_mb} MB (GRAPH.MEMORY USAGE)")
+    print(f"API calls this run: {api_calls}; wall clock: {time.time() - start:.0f}s")
+    print(f"*** {GRAPH} was swapped in. A running TieTrace MCP server drops its cached facts for this case on "
+          f"its next call (it watches status.json); restart the server if in doubt. ***")
 
+
+def build(args):
     works, scope, truncated, year_totals, removed = load_works(args.refresh)
     person_ids = sorted({p for w in works.values() for p in author_slots(w)[0]})
     works_counts = fetch_by_id("authors", person_ids, fetch_works_counts,
@@ -507,11 +747,12 @@ def main():
         if short((w.get("primary_topic") or {}).get("id")) in TOPICS:
             loaded[w.get("publication_year")] += 1
     meta = {
-        "graph": GRAPH,
+        "graph": GRAPH, "slug": SLUG, "config_hash": config_hash(CONFIG),
         "built_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "data_version": "openalex@" + min(fetch_dates)[:10],  # oldest cache used
-        "load_scope": (f"all works funded by {COMPANY_FUNDER} or {FOUNDATION_FUNDER} (any topic, any year); "
-                       f"all works with an author affiliated to {'|'.join(COKE_FAMILY)} (lineage, any topic); "
+        "load_scope": (f"all works funded by {' or '.join(FUNDER_KIND) or 'no funder'} (any topic, any year); "
+                       f"all works with an author affiliated to {'|'.join(COKE_FAMILY) or 'no institution'} "
+                       f"(lineage, any topic); "
                        f"plus the {PER_YEAR} most-cited works per year {years[0]}-{years[-1]} with primary "
                        f"topic in {list(TOPICS)}; co-authors' other works not loaded; topic works list at "
                        f"most {LIST_TRUNCATION} authors each; duplicate records merged by DOI and by "
@@ -525,13 +766,13 @@ def main():
         "truncated_works": len(truncated), "duplicates_removed": removed,
         **rows["stats"],
     }
-    counts = write_graph(rows, meta, args.rebuild)
+    counts, size_mb = write_graph(rows, meta, args.rebuild)
     n_scope = {s: list(scope[w] for w in works).count(s) for s in ("funded", "family", "topic")}
     print(f"works loaded: {len(works)} {n_scope}; duplicates removed: {removed}")
     print(f"truncated author lists (topic works, n_authors is a lower bound): {len(truncated)}")
     print("per year loaded/total:", {y: f"{loaded[y]}/{year_totals.get(y, 0)}" for y in years})
     print("counts:", json.dumps(counts))
-    print(f"API calls this run: {api_calls}; wall clock: {time.time() - start:.0f}s")
+    return counts, size_mb, meta
 
 
 if __name__ == "__main__":

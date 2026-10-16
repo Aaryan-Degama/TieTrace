@@ -1,13 +1,13 @@
 """Shared helpers for the checkpoint-4 evaluations (E1, E2, E3, E7).
 Reads the graph only through research.ro_query (GRAPH.RO_QUERY), in pages well under the silent
-10,000-row cap. Run from the project root, e.g.:  FALKORDB_PORT=6380 uv run python eval/e1.py
+10,000-row cap. Run from the project root, e.g.:  FALKORDB_PORT=6379 uv run python eval/e1.py
 """
 import os
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-os.environ.setdefault("FALKORDB_PORT", "6380")
+os.environ.setdefault("FALKORDB_PORT", "6379")  # same default as loader.py and research.py
 
 import research  # noqa: E402
 from research import GRAPH, JUNK_PARAMS, NOT_JUNK  # noqa: E402

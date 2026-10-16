@@ -1,4 +1,4 @@
-"""Checkpoint 3: the research queries Q1-Q4 and the name lookup, on the graph `research:obesity-coke`.
+"""Checkpoints 3 and 5d: the research queries Q1-Q4 and the name lookup, on one case graph `research:<slug>`.
 
 Every public function returns the envelope from docs/mcp-spec.md section 4:
     {"ok", "data", "cypher": [{"graph","query","params"}], "scope", "verdicts_applied", "warnings"}
@@ -7,7 +7,13 @@ or {"ok": False, "error": {"code", "message"}, "cypher": [...]}.
 Rules kept here: reads only through GRAPH.RO_QUERY (timeout + row cap); every value goes in as a
 query parameter, never into the query text; COAUTH is always matched with `->`.
 Port: env FALKORDB_PORT (default 6379).
+
+Which graph: `on_graph(graph)` sets it for the calls inside the `with` block (a contextvar);
+the default is GRAPH (research:obesity-coke). Cached facts are kept per graph.
 """
+import contextlib
+import contextvars
+import json
 import os
 import re
 
@@ -16,22 +22,47 @@ from redis.exceptions import RedisError, ResponseError
 
 import loader  # the one shared junk rule and name folding live in the loader
 
-GRAPH = "research:obesity-coke"
+GRAPH = "research:obesity-coke"     # the default case graph
+GRAPH_RE = re.compile(r"research:[a-z0-9][a-z0-9-]{1,39}")  # research:<slug>, same slug rule as loader.SLUG_RE
 QUERY_NAME_Q3 = "q3_bfs_v1"
 TIER_WEIGHT = {"A1": 100, "A2": 50}  # fixed score formula, redesign section 4
 BIG = 10000                          # row_cap for the "who is Tier A" queries
 SERVER_CAP = 10000                   # FalkorDB silently stops a result at 10,000 rows, so reaching it is an error
 STOPWORDS = {"and", "the", "for", "with", "from", "that", "this", "are", "of", "in", "on", "to"}
 
-# Works that are not papers (F1000 peer-review reports, corrections, retraction notices) are never
-# evidence. The rule lives in loader.py (is_junk_work) and is passed in as parameters here.
-JUNK_PARAMS = {"junk_doi": loader.JUNK_DOI_PREFIX, "junk_titles": list(loader.JUNK_TITLE_PREFIXES)}
-# non_paper = "Index" / "Front Matter" records (flagged by the loader). Untitled real papers are kept.
-NOT_JUNK = ("NOT (coalesce(w.non_paper, false) OR coalesce(w.doi,'') STARTS WITH $junk_doi "
-            "OR any(pre IN $junk_titles WHERE toLower(coalesce(w.title,'')) STARTS WITH pre))")
+# Works that are not papers (F1000 peer-review reports, corrections, retraction notices, "Index" /
+# "Front Matter" records) are never evidence. The rule lives in loader.py (is_junk_work, is_non_paper)
+# and is stored at load time as Work.junk, so no query depends on toLower(title). Untitled real papers are kept.
+JUNK_PARAMS = {}  # kept so callers can still pass **JUNK_PARAMS; the rule needs no parameters any more
+NOT_JUNK = "NOT w.junk"
 
 _db = None
-_cache = {}  # per-process: Meta, coverage, the Tier-A map. Restart the server after a graph rebuild.
+_cache = {}  # per-process, keyed (graph, name): Meta, the Tier-A map, staff. Restart the server after a rebuild.
+_graph = contextvars.ContextVar("graph", default=GRAPH)
+
+
+@contextlib.contextmanager
+def on_graph(graph):
+    """Run the calls inside the `with` block on `graph` (a research:<slug> name)."""
+    token = _graph.set(graph)
+    try:
+        yield
+    finally:
+        _graph.reset(token)
+
+
+def default_case():
+    """The case used when a tool gets no `case`: env TIETRACE_CASE, else obesity-coke."""
+    return os.environ.get("TIETRACE_CASE") or loader.DEFAULT_CASE
+
+
+def current_graph():
+    return _graph.get()
+
+
+def known_cases():
+    """Case slugs that have a cases/<slug>/case.json (the registry; the loader writes status.json)."""
+    return sorted(p.parent.name for p in loader.CASES.glob("*/case.json") if loader.SLUG_RE.fullmatch(p.parent.name))
 
 
 class ToolError(Exception):
@@ -57,9 +88,8 @@ def _show(params):
 def ro_query(graph, query, params=None, timeout_ms=3000, row_cap=500, log=None):
     """Run a read with GRAPH.RO_QUERY. Returns the rows; appends what was run to `log`.
     Reads with no LIMIT of their own get LIMIT row_cap+1, so a runaway result is never fetched in full."""
-    global _db
-    if _db is None:
-        _db = FalkorDB(port=int(os.environ.get("FALKORDB_PORT", 6379)))
+    if not isinstance(graph, str) or not GRAPH_RE.fullmatch(graph):
+        raise ToolError("INVALID_ARG", "graph must be a research:<slug> name")
     params = dict(params or {})
     if "RETURN" in query and not re.search(r"\bLIMIT\b", query, re.IGNORECASE):
         query += " LIMIT $row_cap_plus_one"
@@ -67,9 +97,12 @@ def ro_query(graph, query, params=None, timeout_ms=3000, row_cap=500, log=None):
     if log is not None:
         log.append({"graph": graph, "query": query, "params": _show(params)})
     try:
-        rows = _db.select_graph(graph).ro_query(query, params, timeout_ms).result_set
+        rows = _conn().select_graph(graph).ro_query(query, params, timeout_ms).result_set
     except ResponseError as e:
         msg = str(e)
+        if "empty key" in msg.lower():  # RO_QUERY on a graph that does not exist (it never creates one)
+            raise ToolError("NO_GRAPH", f"no research graph for case '{graph.split(':', 1)[1]}'; "
+                                        f"known cases: {', '.join(known_cases()) or 'none'}")
         if "timed out" in msg.lower():
             raise ToolError("TIMEOUT", f"query took longer than {timeout_ms} ms")
         if "read-only" in msg.lower():
@@ -78,6 +111,13 @@ def ro_query(graph, query, params=None, timeout_ms=3000, row_cap=500, log=None):
     if len(rows) > row_cap or len(rows) >= SERVER_CAP:  # the server cuts silently at SERVER_CAP rows
         raise ToolError("ROW_LIMIT", f"query returned {len(rows)} rows (cap {min(row_cap, SERVER_CAP - 1)})")
     return rows
+
+
+def _conn():
+    global _db
+    if _db is None:
+        _db = FalkorDB(port=int(os.environ.get("FALKORDB_PORT", 6379)))
+    return _db
 
 
 def _int(value, name, low, high):
@@ -110,12 +150,15 @@ def _run(impl, *args):
 
 
 def _ok(data, log, scope=None, warnings=None):
-    return {"ok": True, "data": data, "cypher": log, "scope": scope or {},
+    """Every answer names its graph and the OpenAlex snapshot date (Meta is cached, so this adds no query)."""
+    scope = {"graph": current_graph(), "data_version": _meta(log).get("data_version"), **(scope or {})}
+    return {"ok": True, "data": data, "cypher": log, "scope": scope,
             "verdicts_applied": [], "warnings": warnings or []}
 
 
 def _cached(key, log, fn):
-    """Run fn(local_log) once per process. The Cypher is added to `log` on every call."""
+    """Run fn(local_log) once per process and graph. The Cypher is added to `log` on every call."""
+    key = (current_graph(), key)  # a second case graph never gets the first one's Tier-A map
     if key not in _cache:
         local = []
         _cache[key] = (fn(local), local)
@@ -125,15 +168,21 @@ def _cached(key, log, fn):
     return value
 
 
-def clear_cache():
-    _cache.clear()
+def clear_cache(graph=None):
+    """Forget cached facts for one graph, or for all graphs."""
+    for key in list(_cache):
+        if graph is None or key[0] == graph:
+            del _cache[key]
 
 
 # ---------- shared facts (cached): Meta, coverage, Tier-A people ----------
 
 def _meta(log):
     def load(lg):
-        m = ro_query(GRAPH, "MATCH (m:Meta) RETURN properties(m)", log=lg)[0][0]
+        m = ro_query(current_graph(), "MATCH (m:Meta) RETURN properties(m)", log=lg)[0][0]
+        if not m.get("work_junk_flag"):  # without Work.junk, NOT_JUNK would drop every work
+            raise ToolError("DB_ERROR", f"{current_graph()} was built by an older loader (no Work.junk); "
+                                        "rebuild it with loader.py --rebuild")
         return {**m, "last_year": max(m["years"])}
     return _cached("meta", log, load)
 
@@ -165,13 +214,13 @@ def _tier_a(log):
     def load(lg):
         small = _meta(lg)["small_paper"]
         # Authors of works funded by the company (A1 if small) or foundation (A2). max() = best evidence.
-        funded = ro_query(GRAPH,
+        funded = ro_query(current_graph(),
             "MATCH (p:Person)-[:AUTHORED]->(w:Work)-[:FUNDED_BY]->(f:Funder {target:true}) "
             f"WHERE {NOT_JUNK} "
             "RETURN p.oa_id, max(CASE WHEN f.kind = 'company' AND w.n_authors <= $small THEN 1 ELSE 0 END)",
             {**JUNK_PARAMS, "small": small}, row_cap=BIG, log=lg)
         # People with an affiliation to the company family on a work (A1 unless bottler or large paper).
-        affil = ro_query(GRAPH,
+        affil = ro_query(current_graph(),
             "MATCH (p:Person)-[a:AFFILIATED]->(o:Org {target:true}) WITH p, a, o "
             f"MATCH (w:Work) WHERE w.oa_id = a.work AND {NOT_JUNK} "
             "OPTIONAL MATCH (:Org)-[po:PARENT_OF]->(o) "
@@ -187,7 +236,7 @@ def _tier_a(log):
 def _staff(log):
     """Ids of people with an affiliation to the company family (cached)."""
     def load(lg):
-        rows = ro_query(GRAPH, "MATCH (p:Person)-[:AFFILIATED]->(:Org {target:true}) RETURN DISTINCT p.oa_id",
+        rows = ro_query(current_graph(), "MATCH (p:Person)-[:AFFILIATED]->(:Org {target:true}) RETURN DISTINCT p.oa_id",
                         row_cap=BIG, log=lg)
         return [r[0] for r in rows]
     return _cached("staff", log, load)
@@ -195,16 +244,16 @@ def _staff(log):
 
 def _person(log, expert_id):
     _str(expert_id, "expert_id")
-    rows = ro_query(GRAPH, "MATCH (p:Person) WHERE p.oa_id = $id "
+    rows = ro_query(current_graph(), "MATCH (p:Person) WHERE p.oa_id = $id "
                            "RETURN p.name, p.orcid, p.works_count, p.profile_flag", {"id": expert_id}, log=log)
     if not rows:
-        raise ToolError("NOT_FOUND", f"no person {expert_id} in {GRAPH}")
+        raise ToolError("NOT_FOUND", f"no person {expert_id} in {current_graph()}")
     return dict(zip(("name", "orcid", "works_count", "profile_flag"), rows[0]))
 
 
 def _topic_ids(log, topic):
     """Topic id or text -> ([topic ids], display name, warnings)."""
-    topics = ro_query(GRAPH, "MATCH (t:Topic) RETURN t.oa_id, t.name", log=log)
+    topics = ro_query(current_graph(), "MATCH (t:Topic) RETURN t.oa_id, t.name", log=log)
     for tid, name in topics:
         if topic.strip().upper() == tid:
             return [tid], name, []
@@ -238,11 +287,11 @@ def _resolve_experts(log, names, topic):
     for name in names:
         words = loader.norm_name(name).split()  # accents folded, lower case, same as Person.name_norm
         # 1. The whole name.
-        rows = ro_query(GRAPH, EXACT_NAME_Q, {"norm": " ".join(words), "tids": tids}, log=log)
+        rows = ro_query(current_graph(), EXACT_NAME_Q, {"norm": " ".join(words), "tids": tids}, log=log)
         loose = False
         # 2. Otherwise the first and the last word, each as a whole word (middle names allowed).
         if not rows and len(words) > 1:
-            rows = ro_query(GRAPH, LOOSE_NAME_Q, {"first": words[0] + " ", "last": " " + words[-1], "tids": tids}, log=log)
+            rows = ro_query(current_graph(), LOOSE_NAME_Q, {"first": words[0] + " ", "last": " " + words[-1], "tids": tids}, log=log)
             loose = bool(rows)
         orgs = _last_orgs(log, [r[0] for r in rows])
         cands = [{"expert_id": r[0], "works_on_topic": r[2], "orcid": r[1], "last_known_org": orgs.get(r[0])}
@@ -281,7 +330,7 @@ def _last_orgs(log, ids):
     """Most recent affiliation (by paper year) for each person id."""
     if not ids:
         return {}
-    rows = ro_query(GRAPH, "MATCH (p:Person) WHERE p.oa_id IN $ids "
+    rows = ro_query(current_graph(), "MATCH (p:Person) WHERE p.oa_id IN $ids "
                            "MATCH (p)-[a:AFFILIATED]->(o:Org) "
                            "RETURN p.oa_id, o.name, max(a.year) AS y ORDER BY y DESC", {"ids": ids}, log=log)
     out = {}
@@ -324,7 +373,7 @@ def _find_experts(log, topic, n, exclude_target_staff):
         params = {"text": " ".join(words), "staff": staff, "n": n}
         topic_out = {"id": None, "name": topic}
         warnings = []
-    rows = ro_query(GRAPH, q, params, log=log)
+    rows = ro_query(current_graph(), q, params, log=log)
     experts = [{"expert_id": r[0], "label": f"Expert #{i}", "works_on_topic": r[1],
                 "works_count": r[2], "profile_flag": r[3]} for i, r in enumerate(rows, 1)]
     flagged = [e["label"] for e in experts if e["profile_flag"] not in ("ok", None)]
@@ -370,7 +419,7 @@ def _evidence(log, expert_id, small):
     """All Tier A evidence for one person, each piece classed A1 or A2 with a reason."""
     out = []
     for wid, doi, year, n, trunc, funder, kind, on_topic, untitled in ro_query(
-            GRAPH, FUNDED_EVIDENCE_Q, {"id": expert_id, **JUNK_PARAMS}, log=log):
+            current_graph(), FUNDED_EVIDENCE_Q, {"id": expert_id, **JUNK_PARAMS}, log=log):
         if kind == "foundation":
             tier, reason = "A2", "foundation grant"
         elif n > small:
@@ -381,7 +430,7 @@ def _evidence(log, expert_id, small):
                     "via": funder, "family_path": [funder], "tier": tier, "reason": reason,
                     "topic_label": "on-topic" if on_topic else "off-topic", "untitled": bool(untitled)})
     for wid, doi, year, n, trunc, org, parent, rel, on_topic, untitled in ro_query(
-            GRAPH, AFFIL_EVIDENCE_Q, {"id": expert_id, **JUNK_PARAMS}, log=log):
+            current_graph(), AFFIL_EVIDENCE_Q, {"id": expert_id, **JUNK_PARAMS}, log=log):
         if rel == "bottler":
             tier, reason = "A2", "bottler affiliation"
         elif n > small:
@@ -402,7 +451,7 @@ def _nearest_tier_a(log, expert_id, k, tier_a):
     reached; the count below is then 0. Returns (hops, how many Tier-A people at that distance,
     first one's id, first one's name), or (None, 0, None, None)."""
     for hops in range(1, k + 1):
-        count, first_id, first_name = ro_query(GRAPH,
+        count, first_id, first_name = ro_query(current_graph(),
             "MATCH (e:Person) WHERE e.oa_id = $id "
             "CALL algo.BFS(e, $hops, 'COAUTH_B') YIELD nodes "
             "UNWIND nodes AS n WITH n WHERE n.oa_id IN $tier_a "
@@ -430,7 +479,7 @@ def _tie_report(log, expert_id, label, public_case):
     meta, tier_a = _meta(log), _tier_a(log)
     label = _label(person["name"], label, public_case)
     evidence = _evidence(log, expert_id, meta["small_paper"])
-    ties = ro_query(GRAPH, COAUTH_TIES_Q, {"id": expert_id, "tier_a": list(tier_a)}, log=log)
+    ties = ro_query(current_graph(), COAUTH_TIES_Q, {"id": expert_id, "tier_a": list(tier_a)}, log=log)
 
     # Tier B links = at least 2 recent small shared papers with a Tier-A person; they carry the DOIs.
     coauth_ties = []
@@ -578,10 +627,10 @@ def _bridges(log, expert_id, depth, limit, label, public_case):
          f"ORDER BY strength DESC, a.oa_id LIMIT $limit")
     # Time budget: paths 2 s + count 1 s stays under the 3 s gate even for a bigger hub. If the count
     # does not finish in its 1 s, the paths are still returned and bridge_count is null with a warning.
-    rows = ro_query(GRAPH, q, {**params, "limit": limit}, timeout_ms=2000, log=log)
+    rows = ro_query(current_graph(), q, {**params, "limit": limit}, timeout_ms=2000, log=log)
     count, count_warning = None, []
     try:
-        count = ro_query(GRAPH, f"MATCH (e:Person) WHERE e.oa_id = $id MATCH {pattern} WHERE {where} RETURN count(*)",
+        count = ro_query(current_graph(), f"MATCH (e:Person) WHERE e.oa_id = $id MATCH {pattern} WHERE {where} RETURN count(*)",
                          params, timeout_ms=1000, log=log)[0][0]
     except ToolError as e:
         if e.code != "TIMEOUT":
@@ -606,3 +655,62 @@ def _bridges(log, expert_id, depth, limit, label, public_case):
     # max_flow is cut (checkpoints.md): kept null so the output matches the spec.
     return _ok({"label": label, "paths": paths, "bridge_count": count, "max_flow": None}, log, scope,
                _flag_warnings(person["profile_flag"]) + count_warning)
+
+
+# ---------- list_cases: which case graphs exist (checkpoint 5d) ----------
+
+def list_cases():
+    return _run(_list_cases)
+
+
+def _list_cases(log):
+    """Every case in cases/*/case.json plus every research:* graph, with its Meta and status.json."""
+    names = _conn().list_graphs()  # GRAPH.LIST; newsroom graphs are never shown
+    graphs = {g for g in names if GRAPH_RE.fullmatch(g)}
+    registered = set(known_cases())
+    slugs = sorted(registered | {g.split(":", 1)[1] for g in graphs})
+    staging = sorted(g.split(":", 1)[1] for g in names if g.startswith("staging:"))  # named by case, not by key
+    warnings = ([f"unfinished build(s) left a staging graph that still uses RAM, for case(s): {', '.join(staging)}; "
+                 "the next build of that case replaces it"] if staging else [])
+    cases = []
+    for slug in slugs:
+        graph = f"research:{slug}"
+        status_file = loader.CASES / slug / "status.json"
+        try:
+            status = json.loads(status_file.read_text())
+        except (OSError, ValueError):
+            status = None
+        status = status if isinstance(status, dict) else None
+        meta = None
+        if graph in graphs:
+            rows = ro_query(graph, "MATCH (m:Meta) RETURN m.built_at, m.data_version, m.config_hash, m.counts, "
+                                   "m.topic_ids, m.funder_ids, m.build_status", log=log)
+            if rows:
+                meta = dict(zip(("built_at", "data_version", "config_hash", "counts", "topic_ids", "funder_ids",
+                                 "build_status"), rows[0]))
+                meta["counts"] = json.loads(meta["counts"]) if meta["counts"] else None
+        cases.append({"case": slug, "graph": graph, "registered": slug in registered, "graph_exists": graph in graphs,
+                      "status": status.get("status") if status else None, "meta": meta,
+                      "total_graph_sz_mb": status.get("total_graph_sz_mb") if status else None})
+    return {"ok": True, "data": {"cases": cases, "default_case": default_case()},
+            "cypher": log, "scope": {"source": "GRAPH.LIST, each graph's Meta node, cases/*/status.json"},
+            "verdicts_applied": [], "warnings": warnings}
+
+
+# ---------- stale caches after a rebuild ----------
+
+_seen_build = {}  # graph -> (built_at, config_hash) from status.json when its cache was filled
+
+
+def drop_cache_if_rebuilt(slug):
+    """A rebuild swaps a new graph in while the server runs. status.json (a small file, no query) says when;
+    if its built_at or config_hash changed since we last looked, forget that graph's cached facts."""
+    graph = f"research:{slug}"
+    try:
+        status = json.loads((loader.CASES / slug / "status.json").read_text())
+        build = (status.get("built_at"), status.get("config_hash"))
+    except (OSError, ValueError, AttributeError):
+        build = None
+    if graph in _seen_build and _seen_build[graph] != build:
+        clear_cache(graph)
+    _seen_build[graph] = build
