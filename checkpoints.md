@@ -16,7 +16,7 @@ Deadline: **submit by Oct 18, 6 PM IST.** Specs: `tietrace-v2-redesign.md`, `doc
 | 6 | Memory graph: Track 2 tools | Oct 17 morning | ✅ |
 | 7 | Verdicts, notes, Writer | Oct 17 midday | ✅ |
 | 8 | Remaining evaluation + golden tests | Oct 17 afternoon | ✅ |
-| 9 | README, video, submit | Oct 18, by 6 PM | ⬜ |
+| 9 | README, video, submit | Oct 18, by 6 PM | 🟨 |
 
 **Team: Abdul and Aaryan.** Tag each checkbox with who did it: `- [x] item (Abdul)` or `(Aaryan)`; use `(Abdul + Aaryan)` for pairing. Unticked items carry `(→ Aaryan)` to claim them. Add the date when you tick, e.g. `(Abdul, Oct 16)`. Checkpoints 0-2 were built in Abdul's sessions, so they are attributed to Abdul; Aaryan can correct that.
 
@@ -162,11 +162,11 @@ Review: round 1 PASS with 2 must-fix (attribution; E9 overlap not proven) → fi
 **Gate (passed, Oct 17):** all must-ship items work (E8, E9, E10, E6, E4); E5 cut, no error rate claimed.
 
 ## 9. README, video, submit
-- [ ] README: problem, tiers, data model, queries, evaluation with losses, human gates, ethics, setup
-- [ ] Mermaid diagrams render on GitHub
-- [ ] AI-use disclosure and data/licence note (OpenAlex CC0; check FalkorDB's licence)
-- [ ] 90-second demo video, using real numbers only
-- [ ] Repo public
+- [x] README: problem, tiers, data model, queries, evaluation with losses, human gates, ethics, setup (Aaryan wrote it Oct 16; Abdul added E4/E6/E8/E9/E10, E5 cut, test status, Oct 17)
+- [x] Mermaid diagrams: architecture diagram added to README, 5 in `docs/mcp-spec.md` (Abdul, Oct 17); **check they render on GitHub after the push**
+- [ ] AI-use disclosure and data/licence note: done in README (OpenAlex CC0; FalkorDB is SSPLv1, unmodified image, Abdul Oct 17). **Open: choose a licence for our own code (both of you decide; LICENSE file missing)**
+- [ ] 90-second demo video, using real numbers only (human: record in real Claude Code; numbers in README/eval only)
+- [x] Repo public (Aaryan's `Aaryan-Degama/TieTrace` shows PUBLIC, checked Oct 17)
 - [ ] Submitted, with both tracks named
 
 **Gate:** submission confirmed on WeMakeDevs before 6 PM IST.

@@ -1,6 +1,6 @@
 # TieTrace
 
-*Last updated by Aaryan, Oct 16: checkpoint 7 (verdicts, sourcing notes, the Writer subagent; 13 tools); PMI funder share now read from the graph's Meta node. Earlier the same day: rewritten to match the code after checkpoint 6 and the hardening round (both tracks, 10 tools, setup, test and evaluation results, limits).*
+*Last updated by Abdul, Oct 17: checkpoint 8 results (E4, E6, E8, E9, E10), architecture diagram, licence note, test status. Earlier, Aaryan, Oct 16: checkpoint 7 (verdicts, sourcing notes, the Writer subagent; 13 tools); PMI funder share now read from the graph's Meta node. Earlier the same day: rewritten to match the code after checkpoint 6 and the hardening round (both tracks, 10 tools, setup, test and evaluation results, limits).*
 
 TieTrace helps a journalist check how connected an expert is to the company in a story. It looks the expert up in a research graph built from [OpenAlex](https://openalex.org) and stored in [FalkorDB](https://www.falkordb.com), and it answers with evidence, not opinions:
 
@@ -23,6 +23,17 @@ Built for FalkorDB Graph Hacks, Track 1 (act on connected data) and Track 2 (mem
 Each answer carries `tier_basis` ("direct evidence" or "network context only — not validated (E1/E2)"). The score (redesign section 4) is shown as context only: `check_case` lists Tier A1, then A2, then everyone else in the order given, and never ranks by score. Details: [tietrace-v2-redesign.md](tietrace-v2-redesign.md) and [docs/mcp-spec.md](docs/mcp-spec.md).
 
 ## How it works
+
+```mermaid
+flowchart LR
+  J[Journalist] --> C[Claude Code<br/>agent + MCP client]
+  C -->|13 tools, stdio| S[server.py<br/>no LLM calls]
+  S -->|GRAPH.RO_QUERY| R[(research:case<br/>OpenAlex graph)]
+  S -->|fixed, parameterised writes| M[(newsroom:id<br/>memory graph)]
+  S --> V[Verifier<br/>DOI + scope + banned words]
+  L[loader.py<br/>OpenAlex, human-approved IDs] -->|build + swap| R
+  H[Human] -->|permission prompt| C
+```
 
 - **Claude Code is the agent and the MCP client.** It reads the journalist's request and picks the tools.
 - **`server.py` is a Python MCP server (stdio).** It makes no LLM calls and needs no API key. Model-facing reads use `GRAPH.RO_QUERY` with a timeout and a row cap; writes are fixed, parameterised Cypher. Every tool returns one envelope: `ok`, `data`, the `cypher` it ran, `scope`, `verdicts_applied`, `warnings`.
@@ -101,10 +112,12 @@ You need Docker, Python 3.13 or newer, and [uv](https://docs.astral.sh/uv/).
 Plain-assert scripts, no pytest. They need FalkorDB with both research graphs loaded, use scratch `zz-test-*` newsrooms (never `alpha`) and delete them at the end:
 
 ```bash
-for s in test_loader test_research test_server test_eval test_cases test_discover test_memory test_obsidian test_notes; do
+for s in test_loader test_research test_server test_eval test_cases test_discover test_memory test_obsidian test_notes test_golden test_concurrency test_isolation; do
   uv run python tests/$s.py
 done
 ```
+
+New in checkpoint 8 (Abdul, Oct 17, FalkorDB v4.22.1 on port 6381): `test_golden` 15/15, `test_concurrency` 1/1, `test_isolation` 1/1, `test_eval` 15/15; `test_loader` 49/49, `test_server` 26/26, `test_cases` 27/27, `test_notes` 40/40.
 
 Last full run (Aaryan, Oct 16, after checkpoint 7, FalkorDB v4.22.1, Python 3.14): loader 49/49, research 54/54, server 26/26, eval 13/13, cases 27/27, discover 26/26, memory 32/32, obsidian 22/22, notes 39/39. `test_memory` and `test_research` also pass on Python 3.13.
 
@@ -119,6 +132,12 @@ Full method and numbers: [eval/results.md](eval/results.md). Pass rules were fix
 | E1 placebo lift (Tier B) | **FAIL.** Lift 0.96x (interval 0.84-1.09) against works-count-matched random groups: Tier B is not a sign of unusual closeness. |
 | E2 temporal hold-out | **FAIL.** The weighted score (AUC 0.716) does not beat publication volume (0.720) or a plain count of Tier A co-authors (0.749). The score does not predict later ties. |
 | E11 memory across sessions | Passed in real Claude Code: a fresh session's `open_case` showed the earlier session's check. |
+| E4 max flow vs path sum | Ranks differently (Spearman 0.86; 0.73 within 3 links; top-10 overlap 6 of 10), but flow ignores the 3-link limit, needs whole-number capacities, and neither ranking is validated. Not used for any finding. |
+| E6 mega-paper ablation | Without the 25-author cap A1 would grow from 949 to 1,069 people and Tier B from 1,309 to 1,889; 23.7% of A1+B people exist only through big papers. The cap is kept. |
+| E8 golden tests | 15 of 15 pass (the four public GEBN names, a profile merge, a verdict changing a score, the Verifier rejecting a claim without a DOI, a write refused by `RO_QUERY`). |
+| E9 concurrency | Two server processes checking and ruling at the same time (overlap verified): nothing lost; every current check equals a fresh rerun. |
+| E10 tenant isolation | All 13 tools tried with another newsroom's ids: nothing visible. |
+| E5 profile hand-check | **Cut.** A random sample of 50 is in `eval/e5_sample.md`, but nobody has hand-checked it, so we claim no error rate. |
 | 5f second case (Philip Morris × lung cancer) | End to end in Claude Code with correct scope wording; only 37.5% of that graph's topic works list any funder (7,482 of 19,964, read from the graph's `Meta` node), so "no tie found" is weaker there. |
 
 Because E1 and E2 failed, only Tier A is a finding. Tier B, Tier C and the score are shown as labelled network context.
@@ -130,7 +149,8 @@ Because E1 and E2 failed, only Tier A is a finding. Tier B, Tier C and the score
 - **Split author profiles.** OpenAlex sometimes splits one person into several records; a check on the "wrong" record can miss evidence (see E3 in `eval/results.md`). A human can merge two profiles with a `PROFILE_MERGE` verdict (evidence and co-author links are combined for either id; `bridges` still starts from one id).
 - **Gifts to universities** and other money that OpenAlex funder fields do not record are invisible.
 - **Tier C saturates in some fields** (52 of 73 top lung cancer authors in the 5f run, session-reported and not yet re-checked by a script), so it may say little there.
-- Concurrency (E9) and tenant isolation (E10) are not yet evaluated.
+- **Profile merge/split error rate is unknown** (E5 cut).
+- **Test status:** on a fresh Windows setup (Abdul, Oct 17) 6 older tests in `test_discover` and 6 in `test_obsidian` fail from Windows issues (UTF-8 file reads, SIGINT), `test_research` has one cold-start timing miss (3-hop bridges on the biggest hub, 4.2 s vs 3 s) and `test_memory` needs the Philip Morris graph loaded. Aaryan's run on Oct 16 was all green.
 
 ## Files
 
@@ -156,5 +176,5 @@ Abdul and Aaryan. Most code was written with Claude Code in a Builder/Reviewer l
 ## Data and licences
 
 - Research data: OpenAlex, released under **CC0**.
-- FalkorDB is used as a separate Docker image under its own licence.
+- FalkorDB is used as a separate, unmodified Docker image; FalkorDB is licensed under the Server Side Public License v1 (SSPLv1) (checked on its Docker Hub and GitHub pages, Oct 17). We do not redistribute it.
 - Licence for this code: **not chosen yet**.
