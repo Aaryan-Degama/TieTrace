@@ -131,6 +131,7 @@ Claimed (→ Aaryan, Oct 16).
 - [x] Gate E11 in real Claude Code (Aaryan, Oct 16): session 1 opened "Soda tax story" and checked Blair (A1 105.05) and Hill (A2 50.11); a fresh session's `open_case` on Hill showed the earlier check (tier A2, chk_…cb). Follow-up for checkpoint 7: session 2 wrongly explained A2 as "bottler affiliation" (it is Coca-Cola Foundation funding) because `prior_memory` carries only tier and score; add the evidence kind to the summary so the model never guesses
 
 **Gate:** a new Claude Code session recalls an earlier case (E11).
+- [x] Extra: `obsidian_export.py` shows the newsroom memory live in Obsidian's Graph view (Aaryan, Oct 16). Review: round 1 FAIL (5 must-fix) → round 2 FAIL (2 in the `.trash` move) → round 3 PASS; `test_obsidian` 22/22. Minor open: case-only Funder/Org name clashes, empty placeholder left in `.trash` if a move fails
 
 ## 7. Verdicts, notes, Writer
 - [ ] `record_verdict` (PAPER_EXCLUDED) with an impact report
