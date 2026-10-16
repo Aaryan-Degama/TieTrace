@@ -11,12 +11,13 @@ Deadline: **submit by Oct 18, 6 PM IST.** Specs: `tietrace-v2-redesign.md`, `doc
 | 3 | Research queries Q1-Q4 + Verifier | Oct 16 morning | ✅ | Abdul |
 | 4 | Evaluation E1, E2, E3, E7 | Oct 16 afternoon | ✅ | Abdul |
 | 5 | MCP server: Track 1 tools | Oct 16 evening | 🟨 | Abdul |
+| 5b | Persistence fix (AOF) | Oct 16 | ✅ | Aaryan |
 | 6 | Memory graph: Track 2 tools | Oct 17 morning | ⬜ | unassigned |
 | 7 | Verdicts, notes, Writer | Oct 17 midday | ⬜ | unassigned |
 | 8 | Remaining evaluation + golden tests | Oct 17 afternoon | ⬜ | unassigned |
 | 9 | README, video, submit | Oct 18, by 6 PM | ⬜ | unassigned |
 
-**Team: Abdul and Aryan.** Every checkpoint has an Owner (table above). Tag each checkbox with who did it: `- [x] item (Abdul)` or `(Aryan)`; use `(Abdul + Aryan)` for pairing. Unticked items may carry `(→ Aryan)` for who will do them. Add the date when you tick, e.g. `(Abdul, Oct 16)`. Checkpoints 0-2 were built in Abdul's sessions, so they are attributed to Abdul; Aryan can correct that.
+**Team: Abdul and Aaryan.** Every checkpoint has an Owner (table above). Tag each checkbox with who did it: `- [x] item (Abdul)` or `(Aaryan)`; use `(Abdul + Aaryan)` for pairing. Unticked items may carry `(→ Aaryan)` for who will do them. Add the date when you tick, e.g. `(Abdul, Oct 16)`. Checkpoints 0-2 were built in Abdul's sessions, so they are attributed to Abdul; Aaryan can correct that.
 
 Status key: ⬜ not started · 🟨 in progress · ✅ done · ✂️ cut
 
@@ -101,6 +102,13 @@ Hand-off (Abdul, Oct 16): everything is built, reviewed and registered. Only the
 Result: `tests/test_server.py` 26/26 (Reviewer PASS in round 2); server registered and `claude mcp list` shows it Connected.
 
 **Gate:** a full question works end to end from Claude Code.
+
+## 5b. Persistence fix (from `IMPROVEMENT.md`)
+- [x] AOF on (`appendonly yes`, `appendfsync everysec`) via `REDIS_ARGS`; `run.sh` passes it to `redis-server` (Aaryan, Oct 16)
+- [x] `--stop-timeout 120` so Docker waits for the final save (Aaryan, Oct 16)
+- [x] Verified: `CONFIG GET appendonly` = yes after recreate; research graph intact (85,511 Person) (Aaryan, Oct 16)
+- [x] Crash test: write a node, `docker kill` 2 s later (no save), start: node is back (Aaryan, Oct 16)
+- [ ] Abdul: migrate your container the same way (steps in `CLAUDE.md` Commands; uses your ports 6380/3001) (→ Abdul)
 
 ## 6. Memory graph: Track 2 tools
 - [ ] `TIETRACE_NEWSROOM` env var picks the tenant graph

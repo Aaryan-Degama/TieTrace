@@ -81,7 +81,7 @@ Checkpoints 0-2 (setup, toy graph, loader) are done. Checkpoint 3 (queries and V
 
 ## Team
 
-Abdul and Aryan. See `checkpoints.md` and `AI_USE.md` for who did what.
+Abdul and Aaryan. See `checkpoints.md` and `AI_USE.md` for who did what.
 
 ## AI use
 

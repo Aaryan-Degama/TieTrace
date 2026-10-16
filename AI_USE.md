@@ -1,6 +1,6 @@
 # AI-use log
 
-Hackathon rules 12-13: each teammate (Abdul, Aryan) must understand and explain all code. This log records who worked, what we decided, what the AI (Claude Code) wrote, and what I verified.
+Hackathon rules 12-13: each teammate (Abdul, Aaryan) must understand and explain all code. This log records who worked, what we decided, what the AI (Claude Code) wrote, and what I verified.
 
 | Date (IST) | Who | Decided by us | Written by AI | Verified how |
 |---|---|---|---|---|
@@ -13,7 +13,8 @@ Hackathon rules 12-13: each teammate (Abdul, Aryan) must understand and explain 
 | Oct 16 | Abdul | Checkpoint 4 pass rules stay as fixed in redesign section 7 (no tuning); E2 cut year Y=2018, window Y-4..Y, a pass needs the weighted score to beat volume AND both plain-count variants; E1 matched on works_count bands fixed before running | `eval/common.py`, `eval/e3_e7.py`, `eval/e1.py`, `eval/e2.py`, `eval/results.md` (Builder, checkpoint 4) | Ran all scripts; E1 real hits (1,299) recounted with a separate Cypher; E2 Tier-A rebuild checked equal to `research._tier_a` (3,035 ids, same A1/A2); GEBN names checked against a cited public source; Reviewer FAIL (small items) fixed: anonymised control, E1 headline interval = spread across the 100 placebo circles (0.84-1.09), paper counts in E3 |
 | Oct 16 | Abdul | Checkpoint 5 design: tools take no name or `public_case`; single-expert tools take `expert_number`; `check_case` takes `expert_ids` (max 25, 90 s budget) until `open_case` exists; spec section 9b records the deviations | `server.py` (6 tools over `research.py`, envelope, lock, warm-up) | Drove the server over real stdio with the mcp client: all tools on real data, error paths, 25-expert batch (about 4.5-5.5 s); after Reviewer FAIL: cypher collapsed per query (88 to 39 KB), `public_case` limited to a GEBN id allowlist, banned words removed from descriptions, stdout carries only JSON-RPC |
 
-**Add a row for every AI-assisted change.** The `Who` column is the teammate whose session did it (Abdul or Aryan). The `## Learned` lines end with the teammate's name in brackets.
+**Add a row for every AI-assisted change.** The `Who` column is the teammate whose session did it (Abdul or Aaryan). The `## Learned` lines end with the teammate's name in brackets.
+| Oct 16 | Aaryan | Checkpoint 5b: turn on AOF persistence (`appendfsync everysec`) and `--stop-timeout 120`; migrate by enabling AOF live first, so the AOF file is built from the loaded graph | Container commands, `CLAUDE.md` persistence steps | Read the image's `run.sh` (passes `REDIS_ARGS`); `CONFIG GET appendonly` = yes after recreate; 85,511 Person still there; crash test: node written, `docker kill` 2 s later, node back after start |
 
 ## Learned (checkpoint 1 notes)
 <!-- One line per toy-graph test: what I expected, and what actually happened. -->

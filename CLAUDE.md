@@ -3,11 +3,11 @@
 FalkorDB Graph Hacks entry (Tracks 1 and 2). **Submit by Oct 18 2026, 6 PM IST.**
 TieTrace checks how connected an expert is to the company in a story, using an OpenAlex research graph in FalkorDB. Every tie comes with its DOI, and every "no tie found" comes with its scope.
 
-## Team and attribution (two people: Abdul and Aryan)
-- **Who is working:** find out at the start of each session from `git config user.name` (Abdul = `23abdul23`); if it does not clearly say Abdul or Aryan, ask once and remember it for the session. Both are beginners and must be able to explain everything (rules 12-13).
+## Team and attribution (two people: Abdul and Aaryan)
+- **Who is working:** find out at the start of each session from `git config user.name` (Abdul = `23abdul23`); if it does not clearly say Abdul or Aaryan, ask once and remember it for the session. Both are beginners and must be able to explain everything (rules 12-13).
 - **Record who did what, in every doc you touch:**
-  - `checkpoints.md`: each ticked box ends with `(Abdul)` or `(Aryan)` plus the date; the checkpoint table has an Owner column. Never tick a box on someone else's behalf without naming who actually did it.
-  - `AI_USE.md`: every new row has a `Who` column value; `Learned` lines end with `[Abdul]` or `[Aryan]`.
+  - `checkpoints.md`: each ticked box ends with `(Abdul)` or `(Aaryan)` plus the date; the checkpoint table has an Owner column. Never tick a box on someone else's behalf without naming who actually did it.
+  - `AI_USE.md`: every new row has a `Who` column value; `Learned` lines end with `[Abdul]` or `[Aaryan]`.
   - Other docs (spec, redesign, README, `eval/results.md`): put a one-line `Last updated by <name>, <date>: <what>` at the top when you change them. Decisions in the spec/redesign get `(decided by <name>)`.
   - Commits: name the person in the message body (`Work by: Abdul`); the git author already shows it.
 - **Avoid collisions:** before starting a checkpoint, check its Owner in `checkpoints.md`. If it belongs to the other person, do not edit it without asking. Claim work by writing `(→ name)` on the item, and pull/merge before editing shared docs.
@@ -62,9 +62,12 @@ TieTrace checks how connected an expert is to the company in a story, using an O
 - **Cut order if behind:** second topic, deployment, blog post, Review Desk, `set_policy`, the max-flow test (E4).
 
 ## Commands
-- **FalkorDB:** `docker run -d --name falkordb -p 6379:6379 -p 3000:3000 -v falkordb-data:/var/lib/falkordb/data falkordb/falkordb:latest` (Browser at http://localhost:3000)
-- **Ports on this machine (Oct 15):** 6379 and 3000 are taken by other containers, so FalkorDB runs on host ports 6380 and 3001 (`-p 6380:6379 -p 3001:3000`). Set `FALKORDB_PORT=6380` for `loader.py`, tests and the server (default 6379). Browser: http://localhost:3001.
-- **FalkorDB data persistence:** the container is named `falkordb` and uses the named volume `falkordb-data`, so data survives restarts. Start it with `docker start falkordb`.
+- **FalkorDB:** start with the AOF `docker run` command under *FalkorDB data persistence* below (Browser at http://localhost:3000)
+- **Ports on Abdul's machine (Oct 15):** 6379 and 3000 are taken by other containers, so FalkorDB runs on host ports 6380 and 3001 (`-p 6380:6379 -p 3001:3000`). Set `FALKORDB_PORT=6380` for `loader.py`, tests and the server (default 6379). Browser: http://localhost:3001.
+- **FalkorDB data persistence:** the container is named `falkordb` and uses the named volume `falkordb-data`. The volume alone is not enough: FalkorDB keeps the graph in RAM and only snapshots it now and then, so a hard stop lost data once (Oct 16). AOF fixes that (at most about 1 s lost on a crash). Start it with `docker start falkordb`.
+  - **New container:** `docker run -d --name falkordb -p 6379:6379 -p 3000:3000 -v falkordb-data:/var/lib/falkordb/data -e REDIS_ARGS="--appendonly yes --appendfsync everysec" --stop-timeout 120 falkordb/falkordb:latest`
+  - **Migrating an existing container (keeps the data):** first `docker exec falkordb redis-cli CONFIG SET appendonly yes` and wait until `INFO persistence` shows `aof_rewrite_in_progress:0`; then `redis-cli SAVE`, `docker stop -t 120 falkordb`, `docker rm falkordb`, and the `docker run` above. Turning AOF on in a fresh container before the AOF file exists would start empty.
+  - **Check:** `docker exec falkordb redis-cli CONFIG GET appendonly` must say `yes`.
 - **Build the research graph:**
   - `uv run python loader.py --rebuild` rebuilds from the `data/raw/` cache, with zero API calls once the cache exists;
   - add `--refresh` to re-download;
