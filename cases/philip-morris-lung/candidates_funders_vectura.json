@@ -1,0 +1,25 @@
+{
+ "kind": "funders",
+ "query": "vectura",
+ "fetched_at": "2026-10-16T04:51:17+00:00",
+ "total_hits": 1,
+ "candidates": [
+  {
+   "id": "F3752316683",
+   "name": "Vectura Fertin Pharma",
+   "type": "funder",
+   "country": "CH",
+   "ror": null,
+   "works_count": 3,
+   "description": null,
+   "roles": [
+    {
+     "role": "funder",
+     "id": "F3752316683"
+    }
+   ]
+  }
+ ],
+ "api_calls": 1,
+ "cost_usd": 0.001
+}

@@ -1,0 +1,77 @@
+{
+ "kind": "topics",
+ "query": "lung cancer screening",
+ "fetched_at": "2026-10-16T04:51:28+00:00",
+ "total_hits": 1,
+ "candidates": [
+  {
+   "id": "T10202",
+   "name": "Lung Cancer Diagnosis and Treatment",
+   "type": "topic",
+   "works_count": 205830,
+   "subfield": "Pulmonary and Respiratory Medicine",
+   "description": "This cluster of papers focuses on the diagnosis and treatment of lung cancer, including topics such as CT screening, radiotherapy, chemotherapy, tumor staging, adjuvant therapy, positron emission tomography, stereotactic body radiation therapy, non-small cell lung cancer, and pulmonary nodules.",
+   "keywords": [
+    "non-small cell lung cancer",
+    "lung cancer screening",
+    "lung resection",
+    "lobectomy",
+    "lung cancer diagnosis",
+    "early-stage lung cancer",
+    "lung cancer surgery",
+    "pulmonary nodules"
+   ]
+  }
+ ],
+ "keywords": [
+  {
+   "id": "lung-cancer-screening",
+   "name": "lung cancer screening",
+   "works_count": 21667
+  },
+  {
+   "id": "lung-cancer-screening-eligibility",
+   "name": "lung cancer screening eligibility",
+   "works_count": 175
+  },
+  {
+   "id": "ct-lung-cancer-screening",
+   "name": "CT lung cancer screening",
+   "works_count": 96
+  },
+  {
+   "id": "lung-cancer-screening-program",
+   "name": "lung cancer screening program",
+   "works_count": 97
+  },
+  {
+   "id": "national-lung-screening-trial",
+   "name": "National Lung Screening Trial",
+   "works_count": 1896
+  },
+  {
+   "id": "prostate-lung-colorectal-and-ovarian-cancer-screening-trial",
+   "name": "Prostate, Lung, Colorectal, and Ovarian Cancer Screening Trial",
+   "works_count": 314
+  },
+  {
+   "id": "nelson-trial",
+   "name": "NELSON trial",
+   "works_count": 381
+  },
+  {
+   "id": "plco-trial",
+   "name": "PLCO trial",
+   "works_count": 395
+  },
+  {
+   "id": "plco-cohort",
+   "name": "PLCO cohort",
+   "works_count": 127
+  }
+ ],
+ "phrase": "lung cancer screening",
+ "phrase_works": 12703,
+ "api_calls": 3,
+ "cost_usd": 0.0021
+}

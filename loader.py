@@ -574,7 +574,7 @@ def staging_name(graph):
     return graph.replace("research:", "staging:", 1)
 
 
-def write_graph(rows, meta, rebuild):
+def write_graph(rows, meta, rebuild, before_swap=None):
     """Build the graph aside as staging:<slug>, check it, then swap it in with Redis RENAME.
     If anything fails, staging is dropped and research:<slug> stays exactly as it was."""
     db = FalkorDB(port=int(os.environ.get("FALKORDB_PORT", 6379)))
@@ -601,6 +601,8 @@ def write_graph(rows, meta, rebuild):
         g.query("CREATE (m:Meta) SET m = $meta", {"meta": meta})
         self_check(g, counts)
         # RENAME replaces research:<slug> in one step (pinned by a test; FalkorDB does not document it).
+        if before_swap:
+            before_swap(meta)  # main() records the new build in status.json first, so a server notices the swap
         db.connection.rename(staging, GRAPH)
     except BaseException:
         if staging in db.list_graphs():
@@ -647,6 +649,7 @@ def write_status(status, **fields):
 # (GRAPH.MEMORY total_graph_sz_mb) for 31,291 works. The 6.0.2 module reported 1,453 MB for the same graph.
 # ponytail: a linear guess; COAUTH grows faster than linearly with big papers.
 PERSONS_PER_WORK, MB_PER_WORK = 85511 / 31291, 780 / 31291
+RELEASE_LOCK = "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) end return 0"
 BUILD_LOCK_TTL = 4 * 3600  # seconds; a crashed build's lock expires by itself
 USD_PER_LIST_CALL = 0.0001  # OpenAlex: list and filter calls cost $0.10 per 1,000
 
@@ -726,8 +729,7 @@ def main():
         write_status("ready", built_at=meta["built_at"], data_version=meta["data_version"],
                      config_hash=meta["config_hash"], counts=counts, total_graph_sz_mb=size_mb, graph=GRAPH)
     finally:
-        if db.connection.get(lock) in (token, token.encode()):  # only release our own lock
-            db.connection.delete(lock)
+        db.connection.eval(RELEASE_LOCK, 1, lock, token)  # only our own lock, checked and deleted in one step
     print(f"graph size: {size_mb} MB (GRAPH.MEMORY USAGE)")
     print(f"API calls this run: {api_calls}; wall clock: {time.time() - start:.0f}s")
     print(f"*** {GRAPH} was swapped in. A running TieTrace MCP server drops its cached facts for this case on "
@@ -766,7 +768,9 @@ def build(args):
         "truncated_works": len(truncated), "duplicates_removed": removed,
         **rows["stats"],
     }
-    counts, size_mb = write_graph(rows, meta, args.rebuild)
+    def record_new_build(m):  # status stays "building" until main() writes "ready"
+        write_status("building", built_at=m["built_at"], data_version=m["data_version"], config_hash=m["config_hash"])
+    counts, size_mb = write_graph(rows, meta, args.rebuild, before_swap=record_new_build)
     n_scope = {s: list(scope[w] for w in works).count(s) for s in ("funded", "family", "topic")}
     print(f"works loaded: {len(works)} {n_scope}; duplicates removed: {removed}")
     print(f"truncated author lists (topic works, n_authors is a lower bound): {len(truncated)}")

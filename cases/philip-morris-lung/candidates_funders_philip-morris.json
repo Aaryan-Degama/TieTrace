@@ -1,0 +1,40 @@
+{
+ "kind": "funders",
+ "query": "philip morris",
+ "fetched_at": "2026-10-16T04:51:13+00:00",
+ "total_hits": 2,
+ "candidates": [
+  {
+   "id": "F4320315260",
+   "name": "Philip Morris International",
+   "type": "funder",
+   "country": "US",
+   "ror": "https://ror.org/005rxfw29",
+   "works_count": 993,
+   "description": "American global cigarette and tobacco company",
+   "roles": [
+    {
+     "role": "funder",
+     "id": "F4320315260"
+    }
+   ]
+  },
+  {
+   "id": "F4320318650",
+   "name": "Foundation for a Smoke-Free World",
+   "type": "funder",
+   "country": "US",
+   "ror": "https://ror.org/03p2hmv20",
+   "works_count": 102,
+   "description": "front organization of tobacco corporation Philip Morris",
+   "roles": [
+    {
+     "role": "funder",
+     "id": "F4320318650"
+    }
+   ]
+  }
+ ],
+ "api_calls": 1,
+ "cost_usd": 0.001
+}

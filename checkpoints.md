@@ -115,11 +115,13 @@ Result: `tests/test_server.py` 26/26 (Reviewer PASS in round 2); server register
 - [x] 5c `cases/<slug>/case.json`, `loader.py --case`, staging + RENAME swap, `--dry-run`, build lock, `Work.junk` precomputed (Aaryan, Oct 16)
 - [x] 5d `case` argument on tools, `list_cases`, `NO_GRAPH`, per-graph caches, cache dropped after a rebuild (Aaryan, Oct 16). Review: round 1 FAIL (1 must-fix), round 2 PASS; suites on v4.22.1: cases 23/23, loader 49/49, research 51/51, server 26/26, eval 13/13, discover 26/26
 - [x] 5e `discover.py` CLI (funders, institutions, topics, authors): Reviewer FAIL (5 must-fix) → fixed → PASS; 26/26 tests offline and live; never auto-picks, shows split-profile siblings (strong/weak) (Aaryan, Oct 16)
-- [ ] 5f Philip Morris × lung cancer case: human-approved `case.json`, real build, results in `eval/results.md` (→ Aaryan)
+- [x] 5f Philip Morris × lung cancer case built (Aaryan, Oct 16): GATE 0 approved by Aaryan (PMI + FSFW as A2; Altria, Vectura, Swedish Match rejected; T10202 cap 20,000). 21,756 works, 68,723 people, 726 MB, 915 API calls, 13 min. Tier A: 3,649 (A1 3,176, A2 473)
+- [ ] 5f end-to-end: run a Philip Morris story prompt in Claude Code and record the result honestly in `eval/results.md` (→ Aaryan)
 
 Decision (Aaryan, Oct 16): D9 resolved as the plan recommends: tools take a `case` slug (validated against `cases/`), default `TIETRACE_CASE` env, fallback `obesity-coke`; the newsroom stays env-only.
 
 ## 6. Memory graph: Track 2 tools
+Claimed (→ Aaryan, Oct 16).
 - [ ] `TIETRACE_NEWSROOM` env var picks the tenant graph
 - [ ] Event logger: every call writes an `Event` under a `Session`
 - [ ] `open_case` with `prior_memory`

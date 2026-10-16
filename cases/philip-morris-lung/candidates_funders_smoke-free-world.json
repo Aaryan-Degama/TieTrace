@@ -1,0 +1,25 @@
+{
+ "kind": "funders",
+ "query": "smoke-free world",
+ "fetched_at": "2026-10-16T04:51:15+00:00",
+ "total_hits": 1,
+ "candidates": [
+  {
+   "id": "F4320318650",
+   "name": "Foundation for a Smoke-Free World",
+   "type": "funder",
+   "country": "US",
+   "ror": "https://ror.org/03p2hmv20",
+   "works_count": 102,
+   "description": "front organization of tobacco corporation Philip Morris",
+   "roles": [
+    {
+     "role": "funder",
+     "id": "F4320318650"
+    }
+   ]
+  }
+ ],
+ "api_calls": 1,
+ "cost_usd": 0.001
+}

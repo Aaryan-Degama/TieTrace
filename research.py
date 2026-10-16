@@ -670,8 +670,13 @@ def _list_cases(log):
     registered = set(known_cases())
     slugs = sorted(registered | {g.split(":", 1)[1] for g in graphs})
     staging = sorted(g.split(":", 1)[1] for g in names if g.startswith("staging:"))  # named by case, not by key
-    warnings = ([f"unfinished build(s) left a staging graph that still uses RAM, for case(s): {', '.join(staging)}; "
-                 "the next build of that case replaces it"] if staging else [])
+    warnings = []
+    for slug in staging:
+        if _conn().connection.exists(f"build-lock:{slug}"):  # the loader holds this key while it builds
+            warnings.append(f"case {slug}: build in progress (its staging graph uses RAM until the swap)")
+        else:
+            warnings.append(f"case {slug}: an unfinished build left a staging graph that still uses RAM; "
+                            "the next build of that case replaces it")
     cases = []
     for slug in slugs:
         graph = f"research:{slug}"
@@ -708,7 +713,9 @@ def drop_cache_if_rebuilt(slug):
     graph = f"research:{slug}"
     try:
         status = json.loads((loader.CASES / slug / "status.json").read_text())
-        build = (status.get("built_at"), status.get("config_hash"))
+        # status is in the key: the loader writes the new built_at just before RENAME and "ready" just after,
+        # so a cache refilled from the old graph in between is dropped again once "ready" appears
+        build = (status.get("built_at"), status.get("config_hash"), status.get("status"))
     except (OSError, ValueError, AttributeError):
         build = None
     if graph in _seen_build and _seen_build[graph] != build:

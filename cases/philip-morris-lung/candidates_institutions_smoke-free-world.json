@@ -1,0 +1,23 @@
+{
+ "kind": "institutions",
+ "query": "smoke-free world",
+ "fetched_at": "2026-10-16T04:51:25+00:00",
+ "total_hits": 1,
+ "candidates": [
+  {
+   "id": "I4405267635",
+   "name": "Foundation for a Smoke-Free World, Inc.",
+   "type": "nonprofit",
+   "country": "US",
+   "ror": "https://ror.org/03p2hmv20",
+   "works_count": 19,
+   "lineage": [
+    "I4405267635"
+   ],
+   "parents": [],
+   "children": []
+  }
+ ],
+ "api_calls": 1,
+ "cost_usd": 0.001
+}

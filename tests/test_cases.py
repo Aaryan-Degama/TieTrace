@@ -463,12 +463,20 @@ def test_junk_is_precomputed_and_queries_never_lower_titles():
 
 
 def test_second_build_of_a_case_is_refused_by_the_lock():
-    lock = "build-lock:obesity-coke"
-    assert DB.connection.set(lock, "someone-else", nx=True, ex=60), "a real build is running; retry later"
-    old_argv, old_key = sys.argv, loader.api_key
+    # A temp case and a stubbed build: even if the lock check broke, nothing real is rebuilt or overwritten.
+    real = json.loads((loader.CASES / "obesity-coke" / "case.json").read_text())
+    tmp = Path(tempfile.mkdtemp())
+    (tmp / "zz-lock2").mkdir()
+    (tmp / "zz-lock2" / "case.json").write_text(json.dumps({**real, "slug": "zz-lock2"}))
+    lock = "build-lock:zz-lock2"
+    assert DB.connection.set(lock, "someone-else", nx=True, ex=60), "a build of zz-lock2 is running?"
+    old = (loader.CASES, sys.argv, loader.api_key, loader.build)
+
+    def must_not_build(args):
+        raise AssertionError("the build ran although another build holds the lock")
     try:
-        sys.argv = ["loader.py", "--case", "obesity-coke", "--rebuild"]
-        loader.api_key = lambda: "unused"
+        loader.CASES, sys.argv, loader.api_key = tmp, ["loader.py", "--case", "zz-lock2", "--rebuild"], lambda: "x"
+        loader.build = must_not_build
         try:
             loader.main()
         except SystemExit as e:
@@ -476,10 +484,27 @@ def test_second_build_of_a_case_is_refused_by_the_lock():
         else:
             raise AssertionError("second build was not refused")
         assert DB.connection.get(lock) in ("someone-else", b"someone-else"), "the lock of the other build was released"
+        assert not (tmp / "zz-lock2" / "status.json").exists(), "a refused build wrote status.json"
     finally:
-        sys.argv, loader.api_key = old_argv, old_key
+        loader.CASES, sys.argv, loader.api_key, loader.build = old
         DB.connection.delete(lock)
         loader.use_case("obesity-coke")
+
+
+def test_list_cases_says_build_in_progress_while_the_lock_is_held():
+    st = "staging:zz-test-a"
+    try:
+        DB.select_graph(st).query("CREATE (:Person {oa_id: 'X'})")
+        DB.connection.set("build-lock:zz-test-a", "t", ex=60)
+        out = with_cases(lambda tmp: server.list_cases())
+        assert any("zz-test-a: build in progress" in w for w in out["warnings"]), out["warnings"]
+        DB.connection.delete("build-lock:zz-test-a")
+        out = with_cases(lambda tmp: server.list_cases())
+        assert any("zz-test-a: an unfinished build" in w for w in out["warnings"]), out["warnings"]
+    finally:
+        DB.connection.delete("build-lock:zz-test-a")
+        if st in DB.list_graphs():
+            DB.select_graph(st).delete()
 
 
 def test_server_drops_a_graph_cache_when_status_json_changes():
@@ -609,6 +634,73 @@ def test_server_answers_from_the_new_graph_after_a_swap():
     finally:
         research._seen_build.clear()
         drop(A)
+
+
+# ---------- Reviewer tests, round 3 (Oct 16) ----------
+def test_before_swap_runs_after_the_self_check_and_before_rename():
+    drop(A)
+    seen = []
+    try:
+        build(A, [work("W1", ["P1", "P2"])])
+        old_built = DB.select_graph(A).ro_query("MATCH (p:Person) RETURN count(p)").result_set
+
+        def record(meta):  # at this moment the live graph must still be the old one, and staging complete
+            seen.append((meta["build_status"], DB.select_graph(A).ro_query("MATCH (p:Person) RETURN count(p)").result_set,
+                         loader.staging_name(A) in DB.list_graphs()))
+        rows = loader.build_rows({"W9": work("W9", ["P7", "P8", "P9"])}, set(), {})
+        meta = {"graph": A, "data_version": "d", "years": [2021, 2026], "recent_year": 2021, "small_paper": 25,
+                "load_scope": "x", "truncated_works": 0, **rows["stats"]}
+        old_graph, old_check = loader.GRAPH, loader.self_check
+        try:
+            loader.GRAPH = A
+            loader.write_graph(rows, meta, True, before_swap=record)
+            assert seen == [("complete", old_built, True)], seen
+            assert DB.select_graph(A).ro_query("MATCH (p:Person) RETURN count(p)").result_set == [[3]]
+
+            def broken(g, counts):
+                raise RuntimeError("self-check failed")
+            loader.self_check = broken
+            try:
+                loader.write_graph(rows, meta, True, before_swap=record)
+            except RuntimeError:
+                pass
+            assert len(seen) == 1, "before_swap ran for a build that failed its self-check"
+        finally:
+            loader.GRAPH, loader.self_check = old_graph, old_check
+    finally:
+        drop(A)
+
+
+def test_cache_is_dropped_again_when_building_turns_ready():
+    old = loader.CASES
+    try:
+        loader.CASES = Path(tempfile.mkdtemp())
+        (loader.CASES / "zz-test-a").mkdir()
+        status = loader.CASES / "zz-test-a" / "status.json"
+        research._seen_build.clear()
+        status.write_text(json.dumps({"status": "building", "built_at": "t2", "config_hash": "h"}))
+        research.drop_cache_if_rebuilt("zz-test-a")
+        research._cache[(A, "tier_a")] = ({"P1": "A1"}, [])  # refilled from the OLD graph before the RENAME
+        status.write_text(json.dumps({"status": "ready", "built_at": "t2", "config_hash": "h"}))
+        research.drop_cache_if_rebuilt("zz-test-a")
+        assert (A, "tier_a") not in research._cache, "a cache filled before the swap survived the ready write"
+    finally:
+        loader.CASES = old
+        research.clear_cache()
+        research._seen_build.clear()
+
+
+def test_lock_release_never_deletes_another_builds_lock():
+    lock = "build-lock:zz-lock3"
+    try:
+        DB.connection.set(lock, "other", ex=60)
+        assert DB.connection.eval(loader.RELEASE_LOCK, 1, lock, "mine") == 0
+        assert DB.connection.get(lock) in ("other", b"other")
+        assert DB.connection.eval(loader.RELEASE_LOCK, 1, lock, "other") == 1
+        assert DB.connection.get(lock) is None
+        assert DB.connection.eval(loader.RELEASE_LOCK, 1, lock, "other") == 0  # missing key: no error
+    finally:
+        DB.connection.delete(lock)
 
 
 # ---------- runner ----------

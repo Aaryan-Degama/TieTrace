@@ -1,0 +1,9 @@
+{
+ "kind": "funders",
+ "query": "swedish match",
+ "fetched_at": "2026-10-16T04:51:16+00:00",
+ "total_hits": 0,
+ "candidates": [],
+ "api_calls": 1,
+ "cost_usd": 0.001
+}

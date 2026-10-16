@@ -1,0 +1,47 @@
+{
+ "kind": "institutions",
+ "query": "vectura",
+ "fetched_at": "2026-10-16T04:51:24+00:00",
+ "total_hits": 2,
+ "candidates": [
+  {
+   "id": "I4210087018",
+   "name": "Vectura (United Kingdom)",
+   "type": "company",
+   "country": "GB",
+   "ror": "https://ror.org/000ydq217",
+   "works_count": 53,
+   "lineage": [
+    "I4210087018"
+   ],
+   "parents": [],
+   "children": [
+    {
+     "id": "I4210092810",
+     "name": "Vectura (Germany)"
+    }
+   ]
+  },
+  {
+   "id": "I4210092810",
+   "name": "Vectura (Germany)",
+   "type": "company",
+   "country": "DE",
+   "ror": "https://ror.org/00en8sz04",
+   "works_count": 19,
+   "lineage": [
+    "I4210087018",
+    "I4210092810"
+   ],
+   "parents": [
+    {
+     "id": "I4210087018",
+     "name": "Vectura (United Kingdom)"
+    }
+   ],
+   "children": []
+  }
+ ],
+ "api_calls": 1,
+ "cost_usd": 0.001
+}

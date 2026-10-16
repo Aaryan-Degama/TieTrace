@@ -1,0 +1,244 @@
+{
+ "kind": "topics",
+ "query": "lung cancer",
+ "fetched_at": "2026-10-16T04:51:31+00:00",
+ "total_hits": 13,
+ "candidates": [
+  {
+   "id": "T10202",
+   "name": "Lung Cancer Diagnosis and Treatment",
+   "type": "topic",
+   "works_count": 205830,
+   "subfield": "Pulmonary and Respiratory Medicine",
+   "description": "This cluster of papers focuses on the diagnosis and treatment of lung cancer, including topics such as CT screening, radiotherapy, chemotherapy, tumor staging, adjuvant therapy, positron emission tomography, stereotactic body radiation therapy, non-small cell lung cancer, and pulmonary nodules.",
+   "keywords": [
+    "non-small cell lung cancer",
+    "lung cancer screening",
+    "lung resection",
+    "lobectomy",
+    "lung cancer diagnosis",
+    "early-stage lung cancer",
+    "lung cancer surgery",
+    "pulmonary nodules"
+   ]
+  },
+  {
+   "id": "T10417",
+   "name": "Lung Cancer Treatments and Mutations",
+   "type": "topic",
+   "works_count": 97594,
+   "subfield": "Pulmonary and Respiratory Medicine",
+   "description": "This cluster of papers focuses on the advancements in lung cancer research, particularly in understanding EGFR and ALK mutations, targeted therapy, resistance mechanisms to tyrosine kinase inhibitors, clinical trials evaluating different treatment regimens, genomic profiling for personalized medicine, and the development of treatment guidelines based on molecular biomarkers. The research also explores the concept of oncogene addiction and its implications for targeted therapies.",
+   "keywords": [
+    "non-small cell lung cancer",
+    "EGFR tyrosine kinase inhibitors",
+    "EGFR mutation",
+    "gefitinib",
+    "erlotinib",
+    "advanced non-small cell lung cancer",
+    "osimertinib",
+    "EGFR-mutant non-small cell lung cancer"
+   ]
+  },
+  {
+   "id": "T12334",
+   "name": "Lung Cancer Research Studies",
+   "type": "topic",
+   "works_count": 55364,
+   "subfield": "Oncology",
+   "description": "This cluster of papers represents a comprehensive exploration of small cell lung cancer, covering topics such as genomic profiles, immunotherapy, chemotherapy, prognostic factors, biomarkers, targeted therapy, clinical trials, metastasis, and tumor markers.",
+   "keywords": [
+    "small cell lung cancer",
+    "extensive-stage small cell lung cancer",
+    "CYFRA21-1",
+    "limited-stage small cell lung cancer",
+    "extensive disease",
+    "prophylactic cranial irradiation",
+    "large cell neuroendocrine carcinoma",
+    "limited-stage disease"
+   ]
+  },
+  {
+   "id": "T10946",
+   "name": "Radioactivity and Radon Measurements",
+   "type": "topic",
+   "works_count": 95212,
+   "subfield": "Radiological and Ultrasound Technology",
+   "description": "This cluster of papers explores the sources, effects, and health implications of ionizing radiation, with a focus on radon, depleted uranium, and natural radioactivity. It covers topics such as lung cancer risk, environmental impact, toxicity, exposure pathways, and the assessment of radiation hazards in various geological and industrial settings.",
+   "keywords": [
+    "radon",
+    "radium-226",
+    "potassium-40",
+    "natural radioactivity",
+    "thorium-232",
+    "radon progeny",
+    "radon-222",
+    "indoor radon"
+   ]
+  },
+  {
+   "id": "T11667",
+   "name": "Advanced Chemical Sensor Technologies",
+   "type": "topic",
+   "works_count": 27781,
+   "subfield": "Biomedical Engineering",
+   "description": "This cluster of papers focuses on the advances in breath analysis technology, particularly the use of electronic nose and sensor arrays to detect volatile organic compounds in exhaled breath for disease diagnosis, with a specific emphasis on lung cancer. The research covers various aspects such as diagnostic potential, colorimetric sensor arrays, and machine olfaction.",
+   "keywords": [
+    "electronic nose",
+    "breath analysis",
+    "gas sensor arrays",
+    "odor detection",
+    "exhaled breath",
+    "breath biomarkers",
+    "odor classification",
+    "odor sensing"
+   ]
+  },
+  {
+   "id": "T11724",
+   "name": "Inflammatory Myopathies and Dermatomyositis",
+   "type": "topic",
+   "works_count": 33713,
+   "subfield": "Epidemiology",
+   "description": "This cluster of papers covers the epidemiology, classification, and clinical features of inflammatory myopathies such as dermatomyositis and polymyositis. It includes discussions on autoantibodies, interstitial lung disease, cancer risk, treatment strategies, myositis-specific antibodies, juvenile dermatomyositis, and the association with malignancy.",
+   "keywords": [
+    "dermatomyositis",
+    "myositis",
+    "polymyositis",
+    "idiopathic inflammatory myopathies",
+    "juvenile dermatomyositis",
+    "autoimmune myositis",
+    "inclusion body myositis",
+    "antisynthetase syndrome"
+   ]
+  },
+  {
+   "id": "T10862",
+   "name": "AI in cancer detection",
+   "type": "topic",
+   "works_count": 92535,
+   "subfield": "Artificial Intelligence",
+   "description": "This cluster of papers focuses on the application of deep learning and machine learning techniques in medical image analysis, particularly in the context of histopathology images, digital pathology, and computer-aided detection for breast cancer diagnosis. The use of convolutional neural networks and whole slide imaging is prominent in these studies, aiming to improve accuracy and efficiency in cancer prognosis and prediction.",
+   "keywords": [
+    "computer-aided diagnosis",
+    "whole slide images",
+    "digital pathology",
+    "breast cancer detection",
+    "computer-aided detection",
+    "histopathological images",
+    "histopathological image classification",
+    "H&E staining"
+   ]
+  },
+  {
+   "id": "T12992",
+   "name": "Metastasis and carcinoma case studies",
+   "type": "topic",
+   "works_count": 44315,
+   "subfield": "Pulmonary and Respiratory Medicine",
+   "description": "This cluster of papers focuses on the metastatic behavior, clinicopathological characteristics, molecular profiling, and therapeutic targets of metastatic carcinomas, particularly from lung tumors and breast cancer. It explores the role of GATA3 as a prognostic marker, the use of immunohistochemistry in diagnosis, and the identification of potential therapeutic targets for these aggressive metastatic cancers.",
+   "keywords": [
+    "cutaneous metastasis",
+    "breast metastasis",
+    "gastrointestinal metastasis",
+    "gastric metastasis",
+    "rare metastatic site",
+    "thyroid metastasis",
+    "oral metastasis",
+    "metastatic adenocarcinoma"
+   ]
+  },
+  {
+   "id": "T14078",
+   "name": "Multiple and Secondary Primary Cancers",
+   "type": "topic",
+   "works_count": 29881,
+   "subfield": "Epidemiology",
+   "description": "This cluster of papers focuses on the epidemiology, clinical characteristics, and risk assessment of multiple primary cancers, also known as second primary neoplasms. It includes research on cancer survivorship, genetic susceptibility, cancer incidence, and population-based studies to understand the prevalence and impact of multiple primary cancers.",
+   "keywords": [
+    "multiple primary neoplasms",
+    "secondary malignancies",
+    "synchronous tumors",
+    "second primary malignancy",
+    "synchronous multiple primary cancers",
+    "metachronous tumors",
+    "standardized incidence ratio",
+    "second primary neoplasms"
+   ]
+  },
+  {
+   "id": "T13955",
+   "name": "Evaluation Methods in Various Fields",
+   "type": "topic",
+   "works_count": 13093,
+   "subfield": "Ecological Modeling",
+   "description": "This cluster of papers focuses on the application of fuzzy modeling, analytic hierarchy process, and entropy weight decision-making in various environmental and energy-related domains. It also explores the use of tree shrews as an emerging model for human diseases, particularly lung cancer. Additionally, it addresses topics such as urban green transportation planning, power quality monitoring systems, and residential electricity demand responses.",
+   "keywords": [
+    "fuzzy evaluation model",
+    "multi-level fuzzy comprehensive evaluation",
+    "subjective and objective weighting",
+    "multi-level evaluation model",
+    "multi-level fuzzy evaluation",
+    "unascertained measure",
+    "dynamic comprehensive evaluation",
+    "index weight calculation"
+   ]
+  }
+ ],
+ "keywords": [
+  {
+   "id": "lung-cancer",
+   "name": "lung cancer",
+   "works_count": 313518
+  },
+  {
+   "id": "non-small-cell-lung-cancer",
+   "name": "non-small cell lung cancer",
+   "works_count": 230725
+  },
+  {
+   "id": "small-cell-lung-cancer",
+   "name": "small cell lung cancer",
+   "works_count": 51445
+  },
+  {
+   "id": "lung-cancer-screening",
+   "name": "lung cancer screening",
+   "works_count": 21667
+  },
+  {
+   "id": "lung-cancer-mortality",
+   "name": "lung cancer mortality",
+   "works_count": 6773
+  },
+  {
+   "id": "lung-cancer-risk",
+   "name": "lung cancer risk",
+   "works_count": 9102
+  },
+  {
+   "id": "early-stage-lung-cancer",
+   "name": "early-stage lung cancer",
+   "works_count": 13179
+  },
+  {
+   "id": "metastatic-lung-cancer",
+   "name": "metastatic lung cancer",
+   "works_count": 9905
+  },
+  {
+   "id": "lung-cancer-diagnosis",
+   "name": "lung cancer diagnosis",
+   "works_count": 15050
+  },
+  {
+   "id": "lung-cancer-surgery",
+   "name": "lung cancer surgery",
+   "works_count": 13593
+  }
+ ],
+ "phrase": "lung cancer",
+ "phrase_works": 524037,
+ "api_calls": 3,
+ "cost_usd": 0.0021
+}

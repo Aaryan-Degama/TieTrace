@@ -1,0 +1,29 @@
+{
+ "kind": "funders",
+ "query": "altria",
+ "fetched_at": "2026-10-16T04:51:14+00:00",
+ "total_hits": 1,
+ "candidates": [
+  {
+   "id": "F4320308222",
+   "name": "Altria Group",
+   "type": "funder",
+   "country": "US",
+   "ror": "https://ror.org/04sme7s65",
+   "works_count": 94,
+   "description": "American multinational company",
+   "roles": [
+    {
+     "role": "funder",
+     "id": "F4320308222"
+    },
+    {
+     "role": "institution",
+     "id": "I4210158204"
+    }
+   ]
+  }
+ ],
+ "api_calls": 1,
+ "cost_usd": 0.001
+}

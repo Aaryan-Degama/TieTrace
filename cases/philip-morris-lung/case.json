@@ -1,0 +1,46 @@
+{
+  "slug": "philip-morris-lung",
+  "company": "Philip Morris International",
+  "funders": [
+    {"id": "F4320315260", "name": "Philip Morris International", "kind": "company"},
+    {"id": "F4320318650", "name": "Foundation for a Smoke-Free World", "kind": "foundation"}
+  ],
+  "institutions": [
+    {"id": "I4210088192", "name": "Philip Morris International (United States)", "rel": "parent"},
+    {"id": "I2800621710", "name": "Philip Morris International (Switzerland)", "rel": "subsidiary"},
+    {"id": "I4210114941", "name": "Philip Morris International (Germany)", "rel": "subsidiary"}
+  ],
+  "topics": [
+    {"id": "T10202", "name": "Lung Cancer Diagnosis and Treatment"}
+  ],
+  "years": [2010, 2026],
+  "topic_cap": 20000,
+  "public_ids": [],
+  "small_paper": 25,
+  "recent_year": 2021,
+  "works_count_anomaly": 2000,
+  "max_api_calls": 1500,
+  "decided_by": {
+    "funders": "Aaryan, Oct 16",
+    "institutions": "Aaryan, Oct 16",
+    "topics": "Aaryan, Oct 16",
+    "years": "Aaryan, Oct 16",
+    "topic_cap": "Aaryan, Oct 16",
+    "public_ids": "Aaryan, Oct 16",
+    "small_paper": "Aaryan, Oct 16",
+    "recent_year": "Aaryan, Oct 16",
+    "works_count_anomaly": "Aaryan, Oct 16",
+    "max_api_calls": "Aaryan, Oct 16"
+  },
+  "rejected": [
+    {"id": "F4320308222", "name": "Altria Group", "reason": "Separate company from PMI: OpenAlex/ROR give no link between Altria and any PMI record (funder search 'philip morris' does not return it; ROR 04sme7s65 has no relationships). Including it is an editorial scoping call for Aaryan; if wanted, it is a separate case. Source: research_notes/.../openalex_discovery.md (funders?search=altria) and corporate_family.md (ROR relationships 0 for Altria)."},
+    {"id": "I4210158204", "name": "Altria (United States)", "reason": "Same decision as funder F4320308222: lineage is only itself, no associated institutions, 1,098 works would also grow the graph. Source: corporate_family.md, 'Altria (United States), I4210158204: no associated institutions'."},
+    {"id": "I4405267635", "name": "Foundation for a Smoke-Free World, Inc.", "reason": "Affiliation (19 works) cannot be stored correctly: the schema allows only rel parent/subsidiary/bottler and none of them describes a funding body. Its money is covered by funder F4320318650 (kind foundation). Needs a new rel (redesign D4) if affiliations should count."},
+    {"id": "I4210087018", "name": "Vectura (United Kingdom)", "reason": "Listed under PMI only in Wikidata (corporate_family.md: PMI Q1852556 rows include Vectura Group); OpenAlex/ROR lineage is itself only. PARENT_OF has no date, so authors from before PMI owned it would be flagged. Ask Aaryan."},
+    {"id": "I4210092810", "name": "Vectura (Germany)", "reason": "Child of Vectura (United Kingdom) I4210087018; same decision as that record."},
+    {"id": "F3752316683", "name": "Vectura Fertin Pharma", "reason": "3 works, no ROR or description in OpenAlex, so the link to PMI cannot be checked from OpenAlex. Same family question as Vectura."},
+    {"id": "I4405266907", "name": "Swedish Match AB (publ) (Sweden)", "reason": "Listed under PMI only in Wikidata (corporate_family.md line on Swedish Match, ROR 00a6vpp92); OpenAlex lineage is itself only. PARENT_OF has no date, so pre-acquisition authors would be flagged. Ask Aaryan."},
+    {"id": "I4405266882", "name": "Swedish Match North Europe AB (Sweden)", "reason": "8 works, lineage itself only; same decision as Swedish Match AB."}
+  ],
+  "notes": "APPROVED at GATE 0 by Aaryan, Oct 16 (FSFW included as A2; Altria, Vectura, Swedish Match rejected; T10202 cap 20000). Scope caveat: FSFW was reportedly renamed and its PMI funding reported ended around 2023-24 (not verified here). Discovery run 2026-10-16 with discover.py (candidates_*.json in this folder). Family = PMI funder plus the PMI US ROR record and its two ROR children (Switzerland, Germany); the loader's lineage filter on I4210088192 already includes the children. Foundation for a Smoke-Free World is kept as a separate funder with kind foundation (Tier A2, like the Coca-Cola Foundation), never merged into the company. TieTrace does not label it: OpenAlex's funder description reads \"front organization of tobacco corporation Philip Morris\" (Wikidata-sourced, Q106505816), and the WHO statement is titled \"WHO statement on Philip Morris-funded Foundation for a Smoke-Free World\" (https://www.who.int/news/item/28-09-2017-who-statement-on-philip-morris-funded-foundation-for-a-smoke-free-world). Topic: the loader filters on primary_topic only, so the phrase 'lung cancer screening' (12,703 title/abstract works) cannot be used; T10202 is the only topic /topics?search returns for it and it is wider than screening (surgery, treatment). No public_ids: no public case. topic_cap 20,000 (not 30,000) because lung cancer papers are larger author lists than obesity papers and this machine has about 4 GB free."
+}

@@ -1,0 +1,83 @@
+{
+ "kind": "institutions",
+ "query": "philip morris",
+ "fetched_at": "2026-10-16T04:51:21+00:00",
+ "total_hits": 4,
+ "candidates": [
+  {
+   "id": "I2800621710",
+   "name": "Philip Morris International (Switzerland)",
+   "type": "company",
+   "country": "CH",
+   "ror": "https://ror.org/03z9zz970",
+   "works_count": 1244,
+   "lineage": [
+    "I2800621710",
+    "I4210088192"
+   ],
+   "parents": [
+    {
+     "id": "I4210088192",
+     "name": "Philip Morris International (United States)"
+    }
+   ],
+   "children": []
+  },
+  {
+   "id": "I4210114941",
+   "name": "Philip Morris International (Germany)",
+   "type": "company",
+   "country": "DE",
+   "ror": "https://ror.org/022jdjx35",
+   "works_count": 90,
+   "lineage": [
+    "I4210088192",
+    "I4210114941"
+   ],
+   "parents": [
+    {
+     "id": "I4210088192",
+     "name": "Philip Morris International (United States)"
+    }
+   ],
+   "children": []
+  },
+  {
+   "id": "I4210088192",
+   "name": "Philip Morris International (United States)",
+   "type": "company",
+   "country": "US",
+   "ror": "https://ror.org/005rxfw29",
+   "works_count": 141,
+   "lineage": [
+    "I4210088192"
+   ],
+   "parents": [],
+   "children": [
+    {
+     "id": "I2800621710",
+     "name": "Philip Morris International (Switzerland)"
+    },
+    {
+     "id": "I4210114941",
+     "name": "Philip Morris International (Germany)"
+    }
+   ]
+  },
+  {
+   "id": "I4210158204",
+   "name": "Altria (United States)",
+   "type": "company",
+   "country": "US",
+   "ror": "https://ror.org/04sme7s65",
+   "works_count": 1098,
+   "lineage": [
+    "I4210158204"
+   ],
+   "parents": [],
+   "children": []
+  }
+ ],
+ "api_calls": 1,
+ "cost_usd": 0.001
+}

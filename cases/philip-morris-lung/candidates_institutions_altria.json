@@ -1,0 +1,23 @@
+{
+ "kind": "institutions",
+ "query": "altria",
+ "fetched_at": "2026-10-16T04:51:22+00:00",
+ "total_hits": 1,
+ "candidates": [
+  {
+   "id": "I4210158204",
+   "name": "Altria (United States)",
+   "type": "company",
+   "country": "US",
+   "ror": "https://ror.org/04sme7s65",
+   "works_count": 1098,
+   "lineage": [
+    "I4210158204"
+   ],
+   "parents": [],
+   "children": []
+  }
+ ],
+ "api_calls": 1,
+ "cost_usd": 0.001
+}
