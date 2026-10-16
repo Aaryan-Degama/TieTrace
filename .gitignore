@@ -6,3 +6,4 @@ tietrace-data.zip
 cases/*/raw/
 cases/*/status.json
 cases/*/status.tmp
+.superpowers/
