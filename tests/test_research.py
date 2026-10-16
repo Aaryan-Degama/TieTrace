@@ -1607,11 +1607,14 @@ def test_explain_shows_index_use_for_per_expert_queries():
 
     bad = []
 
-    for name, query, params in (("COAUTH_TIES_Q", research.COAUTH_TIES_Q, {"id": "A1", "tier_a": ["A2"]}),
+    # checkpoint 7 (spec 9f): the per-expert queries take $ids (the expert plus merged profiles) and $x_works
+    for name, query, params in (("COAUTH_TIES_Q", research.COAUTH_TIES_Q, {"ids": ["A1"], "tier_a": ["A2"]}),
 
-                                ("FUNDED_EVIDENCE_Q", research.FUNDED_EVIDENCE_Q, {"id": "A1", **research.JUNK_PARAMS}),
+                                ("FUNDED_EVIDENCE_Q", research.FUNDED_EVIDENCE_Q, {"ids": ["A1"], "x_works": ["W1"], **research.JUNK_PARAMS}),
 
-                                ("AFFIL_EVIDENCE_Q", research.AFFIL_EVIDENCE_Q, {"id": "A1", **research.JUNK_PARAMS})):
+                                ("AFFIL_EVIDENCE_Q", research.AFFIL_EVIDENCE_Q, {"ids": ["A1"], "x_works": ["W1"], **research.JUNK_PARAMS}),
+
+                                ("EXPERT_FUNDER_Q", research.EXPERT_FUNDER_Q, {"ids": ["A1", "A2"], "x_works": ["W1"]})):
 
         plan = str(G.explain(query, params))
 

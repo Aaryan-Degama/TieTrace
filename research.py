@@ -45,6 +45,14 @@ NOT_JUNK = "NOT w.junk"
 _db = None
 _cache = {}  # per-process, keyed (graph, name): Meta, the Tier-A map, staff. Restart the server after a rebuild.
 _graph = contextvars.ContextVar("graph", default=GRAPH)
+# Checkpoint 7: the newsroom's verdicts for the calls inside `with_verdicts(...)` (server.py reads them from the
+# memory graph): {"ids": [vrd_...], "dois": [excluded DOIs], "merges": [[oa_id, oa_id], ...]} or None.
+_verdicts = contextvars.ContextVar("verdicts", default=None)
+# algo.BFS takes no edge filter (spec 9f): said on every BFS-found tie while a PAPER_EXCLUDED paper is in this graph.
+BFS_UNFILTERED = ("a PAPER_EXCLUDED verdict is in force, but the co-author search (algo.BFS) is not filtered by "
+                  "verdicts: this tie may rest on a co-author link that exists only through an excluded paper; "
+                  "check it with bridges")
+THIN_FUNDER = 0.6  # below this funder-only share the no-tie wording says "Funding records are thin" (Aaryan, Oct 16)
 
 
 @contextlib.contextmanager
@@ -55,6 +63,35 @@ def on_graph(graph):
         yield
     finally:
         _graph.reset(token)
+
+
+@contextlib.contextmanager
+def with_verdicts(verdicts):
+    """Apply these verdicts (PAPER_EXCLUDED DOIs, PROFILE_MERGE pairs) to the calls inside the `with` block."""
+    token = _verdicts.set(verdicts)
+    try:
+        yield
+    finally:
+        _verdicts.reset(token)
+
+
+def applied():
+    """The verdict ids in force for this call (every envelope lists them in verdicts_applied)."""
+    v = _verdicts.get()
+    return list(v["ids"]) if v else []
+
+
+def group(expert_id):
+    """expert_id plus every profile merged with it by PROFILE_MERGE verdicts (chains followed), sorted."""
+    v = _verdicts.get()
+    pairs, ids, grew = (v["merges"] if v else []), {expert_id}, True
+    while grew:
+        grew = False
+        for a, b in pairs:
+            if (a in ids) != (b in ids):
+                ids |= {a, b}
+                grew = True
+    return sorted(ids)
 
 
 def default_case():
@@ -159,7 +196,7 @@ def _ok(data, log, scope=None, warnings=None):
     """Every answer names its graph and the OpenAlex snapshot date (Meta is cached, so this adds no query)."""
     scope = {"graph": current_graph(), "data_version": _meta(log).get("data_version"), **(scope or {})}
     return {"ok": True, "data": data, "cypher": log, "scope": scope,
-            "verdicts_applied": [], "warnings": warnings or []}
+            "verdicts_applied": applied(), "warnings": warnings or []}
 
 
 def _cached(key, log, fn):
@@ -210,14 +247,15 @@ def _coverage(log):
 
 # Share of ONE expert's loaded works (junk records left out) that list any funder. Run per call, never cached.
 EXPERT_FUNDER_Q = (
-    "MATCH (p:Person) WHERE p.oa_id = $id MATCH (p)-[:AUTHORED]->(w:Work) WHERE " + NOT_JUNK + " "
-    "OPTIONAL MATCH (w)-[f:FUNDED_BY]->(:Funder) WITH w, count(f) AS nf "
+    "MATCH (p:Person) WHERE p.oa_id IN $ids WITH p MATCH (p)-[:AUTHORED]->(w:Work) WHERE " + NOT_JUNK + " "
+    "AND NOT w.oa_id IN $x_works OPTIONAL MATCH (w)-[f:FUNDED_BY]->(:Funder) WITH w, count(f) AS nf "
     "RETURN count(w), sum(CASE WHEN nf > 0 THEN 1 ELSE 0 END)")
 
 
 def _expert_funder_coverage(log, expert_id):
     """(works, works with a funder, share or None when the expert has no loaded paper)."""
-    works, funded = ro_query(current_graph(), EXPERT_FUNDER_Q, {"id": expert_id}, log=log)[0]
+    works, funded = ro_query(current_graph(), EXPERT_FUNDER_Q,
+                             {"ids": group(expert_id), "x_works": sorted(_excluded(log))}, log=log)[0]
     works, funded = int(works), int(funded or 0)  # sum() comes back as a float
     return works, funded, (round(funded / works, 3) if works else None)
 
@@ -231,28 +269,54 @@ def _caveats(log):
             "co-authors' other works are not loaded, so ties through unloaded papers are invisible"]
 
 
+EXCLUDED_Q = "MATCH (w:Work) WHERE w.doi IN $dois RETURN w.oa_id, w.doi, w.n_authors, w.year"
+
+
+def _excluded(log):
+    """{work oa_id: (doi, n_authors, year)} for the DOIs excluded by PAPER_EXCLUDED verdicts, in this graph."""
+    v = _verdicts.get()
+    dois = sorted(set(v["dois"])) if v else []
+    if not dois:
+        return {}
+    rows = _cached(("excluded", tuple(dois)), log,
+                   lambda lg: ro_query(current_graph(), EXCLUDED_Q, {"dois": dois}, log=lg))
+    return {wid: (doi, n, year) for wid, doi, n, year in rows}
+
+
 def _tier_a(log):
-    """{person oa_id: "A1" | "A2"} for everyone with Tier A evidence (cached)."""
+    """{person oa_id: "A1" | "A2"} for everyone with Tier A evidence (cached per set of excluded works).
+    Excluded works are left out; merged profiles share the best tier of their group."""
+    x_works = sorted(_excluded(log))
+
     def load(lg):
         small = _meta(lg)["small_paper"]
         # Authors of works funded by the company (A1 if small) or foundation (A2). max() = best evidence.
         funded = ro_query(current_graph(),
             "MATCH (p:Person)-[:AUTHORED]->(w:Work)-[:FUNDED_BY]->(f:Funder {target:true}) "
-            f"WHERE {NOT_JUNK} "
+            f"WHERE {NOT_JUNK} AND NOT w.oa_id IN $x_works "
             "RETURN p.oa_id, max(CASE WHEN f.kind = 'company' AND w.n_authors <= $small THEN 1 ELSE 0 END)",
-            {**JUNK_PARAMS, "small": small}, row_cap=BIG, log=lg)
+            {**JUNK_PARAMS, "small": small, "x_works": x_works}, row_cap=BIG, log=lg)
         # People with an affiliation to the company family on a work (A1 unless bottler or large paper).
         affil = ro_query(current_graph(),
             "MATCH (p:Person)-[a:AFFILIATED]->(o:Org {target:true}) WITH p, a, o "
-            f"MATCH (w:Work) WHERE w.oa_id = a.work AND {NOT_JUNK} "
+            f"MATCH (w:Work) WHERE w.oa_id = a.work AND {NOT_JUNK} AND NOT w.oa_id IN $x_works "
             "OPTIONAL MATCH (:Org)-[po:PARENT_OF]->(o) "
             "RETURN p.oa_id, max(CASE WHEN coalesce(po.rel,'') <> 'bottler' AND w.n_authors <= $small THEN 1 ELSE 0 END)",
-            {**JUNK_PARAMS, "small": small}, row_cap=BIG, log=lg)
+            {**JUNK_PARAMS, "small": small, "x_works": x_works}, row_cap=BIG, log=lg)
         best = {}
         for pid, is_a1 in funded + affil:
             best[pid] = max(best.get(pid, 0), is_a1)
         return {pid: "A1" if v else "A2" for pid, v in best.items()}
-    return _cached("tier_a", log, load)
+    base = _cached(("tier_a", tuple(x_works)) if x_works else "tier_a", log, load)
+    v = _verdicts.get()
+    if not v or not v["merges"]:
+        return base
+    out = dict(base)  # never change the cached map
+    for pid in {p for pair in v["merges"] for p in pair}:
+        tiers = [base[m] for m in group(pid) if m in base]
+        if tiers:
+            out[pid] = min(tiers)  # "A1" < "A2": the best evidence of the merged profile
+    return out
 
 
 def _staff(log):
@@ -412,9 +476,9 @@ def _find_experts(log, topic, n, exclude_target_staff):
 
 # A person's funded works, with the funder and whether the work is ABOUT a loaded topic.
 FUNDED_EVIDENCE_Q = (
-    "MATCH (p:Person) WHERE p.oa_id = $id "
+    "MATCH (p:Person) WHERE p.oa_id IN $ids "
     "WITH p MATCH (p)-[:AUTHORED]->(w:Work) "  # WITH pins the start at the indexed Person
-    f"WHERE {NOT_JUNK} "
+    f"WHERE {NOT_JUNK} AND NOT w.oa_id IN $x_works "
     "MATCH (w)-[:FUNDED_BY]->(f:Funder {target:true}) "
     "OPTIONAL MATCH (w)-[:ABOUT]->(t:Topic) "
     "RETURN w.oa_id, w.doi, w.year, w.n_authors, w.authors_truncated, f.name, f.kind, count(t) > 0, w.title_unknown")
@@ -422,28 +486,32 @@ FUNDED_EVIDENCE_Q = (
 # A person's affiliations with the company family, one row per work. The work id travels through WITH
 # (FalkorDB cannot use a relationship property straight after a variable-length pattern).
 AFFIL_EVIDENCE_Q = (
-    "MATCH (p:Person) WHERE p.oa_id = $id "
+    "MATCH (p:Person) WHERE p.oa_id IN $ids "
     "MATCH (p)-[a:AFFILIATED]->(o:Org {target:true}) "
     "WITH a.work AS wid, o "
-    f"MATCH (w:Work) WHERE w.oa_id = wid AND {NOT_JUNK} "
+    f"MATCH (w:Work) WHERE w.oa_id = wid AND {NOT_JUNK} AND NOT w.oa_id IN $x_works "
     "OPTIONAL MATCH (parent:Org)-[po:PARENT_OF]->(o) "
     "OPTIONAL MATCH (w)-[:ABOUT]->(t:Topic) "
     "RETURN w.oa_id, w.doi, w.year, w.n_authors, w.authors_truncated, o.name, parent.name, po.rel, count(t) > 0, w.title_unknown")
 
 # Co-authors who are Tier A, over COAUTH (for the score) and, where it exists, the COAUTH_B link (for Tier B).
+# $ids = the expert plus merged profiles (just the expert without verdicts); links inside that group are left out.
+# c.works and cb.recent_small_works let a PAPER_EXCLUDED verdict take its paper out of the counts (in Python).
 COAUTH_TIES_Q = (
-    "MATCH (e:Person) WHERE e.oa_id = $id "
-    "MATCH (e)-[c:COAUTH]->(b:Person) WHERE c.recent_small_w > 0 AND b.oa_id IN $tier_a "
+    "MATCH (e:Person) WHERE e.oa_id IN $ids "
+    "MATCH (e)-[c:COAUTH]->(b:Person) WHERE c.recent_small_w > 0 AND b.oa_id IN $tier_a AND NOT b.oa_id IN $ids "
     "OPTIONAL MATCH (e)-[cb:COAUTH_B]->(b) "
-    "RETURN b.oa_id, b.name, c.recent_small_papers, c.recent_small_w, cb.recent_small_dois "
-    "ORDER BY c.recent_small_w DESC, b.oa_id")
+    "RETURN b.oa_id, b.name, c.recent_small_papers, c.recent_small_w, cb.recent_small_dois, c.works, "
+    "cb.recent_small_works ORDER BY c.recent_small_w DESC, b.oa_id")
 
 
 def _evidence(log, expert_id, small):
-    """All Tier A evidence for one person, each piece classed A1 or A2 with a reason."""
+    """All Tier A evidence for one person (and profiles merged with it), each piece classed A1 or A2 with a
+    reason. Works excluded by a verdict are left out."""
     out = []
+    params = {"ids": group(expert_id), "x_works": sorted(_excluded(log)), **JUNK_PARAMS}
     for wid, doi, year, n, trunc, funder, kind, on_topic, untitled in ro_query(
-            current_graph(), FUNDED_EVIDENCE_Q, {"id": expert_id, **JUNK_PARAMS}, log=log):
+            current_graph(), FUNDED_EVIDENCE_Q, params, log=log):
         if kind == "foundation":
             tier, reason = "A2", "foundation grant"
         elif n > small:
@@ -454,7 +522,7 @@ def _evidence(log, expert_id, small):
                     "via": funder, "family_path": [funder], "tier": tier, "reason": reason,
                     "topic_label": "on-topic" if on_topic else "off-topic", "untitled": bool(untitled)})
     for wid, doi, year, n, trunc, org, parent, rel, on_topic, untitled in ro_query(
-            current_graph(), AFFIL_EVIDENCE_Q, {"id": expert_id, **JUNK_PARAMS}, log=log):
+            current_graph(), AFFIL_EVIDENCE_Q, params, log=log):
         if rel == "bottler":
             tier, reason = "A2", "bottler affiliation"
         elif n > small:
@@ -473,17 +541,48 @@ def _evidence(log, expert_id, small):
 def _nearest_tier_a(log, expert_id, k, tier_a):
     """Fewest COAUTH_B hops (1..k) to a Tier-A person, via algo.BFS. BFS returns NO ROW when nothing is
     reached; the count below is then 0. Returns (hops, how many Tier-A people at that distance,
-    first one's id, first one's name), or (None, 0, None, None)."""
+    first one's id, first one's name), or (None, 0, None, None). Merged profiles: BFS from each of them.
+    Verdicts change who is Tier A here, but algo.BFS takes no edge filter, so a COAUTH_B edge that rests on
+    an excluded paper is still walked (spec 9f)."""
     for hops in range(1, k + 1):
         count, first_id, first_name = ro_query(current_graph(),
-            "MATCH (e:Person) WHERE e.oa_id = $id "
+            "MATCH (e:Person) WHERE e.oa_id IN $ids "
             "CALL algo.BFS(e, $hops, 'COAUTH_B') YIELD nodes "
-            "UNWIND nodes AS n WITH n WHERE n.oa_id IN $tier_a "
+            "UNWIND nodes AS n WITH DISTINCT n WHERE n.oa_id IN $tier_a "
             "WITH n ORDER BY n.oa_id RETURN count(n), head(collect(n.oa_id)), head(collect(n.name))",
-            {"id": expert_id, "hops": hops, "tier_a": list(tier_a)}, log=log)[0]
+            {"ids": group(expert_id), "hops": hops, "tier_a": list(tier_a)}, log=log)[0]
         if count:
             return hops, count, first_id, first_name
     return None, 0, None, None
+
+
+def _coauth_ties(log, expert_id, tier_a, meta):
+    """Rows (co-author id, name, recent small papers, recent small w, Tier B DOIs or None), strongest first.
+    Without verdicts these are the COAUTH_TIES_Q rows unchanged. A PAPER_EXCLUDED paper is taken out of the
+    counts exactly as the loader put it in (1/(n_authors-1) per recent small paper, loader.coauth_rows).
+    Merged profiles: the rows of each profile are added up per co-author (Tier B DOIs: their union)."""
+    x = _excluded(log)
+    rows = ro_query(current_graph(), COAUTH_TIES_Q, {"ids": group(expert_id), "tier_a": list(tier_a)}, log=log)
+    by_b = {}
+    for pid, name, n_papers, w, dois, works, b_works in rows:
+        for wid in works or []:
+            if wid in x:
+                _, n, year = x[wid]
+                if n and n > 1 and n <= meta["small_paper"] and (year or 0) >= meta["recent_year"]:
+                    n_papers, w = n_papers - 1, w - 1 / (n - 1)
+        b_dois = None if dois is None else {wid: d for d, wid in zip(dois, b_works or []) if wid not in x}
+        row = by_b.setdefault(pid, [pid, name, 0, 0.0, None])
+        row[2], row[3] = row[2] + n_papers, row[3] + w
+        if b_dois is not None:
+            row[4] = {**(row[4] or {}), **b_dois}
+    out = []
+    for pid, name, n_papers, w, b_dois in by_b.values():
+        if w <= 1e-9:  # every recent small shared paper was excluded
+            continue
+        if b_dois is not None:
+            n_papers = len(b_dois)  # distinct papers behind the Tier B link
+        out.append((pid, name, n_papers, w, None if b_dois is None else list(b_dois.values())))
+    return sorted(out, key=lambda r: (-r[3], r[0]))
 
 
 def _check_label_args(label, public_case):
@@ -503,7 +602,7 @@ def _tie_report(log, expert_id, label, public_case):
     meta, tier_a = _meta(log), _tier_a(log)
     label = _label(person["name"], label, public_case)
     evidence = _evidence(log, expert_id, meta["small_paper"])
-    ties = ro_query(current_graph(), COAUTH_TIES_Q, {"id": expert_id, "tier_a": list(tier_a)}, log=log)
+    ties = _coauth_ties(log, expert_id, tier_a, meta)
 
     # Tier B links = at least 2 recent small shared papers with a Tier-A person; they carry the DOIs.
     coauth_ties = []
@@ -529,6 +628,11 @@ def _tie_report(log, expert_id, label, public_case):
     score = TIER_WEIGHT.get(tier, 0) + coauth_w
 
     warnings = _flag_warnings(person["profile_flag"])
+    if tier == "C" and _excluded(log):
+        warnings.append(BFS_UNFILTERED)
+    if len(group(expert_id)) > 1:
+        warnings.append("PROFILE_MERGE verdict: evidence and co-author links of " + ", ".join(group(expert_id))
+                        + " are combined (bridges still start from this id only)")
     if any(e["doi"] is None for e in evidence):
         warnings.append("some evidence works have no DOI in OpenAlex; they cannot back a note claim")
     if any(e["n_authors"] and e["reason"].endswith("+ authors)") for e in evidence):
@@ -605,9 +709,10 @@ def _check_no_tie(log, expert_id, k, years, label, public_case, searched_hops):
                    f"from {label}; see tie_report for the DOIs.")
     else:
         mine = (f"{funded} of {label}'s {works} loaded works ({round(100 * expert_cov)}%) list a funder"
-                if works else f"{label} has no loaded paper")
+                if works else f"{label} has no loaded paper (junk records such as corrections are left out)")
+        thin = "Funding records are thin: only " if cov["funder_coverage"] < THIN_FUNDER else ""
         wording = (f"No Tier A or B tie and no Tier-A person within {k} co-author hops of {label} "
-                   f"({_years(meta)}). Funding records are thin: only {pct_funder}% of topic works in the graph "
+                   f"({_years(meta)}). {thin}{pct_funder}% of topic works in the graph "
                    f"list any funder, and {mine} ({pct}% of topic works have funder or affiliation data, but "
                    f"affiliation says little about funding). "
                    f"Absence in the research record is not proof.")
@@ -617,7 +722,10 @@ def _check_no_tie(log, expert_id, k, years, label, public_case, searched_hops):
              "caveats": _caveats(log)}
     data = {"result": "TIE_FOUND" if found else "NO_TIE_FOUND", "nearest": nearest,
             "query_name": QUERY_NAME_Q3, "label": label, "wording": wording}
-    return _ok(data, log, scope, _flag_warnings(person["profile_flag"]))
+    warnings = _flag_warnings(person["profile_flag"])
+    if found and nearest["hops"] > 0 and _excluded(log):  # NO_TIE_FOUND stays correct: excluding only removes ties
+        warnings.append(BFS_UNFILTERED)
+    return _ok(data, log, scope, warnings)
 
 
 # ---------- Q4: bridges ----------
@@ -651,7 +759,7 @@ def _bridges(log, expert_id, depth, limit, label, public_case):
                     "THEN c1.recent_small_w WHEN c2.recent_small_w <= c3.recent_small_w "
                     "THEN c2.recent_small_w ELSE c3.recent_small_w END")
         mids = "m1, m2"
-    edge_cols = ", ".join(f"{c}.recent_small_dois, {c}.recent_small_w" for c in edges)
+    edge_cols = ", ".join(f"{c}.recent_small_dois, {c}.recent_small_w, {c}.recent_small_works" for c in edges)
     mid_cols = ", ".join(f"{m}.oa_id, {m}.name" for m in mids.split(", "))
     q = (f"MATCH (e:Person) WHERE e.oa_id = $id MATCH {pattern} WHERE {where} "
          f"WITH *, {strength} AS strength "
@@ -670,23 +778,53 @@ def _bridges(log, expert_id, depth, limit, label, public_case):
         count_warning = ["bridge_count not computed: counting all paths took over 1 s"]
 
     n_mid = depth - 1
+    x, dropped = _excluded(log), 0
     paths = []
-    for i, r in enumerate(rows, 1):
+    for r in rows:
+        i = len(paths) + 1
         mid = [(r[2 * j], r[2 * j + 1]) for j in range(n_mid)]
         a_id, a_name = r[2 * n_mid], r[2 * n_mid + 1]
         rest = r[2 * n_mid + 2:]
+        edges_out = []
+        for j in range(depth):  # a PAPER_EXCLUDED paper leaves the link (each of these papers adds 1/(n-1) to w)
+            dois, w, works = rest[3 * j], rest[3 * j + 1], rest[3 * j + 2]
+            kept = [d for d, wid in zip(dois, works) if wid not in x]
+            w -= sum(1 / (x[wid][1] - 1) for wid in works if wid in x and x[wid][1] and x[wid][1] > 1)
+            edges_out.append({"dois": [d for d in kept if d], "w": round(w, 4), "papers": len(kept)})
+        if any(e["papers"] < 2 for e in edges_out):  # no longer a COAUTH_B link (2+ papers) once excluded
+            dropped += 1
+            continue
         paths.append({
             "nodes": [label] + [_label(nm, f"Co-author #{i}.{j}", False) for j, (_, nm) in enumerate(mid, 1)]
                      + [_label(a_name, f"Tier-A #{i}", False)],
             "node_ids": [expert_id] + [m for m, _ in mid] + [a_id],
             "anchor_tier": tier_a[a_id],
-            "edges": [{"dois": [d for d in rest[2 * j] if d], "w": round(rest[2 * j + 1], 4)} for j in range(depth)],
-            "strength": round(rest[-1], 4)})
+            "edges": [{"dois": e["dois"], "w": e["w"]} for e in edges_out],
+            "strength": round(min(e["w"] for e in edges_out) if x else rest[-1], 4)})
+    if dropped:
+        count_warning.append(f"{dropped} path(s) left out: a link rested on a paper excluded by a verdict; "
+                             "bridge_count and the path order were not recomputed")
     meta = _meta(log)
     scope = {"hops": depth, "years": _years(meta), "load_scope": meta["load_scope"]}
     # max_flow is cut (checkpoints.md): kept null so the output matches the spec.
     return _ok({"label": label, "paths": paths, "bridge_count": count, "max_flow": None}, log, scope,
                _flag_warnings(person["profile_flag"]) + count_warning)
+
+
+# ---------- checkpoint 7: lookups for record_verdict and draft_note ----------
+
+WORK_BY_DOI_Q = "MATCH (w:Work) WHERE w.doi = $doi RETURN w.oa_id, w.junk LIMIT 10"
+PEOPLE_Q = "MATCH (p:Person) WHERE p.oa_id IN $ids RETURN p.oa_id, p.name"
+
+
+def works_with_doi(log, doi):
+    """Work ids in the current graph with this (bare, lower-case) DOI."""
+    return [r[0] for r in ro_query(current_graph(), WORK_BY_DOI_Q, {"doi": doi}, log=log)]
+
+
+def names_of(log, ids):
+    """{oa_id: name} for the people in the current graph (used to keep names out of a note; never shown)."""
+    return dict(ro_query(current_graph(), PEOPLE_Q, {"ids": list(ids)}, log=log))
 
 
 # ---------- list_cases: which case graphs exist (checkpoint 5d) ----------

@@ -47,7 +47,7 @@ TieTrace checks how connected an expert is to the company in a story, using an O
   - `algo.BFS` returns no row when nothing is reached.
 - **Never fabricate data.** Every node and edge comes from OpenAlex (or the hand-checked `COKE_FAMILY` list). If the API is down, build from the `data/raw/` cache and mark the missing fields as unknown. Synthetic data belongs only in test fixtures.
 - **Score formula is fixed** (redesign section 4). Do not tune it after seeing E1/E2 results.
-- **Human-only tools never get allowlisted:** `record_verdict`, `approve_note`, `set_policy`. Claude Code's permission prompt is the human gate.
+- **Human-only tools never get allowlisted:** `record_verdict`, `approve_note`, `set_policy`. Claude Code's permission prompt is the human gate; `.claude/settings.json` has `permissions.ask` rules for them so the prompt appears even in auto mode (docs: explicit ask rules still force a prompt). Don't demo in bypass-permissions mode.
 
 ## Working style
 - **The author is a beginner** and must be able to explain every query and decision to the judges (rules 12-13). Keep the code boring and small, and prefer plain Cypher over clever abstractions.

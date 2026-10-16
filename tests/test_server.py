@@ -36,7 +36,8 @@ ERROR_CODES = {"INVALID_ARG", "NOT_FOUND", "AMBIGUOUS", "TIMEOUT", "ROW_LIMIT", 
                "NOT_APPROVED", "READ_ONLY", "DB_ERROR", "INTERNAL", "NO_GRAPH"}  # NO_GRAPH: spec s4, checkpoint 5d
 TOOLS = {"resolve_experts", "find_experts", "tie_report", "check_no_tie", "bridges", "check_case",
          "list_cases",  # list_cases: spec s5, checkpoint 5d
-         "open_case", "recall", "recheck"}  # Track 2 memory tools: spec s5, checkpoint 6
+         "open_case", "recall", "recheck",  # Track 2 memory tools: spec s5, checkpoint 6
+         "record_verdict", "draft_note", "approve_note"}  # checkpoint 7: spec s5, 9f
 # Checkpoint 6 (spec s4, s5, 9d): every tool takes the optional `agent` (spec s4 "Logging"); tie_report,
 # check_no_tie and bridges take an optional case_id; check_case takes case_id OR expert_ids (spec s5 "In: case_id").
 SPEC_INPUTS = {  # name -> (required, allowed) according to docs/mcp-spec.md sections 4, 5, 9b, 9c, 9d
@@ -51,9 +52,14 @@ SPEC_INPUTS = {  # name -> (required, allowed) according to docs/mcp-spec.md sec
                   {"story", "company", "topic", "expert_ids", "public_case", "case", "agent"}),
     "recall": (set(), {"expert_id", "case_id", "session_id", "limit", "agent"}),
     "recheck": ({"check_id"}, {"check_id", "agent"}),
+    # checkpoint 7 (spec s5, 9f): record_verdict also takes the research `case` the target is checked in
+    "record_verdict": ({"type", "target", "reason", "reviewer"}, {"type", "target", "reason", "reviewer", "case", "agent"}),
+    "draft_note": ({"case_id", "claims"}, {"case_id", "claims", "agent"}),
+    "approve_note": ({"note_id", "reviewer"}, {"note_id", "reviewer", "agent"}),
 }
 # Tools that save memory records (spec s5: tie_report/check_case with case_id save Checks); never destructive.
-WRITE_TOOLS = {"tie_report", "check_case", "open_case", "recheck"}
+WRITE_TOOLS = {"tie_report", "check_case", "open_case", "recheck", "record_verdict", "draft_note", "approve_note"}
+DESTRUCTIVE_TOOLS = {"record_verdict"}  # spec 9f: a verdict supersedes saved Checks and changes every later answer
 GEBN = {"James O. Hill": "A5031318756", "Steven N. Blair": "A5105003630",
         "Gregory A. Hand": "A5046953968", "John C. Peters": "A5045252457"}
 CMD = ["uv", "run", "--directory", str(ROOT), "python", "server.py"]
@@ -198,7 +204,7 @@ def test_exactly_the_spec_tools_with_spec_inputs_and_read_only_hints():
         assert props == allowed, (name, props)
         assert set(t.input_schema.get("required", [])) == req, name
         a = t.annotations
-        assert a and a.read_only_hint is (name not in WRITE_TOOLS) and a.destructive_hint is False, name
+        assert a and a.read_only_hint is (name not in WRITE_TOOLS) and a.destructive_hint is (name in DESTRUCTIVE_TOOLS), name
         assert t.description and 80 < len(t.description) < 1800, (name, len(t.description))
         assert t.output_schema is not None, name
 

@@ -135,12 +135,16 @@ Claimed (→ Aaryan, Oct 16).
 - [x] Extra: hardening after an external review (Aaryan, Oct 16): Python 3.13 fix, funder-only no-tie coverage, Tier B/C context only, `duration_ms`, README rewrite, localhost-only FalkorDB. Reviewer PASS. Open: LICENSE (decide with Abdul), `requirepass`, CI
 
 ## 7. Verdicts, notes, Writer
-- [ ] `record_verdict` (PAPER_EXCLUDED) with an impact report
-- [ ] `PROFILE_MERGE` verdict
-- [ ] `draft_note` runs the Verifier and returns verified or rejected
-- [ ] `approve_note` exports markdown and is blocked unless verified
-- [ ] `.claude/agents/writer.md` subagent
-- [ ] Stretch: `review_queue` + Review Desk subagent, `set_policy`
+Claimed (→ Aaryan, Oct 16).
+- [x] `record_verdict` (PAPER_EXCLUDED) with an impact report (Aaryan, Oct 16): gate run: excluding 10.1016/j.foodhyd.2022.107657 moved 2 experts A1 101.6 → NONE; Hill unchanged
+- [x] `PROFILE_MERGE` verdict (Aaryan, Oct 16): S. N. Blair profile NONE → A1 when merged with Steven N. Blair
+- [x] `draft_note` runs the Verifier and returns verified or rejected (Aaryan, Oct 16): the server writes every printed sentence; every case expert gets a disclosure line; sources say kind, source, tier and on/off-topic per DOI
+- [x] `approve_note` exports markdown and is blocked unless verified (Aaryan, Oct 16): also blocked after a later verdict or a graph rebuild; `.claude/settings.json` forces a prompt for `record_verdict`/`approve_note` even in auto mode
+- [x] `.claude/agents/writer.md` subagent (Aaryan, Oct 16): tools limited to recall, tie_report, check_no_tie, draft_note
+- [ ] ✂️ Stretch cut: `review_queue` + Review Desk subagent, `set_policy` (marked cut in the spec)
+
+Review: round 1 FAIL (5 must-fix) → round 2 FAIL (no-tie text could state a tie) → round 3 FAIL (duplicate DOIs inflated a count) → round 4 PASS. Suites: loader 49, research 54, server 26, eval 13, cases 27, discover 26, memory 32, obsidian 22, notes 40.
+- [ ] Gate in real Claude Code: open case → check → verdict (human prompt) → Writer drafts → approve (human prompt) → markdown (→ Aaryan)
 
 **Gate:** a demo run works end to end: input, check, verdict, note, approval.
 

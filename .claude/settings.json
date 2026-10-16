@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "ask": [
+      "mcp__tietrace-alpha__record_verdict",
+      "mcp__tietrace-alpha__approve_note",
+      "mcp__tietrace-beta__record_verdict",
+      "mcp__tietrace-beta__approve_note"
+    ]
+  }
+}

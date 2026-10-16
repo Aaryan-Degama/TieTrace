@@ -1,6 +1,6 @@
 # TieTrace
 
-*Last updated by Aaryan, Oct 16: rewritten to match the code after checkpoint 6 and the hardening round (both tracks, 10 tools, setup, test and evaluation results, limits).*
+*Last updated by Aaryan, Oct 16: checkpoint 7 (verdicts, sourcing notes, the Writer subagent; 13 tools); PMI funder share now read from the graph's Meta node. Earlier the same day: rewritten to match the code after checkpoint 6 and the hardening round (both tracks, 10 tools, setup, test and evaluation results, limits).*
 
 TieTrace helps a journalist check how connected an expert is to the company in a story. It looks the expert up in a research graph built from [OpenAlex](https://openalex.org) and stored in [FalkorDB](https://www.falkordb.com), and it answers with evidence, not opinions:
 
@@ -31,7 +31,7 @@ Each answer carries `tier_basis` ("direct evidence" or "network context only —
 - **Verifier** (`verifier.py`, plain code): rejects a tie claim without a stored DOI, a "no tie" claim without `query_name` and scope (hops, years, coverage, funder_coverage), and the banned words.
 - **Anonymity:** experts appear as "Expert #n". Names appear only in a case whose experts are all on the case's approved public list (the documented GEBN case).
 
-## The 10 tools
+## The 13 tools
 
 Track 1, research (read the research graph):
 
@@ -51,9 +51,12 @@ Track 2, memory (the newsroom graph):
 |---|---|
 | `open_case` | Open a story's case with its experts; `prior_memory` shows earlier checks of them in this newsroom |
 | `recall` | Timeline of an expert's checks, a case, or a session |
-| `recheck` | Re-run a saved check on the current graph and show what changed and why |
+| `recheck` | Re-run a saved check on the current graph and show what changed and why (new data or a verdict) |
+| `record_verdict` | **Human only.** Rule a paper out (`PAPER_EXCLUDED`, a DOI) or merge two author profiles (`PROFILE_MERGE`); every current check in the newsroom is re-run and the changed ones are listed (tier and score before and after) |
+| `draft_note` | The Writer's tool: claims for the sourcing note, each checked by the Verifier (DOIs must be the expert's Tier A evidence, a no-tie claim gets the server's own scope, no names, no banned words) |
+| `approve_note` | **Human only.** Approve a verified note and get it as markdown, every DOI as a link and every no-tie claim with its scope |
 
-`tie_report`, `check_case`, `open_case` and `recheck` are marked as writing (they add Cases or Checks); the others are read-only (their Event is an audit log). Not built yet (checkpoint 7): `record_verdict`, `draft_note`, `approve_note` and the Writer subagent.
+`tie_report`, `check_case`, `open_case`, `recheck`, `record_verdict`, `draft_note` and `approve_note` are marked as writing (they add Cases, Checks, Verdicts or Notes; `record_verdict` is also marked destructive because it supersedes saved checks); the others are read-only (their Event is an audit log). `record_verdict` and `approve_note` must never be allowlisted: Claude Code's permission prompt is the human gate. The Writer is a Claude Code subagent (`.claude/agents/writer.md`) limited to `recall`, `tie_report`, `check_no_tie` and `draft_note`. What a verdict does and does not recompute is listed in `docs/mcp-spec.md` section 9f. Not built (cut): `review_queue`, `set_policy`.
 
 ## Setup
 
@@ -98,12 +101,12 @@ You need Docker, Python 3.13 or newer, and [uv](https://docs.astral.sh/uv/).
 Plain-assert scripts, no pytest. They need FalkorDB with both research graphs loaded, use scratch `zz-test-*` newsrooms (never `alpha`) and delete them at the end:
 
 ```bash
-for s in test_loader test_research test_server test_eval test_cases test_discover test_memory test_obsidian; do
+for s in test_loader test_research test_server test_eval test_cases test_discover test_memory test_obsidian test_notes; do
   uv run python tests/$s.py
 done
 ```
 
-Last full run (Aaryan, Oct 16, FalkorDB v4.22.1, Python 3.14): loader 49/49, research 54/54, server 26/26, eval 13/13, cases 27/27, discover 26/26, memory 28/28, obsidian 22/22. `test_memory` and `test_research` also pass on Python 3.13.
+Last full run (Aaryan, Oct 16, after checkpoint 7, FalkorDB v4.22.1, Python 3.14): loader 49/49, research 54/54, server 26/26, eval 13/13, cases 27/27, discover 26/26, memory 32/32, obsidian 22/22, notes 39/39. `test_memory` and `test_research` also pass on Python 3.13.
 
 ## Evaluation results
 
@@ -116,7 +119,7 @@ Full method and numbers: [eval/results.md](eval/results.md). Pass rules were fix
 | E1 placebo lift (Tier B) | **FAIL.** Lift 0.96x (interval 0.84-1.09) against works-count-matched random groups: Tier B is not a sign of unusual closeness. |
 | E2 temporal hold-out | **FAIL.** The weighted score (AUC 0.716) does not beat publication volume (0.720) or a plain count of Tier A co-authors (0.749). The score does not predict later ties. |
 | E11 memory across sessions | Passed in real Claude Code: a fresh session's `open_case` showed the earlier session's check. |
-| 5f second case (Philip Morris × lung cancer) | End to end in Claude Code with correct scope wording; only 37.5% of that graph's works list any funder (session-reported), so "no tie found" is weaker there. |
+| 5f second case (Philip Morris × lung cancer) | End to end in Claude Code with correct scope wording; only 37.5% of that graph's topic works list any funder (7,482 of 19,964, read from the graph's `Meta` node), so "no tie found" is weaker there. |
 
 Because E1 and E2 failed, only Tier A is a finding. Tier B, Tier C and the score are shown as labelled network context.
 
@@ -124,7 +127,7 @@ Because E1 and E2 failed, only Tier A is a finding. Tier B, Tier C and the score
 
 - **Funding data is thin.** Only 56.3% of loaded obesity topic works list any funder (37.5% in the Philip Morris graph), so "no tie found" often means "no funding recorded". Every no-tie answer quotes the graph's funder share and the expert's own share of works with a funder.
 - **The graph is a sample.** The topic part holds the most-cited works per year (about 11.5% of the field); co-authors' other works are not loaded, so ties through unloaded papers are invisible.
-- **Split author profiles.** OpenAlex sometimes splits one person into several records; a check on the "wrong" record can miss evidence (see E3 in `eval/results.md`). Profile merges need a human verdict (checkpoint 7, not built).
+- **Split author profiles.** OpenAlex sometimes splits one person into several records; a check on the "wrong" record can miss evidence (see E3 in `eval/results.md`). A human can merge two profiles with a `PROFILE_MERGE` verdict (evidence and co-author links are combined for either id; `bridges` still starts from one id).
 - **Gifts to universities** and other money that OpenAlex funder fields do not record are invisible.
 - **Tier C saturates in some fields** (52 of 73 top lung cancer authors in the 5f run, session-reported and not yet re-checked by a script), so it may say little there.
 - Concurrency (E9) and tenant isolation (E10) are not yet evaluated.
@@ -133,9 +136,9 @@ Because E1 and E2 failed, only Tier A is a finding. Tier B, Tier C and the score
 
 | File | What it is |
 |---|---|
-| `server.py` | The MCP server: 10 tools, the envelope, the Event log |
+| `server.py` | The MCP server: 13 tools, the envelope, the Event log |
 | `research.py` | Research queries (tiers, no-tie BFS, bridges, name lookup) |
-| `memory.py` | The newsroom memory graph (Sessions, Events, Cases, Checks) |
+| `memory.py` | The newsroom memory graph (Sessions, Events, Cases, Checks, Verdicts, Notes) |
 | `verifier.py` | Claim checker |
 | `loader.py` | Builds a research graph from OpenAlex (`cases/<slug>/case.json`) |
 | `discover.py` | CLI to find OpenAlex IDs for a new case (a human approves them) |

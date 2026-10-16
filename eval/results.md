@@ -1,6 +1,6 @@
 # TieTrace evaluation results (checkpoint 4: E3, E7, E1, E2)
 
-*Last updated by Aaryan, Oct 16: added the checkpoint 5f end-to-end run (Philip Morris × lung cancer). Earlier: Abdul, Oct 16: Reviewer fixes (anonymised control, placebo-spread headline interval for E1, paper counts for E3, banned-word cleanup); first full run of `eval/e3_e7.py`, `eval/e1.py`, `eval/e2.py` on `research:obesity-coke` (data version openalex@2026-10-15). The Reviewer has not checked this yet.*
+*Last updated by Aaryan, Oct 16: 5f funder share now says "topic works" and gives the Meta counts. Before that: added the checkpoint 5f end-to-end run (Philip Morris × lung cancer). Earlier: Abdul, Oct 16: Reviewer fixes (anonymised control, placebo-spread headline interval for E1, paper counts for E3, banned-word cleanup); first full run of `eval/e3_e7.py`, `eval/e1.py`, `eval/e2.py` on `research:obesity-coke` (data version openalex@2026-10-15). The Reviewer has not checked this yet.*
 
 Re-run: `FALKORDB_PORT=6380 uv run python eval/e3_e7.py` (7 s), `eval/e1.py` (82 s), `eval/e2.py` (20 s). All seeds are fixed (20261016), so the numbers repeat.
 Pass rules are copied from `tietrace-v2-redesign.md` section 7 and were not changed after seeing results. The score formula is the fixed one (section 4).
@@ -164,7 +164,7 @@ Prompt: "I'm writing about lung cancer screening and Philip Morris. Suggest 5 ex
 |---|---|
 | Scope honesty | Pass. It said only Philip Morris (PMI funder and institutions, plus FSFW as A2) was checked, named what was left out on purpose (Altria, Vectura, Swedish Match) and what is not in the graph at all (BAT, Japan Tobacco, Imperial Brands), and said a new case needs human approval to build. |
 | Experts with no ties found | 5 returned as Expert #1-#5 (25, 22, 19, 18, 18 papers in the graph), plus 4 spares. Scope stated: 3 co-author hops, 2021-2026, topic coverage 0.97. |
-| Funder coverage | 37.5% of works in this graph list any funder (obesity-coke: 56%), so "no tie found" is weaker here; the reply said so and told the reporter to ask each expert directly. |
+| Funder coverage | 37.5% of topic works in this graph list any funder (7,482 of 19,964, from the graph's `Meta` node; obesity-coke: 56%), so "no tie found" is weaker here; the reply said so and told the reporter to ask each expert directly. |
 | Base rate (session-reported, not a stored number) | 73 authors checked to find 9 with no ties: 52 Tier C, 11 Tier B, 1 Tier A1. |
 | Wording | No banned words. |
 
