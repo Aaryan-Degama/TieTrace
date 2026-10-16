@@ -14,7 +14,7 @@ Deadline: **submit by Oct 18, 6 PM IST.** Specs: `tietrace-v2-redesign.md`, `doc
 | 5b | Persistence fix (AOF) | Oct 16 | ✅ |
 | 5c-5f | Any company/topic: case config, case-aware tools, discover, Philip Morris demo | Oct 16-17 | ✅ |
 | 6 | Memory graph: Track 2 tools | Oct 17 morning | ✅ |
-| 7 | Verdicts, notes, Writer | Oct 17 midday | ⬜ |
+| 7 | Verdicts, notes, Writer | Oct 17 midday | ✅ |
 | 8 | Remaining evaluation + golden tests | Oct 17 afternoon | ⬜ |
 | 9 | README, video, submit | Oct 18, by 6 PM | ⬜ |
 
@@ -144,7 +144,7 @@ Claimed (→ Aaryan, Oct 16).
 - [ ] ✂️ Stretch cut: `review_queue` + Review Desk subagent, `set_policy` (marked cut in the spec)
 
 Review: round 1 FAIL (5 must-fix) → round 2 FAIL (no-tie text could state a tie) → round 3 FAIL (duplicate DOIs inflated a count) → round 4 PASS. Suites: loader 49, research 54, server 26, eval 13, cases 27, discover 26, memory 32, obsidian 22, notes 40.
-- [ ] Gate in real Claude Code: open case → check → verdict (human prompt) → Writer drafts → approve (human prompt) → markdown (→ Aaryan)
+- [x] Gate in real Claude Code (Aaryan, Oct 16): case "Soda tax schools" (Blair, Hill) → check_case → record_verdict excluding 10.1016/j.mhpa.2017.12.001 (Blair 6 → 5 direct works, still A1; the older "Soda tax story" check was superseded too) → writer agent draft verified first try → approve_note → markdown. Aaryan confirmed Claude Code prompted him; no allow rule was saved. Follow-up: a DOI with two evidence items prints both labels in one bracket
 
 **Gate:** a demo run works end to end: input, check, verdict, note, approval.
 
