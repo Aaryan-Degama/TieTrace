@@ -1,6 +1,6 @@
 # TieTrace evaluation results (checkpoint 4: E3, E7, E1, E2)
 
-*Last updated by Aaryan, Oct 16: 5f funder share now says "topic works" and gives the Meta counts. Before that: added the checkpoint 5f end-to-end run (Philip Morris × lung cancer). Earlier: Abdul, Oct 16: Reviewer fixes (anonymised control, placebo-spread headline interval for E1, paper counts for E3, banned-word cleanup); first full run of `eval/e3_e7.py`, `eval/e1.py`, `eval/e2.py` on `research:obesity-coke` (data version openalex@2026-10-15). The Reviewer has not checked this yet.*
+*Last updated by Abdul, Oct 17 2026: added E4 (max flow vs aggregate, `eval/e4.py`). Before that, Abdul, Oct 16: added E6 (mega-paper ablation, `eval/e6.py`). Before that, Aaryan, Oct 16: 5f funder share now says "topic works" and gives the Meta counts. Before that: added the checkpoint 5f end-to-end run (Philip Morris × lung cancer). Earlier: Abdul, Oct 16: Reviewer fixes (anonymised control, placebo-spread headline interval for E1, paper counts for E3, banned-word cleanup); first full run of `eval/e3_e7.py`, `eval/e1.py`, `eval/e2.py` on `research:obesity-coke` (data version openalex@2026-10-15). The Reviewer has not checked this yet.*
 
 Re-run: `FALKORDB_PORT=6380 uv run python eval/e3_e7.py` (7 s), `eval/e1.py` (82 s), `eval/e2.py` (20 s). All seeds are fixed (20261016), so the numbers repeat.
 Pass rules are copied from `tietrace-v2-redesign.md` section 7 and were not changed after seeing results. The score formula is the fixed one (section 4).
@@ -151,6 +151,51 @@ Differences with 95% bootstrap intervals: weighted - volume **-0.004** [-0.054, 
 - Many positives are co-authors of one funded paper (a research group), so positives are correlated; the bootstrap treats persons as separate draws, which makes the intervals too narrow.
 - "Direct-only" is degenerate in this design (see above).
 - The bottler affiliations and foundation grants count as Tier A2 targets, as in the shipped tier rules.
+
+---
+
+## E6: mega-paper ablation (Tier A and Tier B, with vs without the 25-author cap)
+
+*Run by Abdul, Oct 16 (`FALKORDB_PORT=6381 uv run python eval/e6.py`, 3 s, read-only on `research:obesity-coke`, openalex@2026-10-15). Reviewed (round 1 findings fixed); the recount in `tests/test_eval.py` is the separate recount. All four suites passed on Oct 16.*
+
+Rule (fixed before running, redesign section 7: report the share, keep the cap). The cap is `Meta.small_paper` = 25 authors. A larger paper is "large". With the cap, a large company-funded or affiliation paper gives only A2, and a large paper does not count towards a Tier B link (2+ recent papers, 2021 onwards). Without the cap both count in full. Tier A membership (A1 or A2) does not depend on the cap, only the A1/A2 split does. The capped Tier A set was checked equal to `research._tier_a`.
+
+| | With cap (25) | Without cap | Only exists without the cap |
+|---|---|---|---|
+| Tier A people (A1 + A2) | 3,035 | 3,035 | 0 |
+| Tier A1 people | 949 | 1,069 | 120 (11.2% of no-cap A1) |
+| Tier A2 people | 2,086 | 1,966 | |
+| Tier B people (not Tier A) | 1,309 | 1,889 | 580 (30.7% of no-cap B) |
+| A1 + B people together | 2,258 | 2,958 | 700 (23.7% of no-cap) |
+
+**What this means.** About a quarter of the A1 and B ties you would get without the cap rest only on papers with more than 25 authors; for Tier B alone it is nearly a third. The cap is kept, and these are the numbers to quote. Tier A as a whole is not affected: 3,035 people either way, so the headline (Tier A with DOIs) does not depend on the cap, but "A1" (company-funded, small paper) does for 11% of the people who would be A1 without it. `tests/test_eval.py::test_e6_ablation_numbers` recomputes all five counts from the raw nodes with separate code and checks they appear in this section.
+
+---
+
+## E4: max flow vs the Cypher aggregate
+
+*Run by Abdul, Oct 17 2026 (`FALKORDB_PORT=6381 uv run python eval/e4.py`, 18 s, read-only on `research:obesity-coke`, openalex@2026-10-15). Reviewer PASS (4 nits applied).*
+
+Rule (fixed before running, redesign sections 5.3 and 7): flow earns a claim only if Spearman rho is below 0.95 or the top 10 changes; otherwise the max-flow claim is dropped and README says it was tested.
+
+**Method.** Population: 7,539 people who are not Tier A and have at least one `COAUTH_B` link. Sample: 200 of them, seed 20261016. Strength of a link = `recent_small_papers` (a whole number). For each person:
+- *aggregate* (Cypher): the sum, over all paths of 1 to 3 links to a Tier-A person, of the path's smallest link strength;
+- *flow*: `algo.maxFlow` from the person to all 3,035 Tier-A people over `COAUTH_B`, capacity = link strength.
+Top 10 ties are broken by author id.
+
+**Two things found while setting it up.**
+1. `algo.maxFlow` refused the decimal weights (`recent_small_w` and `w`): "capacity range too wide (max >= min * 2^32)", although the stored range is only 0.087 to 6.3 (`w` up to 19.7). It runs with the whole-number `recent_small_papers`. So the flow cannot use the 1/(n-1) weights the score uses.
+2. `algo.maxFlow` has no depth limit. Of the 200 people, 77 reach a Tier-A person within 3 links (aggregate > 0), 29 have aggregate 0 but flow > 0 (the flow found a route longer than 3 links), and 94 have both 0. The flow is therefore not a "depth-3" number. A probe on the golden-test person with no tie found (3 hops, `A5067322664`) with capacity `n_papers` also returned flow 2.0 although the 3-hop search finds nothing.
+
+**Result.**
+| Subset | n | Spearman rho | top-10 overlap | flow equals aggregate |
+|---|---|---|---|---|
+| all 200 | 200 | 0.8597 | 6 of 10 | 96 (94 are both 0) |
+| aggregate > 0 (within 3 links) | 77 | 0.7273 | 6 of 10 | 2 |
+
+Time per person: aggregate 0.026 s, flow 0.051 s. No query failed.
+
+**Reading it honestly.** By the fixed rule the ranking does change (rho below 0.95 and 4 of the top 10 differ), so the rule does not force the claim to be dropped. But the two numbers measure different things: the aggregate adds up every short path, the flow counts how much can pass at once and also uses longer routes. The fixed rule is easy to meet, because a sum over paths and a max flow are different quantities; and the path sum can count walks that revisit a person (FalkorDB paths are edge-unique, not node-unique). A different ranking does not show the flow is better; E1 and E2 failed, so neither ranking is validated, and tier B/C stay context only. The README should say: max flow was tested, gives a different ranking from the path sum, is not limited to 3 links, needs whole-number capacities, and is not used for any finding. `bridges` does not use it.
 
 ---
 

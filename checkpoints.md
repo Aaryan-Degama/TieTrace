@@ -15,7 +15,7 @@ Deadline: **submit by Oct 18, 6 PM IST.** Specs: `tietrace-v2-redesign.md`, `doc
 | 5c-5f | Any company/topic: case config, case-aware tools, discover, Philip Morris demo | Oct 16-17 | ✅ |
 | 6 | Memory graph: Track 2 tools | Oct 17 morning | ✅ |
 | 7 | Verdicts, notes, Writer | Oct 17 midday | ✅ |
-| 8 | Remaining evaluation + golden tests | Oct 17 afternoon | ⬜ |
+| 8 | Remaining evaluation + golden tests | Oct 17 afternoon | ✅ |
 | 9 | README, video, submit | Oct 18, by 6 PM | ⬜ |
 
 **Team: Abdul and Aaryan.** Tag each checkbox with who did it: `- [x] item (Abdul)` or `(Aaryan)`; use `(Abdul + Aaryan)` for pairing. Unticked items carry `(→ Aaryan)` to claim them. Add the date when you tick, e.g. `(Abdul, Oct 16)`. Checkpoints 0-2 were built in Abdul's sessions, so they are attributed to Abdul; Aaryan can correct that.
@@ -149,14 +149,17 @@ Review: round 1 FAIL (5 must-fix) → round 2 FAIL (no-tie text could state a ti
 **Gate:** a demo run works end to end: input, check, verdict, note, approval.
 
 ## 8. Remaining evaluation + golden tests
-- [ ] **E8** golden tests (about 15 fixed checks) pass
-- [ ] **E9** concurrency: two reporter sessions, nothing lost
-- [ ] **E10** tenant isolation: alpha cannot see beta
-- [ ] **E6** mega-paper ablation
-- [ ] **E5** profile hand-check (cut if behind)
-- [ ] **E4** max flow vs aggregate (cut if behind; drop the claim if it fails)
+Claimed (→ Abdul, Oct 16). Test DB: second container `falkordb-v4` (v4.22.1, AOF on) on host port 6381 (use `FALKORDB_PORT=6381`); the old `falkordb` container (`:latest`) is kept untouched.
+- [x] **E8** golden tests (15 fixed checks, `tests/test_golden.py`) pass (Abdul, Oct 16): the "five" GEBN scientists are four public names (Hill A2, Blair A1, Hand A1, Peters A2)
+- [x] **E9** concurrency: two server processes, `check_case` and `record_verdict` at the same time, overlap proven, nothing lost, all current Checks equal a fresh rerun (`tests/test_concurrency.py`) (Abdul, Oct 16)
+- [x] **E10** tenant isolation: all 13 tools tried with the other newsroom's ids, 0 rows / NOT_FOUND (`tests/test_isolation.py`) (Abdul, Oct 16)
+- [x] **E6** mega-paper ablation (`eval/e6.py`, `eval/results.md`): without the 25-author cap A1 goes 949 → 1,069 and Tier B 1,309 → 1,889; 23.7% of A1+B people exist only through big papers; cap kept (Abdul, Oct 16)
+- [ ] ✂️ **E5** profile hand-check (cut if behind): the sample of 50 is drawn (`eval/e5_sample.md`, no names); only a person can fill the verdict columns, so no error rate is claimed
+- [x] **E4** max flow vs aggregate (`eval/e4.py`, Reviewer PASS) (Abdul, Oct 17): Spearman 0.86 (0.73 within 3 links), top-10 overlap 6 of 10, so the rule keeps the claim, but flow is not depth-limited, needs whole-number capacities, and neither ranking is validated; max flow is not used for any finding
 
-**Gate:** all must-ship items work, or the stretch items are cut.
+Review: round 1 PASS with 2 must-fix (attribution; E9 overlap not proven) → fixed. New suites: eval 15/15 (with E4), golden 15/15, concurrency 1/1, isolation 1/1, eval 14/14. Regression on the new container: loader 49/49, server 26/26, cases 27/27, notes 40/40 pass. **Failing, not caused by checkpoint 8 and not yet fixed:** research 53/54 (`bridges3_hub` 4.2 s cold vs the 3 s limit, fresh container); discover 20/26 (Windows `charmap` error reading a fixture without `encoding="utf-8"`); memory 31/32 (needs the `research:philip-morris-lung` graph, not loaded on this machine); obsidian 16/22 (Windows: `signal.SIGINT` unsupported, plus path checks).
+
+**Gate (passed, Oct 17):** all must-ship items work (E8, E9, E10, E6, E4); E5 cut, no error rate claimed.
 
 ## 9. README, video, submit
 - [ ] README: problem, tiers, data model, queries, evaluation with losses, human gates, ethics, setup

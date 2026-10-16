@@ -324,6 +324,54 @@ def test_e2_aucs_and_verdict():
         assert f"{Y} ({npos}," in RES
 
 
+def test_e6_ablation_numbers():
+    """E6 recomputed from the raw model: A1 and Tier B people with and without the 25-author cap, and the
+    numbers quoted in results.md (section E6)."""
+    m = model()
+    W, ta = m["works"], m["tier_a"]
+    a1_cap = {p for p, t in ta.items() if t == "A1"}
+    a1_no = set()
+    for w, kinds in m["funded"].items():
+        if E.paper(m, w) and "company" in kinds:
+            a1_no |= set(m["auth"].get(w, []))
+    for p, w, o in m["aff"]:
+        if w in W and E.paper(m, w) and o not in m["bottlers"]:
+            a1_no.add(p)
+    pair = {True: Counter(), False: Counter()}  # capped? -> {(tier-A person, other): recent papers together}
+    for w, v in W.items():
+        authors = sorted(set(m["auth"].get(w, [])))
+        if len(authors) < 2 or not E.paper(m, w) or (v["year"] or 0) < 2021:
+            continue
+        for a in authors:
+            if a in ta:
+                for e in authors:
+                    if e != a:
+                        pair[False][(a, e)] += 1
+                        if v["n"] <= 25:
+                            pair[True][(a, e)] += 1
+    b = {k: {e for (a, e), n in c.items() if n >= 2} - set(ta) for k, c in pair.items()}
+    assert a1_cap <= a1_no and b[True] <= b[False]
+    got = (len(ta), len(a1_cap), len(a1_no), len(b[True]), len(b[False]))
+    sect = RES.split("## E6", 1)[1].split("\n## ", 1)[0]
+    tokens = set(re.findall(r"\d[\d,]*(?:\.\d+)?", sect))  # whole numbers as written in the section
+    pct = lambda x, y: f"{100 * x / y:.1f}"
+    expect = [f"{n:,}" for n in got] + [f"{got[2] - got[1]:,}", f"{len(b[False] - b[True]):,}", pct(got[2] - got[1], got[2]),
+              pct(len(b[False] - b[True]), got[4]), pct(got[2] - got[1] + len(b[False] - b[True]), got[2] + got[4])]
+    for x in expect:
+        assert x in tokens, (x, got)
+    print("      E6 recomputed (Tier A, A1 cap, A1 no cap, B cap, B no cap):", got)
+
+
+def test_e4_spearman_and_ranks():
+    sys.path.insert(0, str(ROOT / "eval"))
+    import e4
+    assert e4.ranks([10, 20, 20, 5]) == [2.0, 3.5, 3.5, 1.0]  # ties share the average rank
+    assert abs(e4.spearman([1, 2, 3, 4], [10, 20, 30, 40]) - 1) < 1e-12
+    assert abs(e4.spearman([1, 2, 3, 4], [4, 3, 2, 1]) + 1) < 1e-12
+    assert abs(e4.spearman([1, 2, 3, 4, 5], [2, 1, 4, 3, 5]) - 0.8) < 1e-12  # 1 - 6*4/(5*24)
+    assert e4.spearman([1, 1, 1], [1, 2, 3]) is None  # a constant side has no rank correlation
+
+
 def test_auc_implementation_sanity():
     assert rank_auc([2, 3], [1, 2]) == (1 + 0.5 + 1 + 1) / 4
     assert rank_auc([1], [1]) == 0.5
