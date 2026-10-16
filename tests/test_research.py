@@ -1223,7 +1223,7 @@ def test_verifier_accepts_valid_tie_and_no_tie_claims():
 
     nt = {"expert_id": "A1", "kind": "no_tie", "text": "No tie found.", "query_name": "q3_bfs_v1",
 
-          "scope": {"hops": 3, "years": "2021-2026", "coverage": 0.966}}
+          "scope": {"hops": 3, "years": "2021-2026", "coverage": 0.966, "funder_coverage": 0.563}}
 
     assert reasons(nt) == []
 
@@ -1259,7 +1259,7 @@ def test_verifier_no_tie_needs_query_name_and_full_scope():
 
     base = {"expert_id": "A1", "kind": "no_tie", "text": "No tie found.", "query_name": "q3_bfs_v1",
 
-            "scope": {"hops": 3, "years": "2021-2026", "coverage": 0.5}}
+            "scope": {"hops": 3, "years": "2021-2026", "coverage": 0.5, "funder_coverage": 0.3}}
 
     assert reasons(base) == []
 
@@ -1267,7 +1267,7 @@ def test_verifier_no_tie_needs_query_name_and_full_scope():
 
         assert reasons({k: v for k, v in base.items() if k != drop}), drop
 
-    for field in ("hops", "years", "coverage"):
+    for field in ("hops", "years", "coverage", "funder_coverage"):  # funder_coverage required since Oct 16
 
         assert reasons({**base, "scope": {k: v for k, v in base["scope"].items() if k != field}}), field
 
@@ -1275,7 +1275,9 @@ def test_verifier_no_tie_needs_query_name_and_full_scope():
 
     assert reasons({**base, "scope": "everywhere"})
 
-    assert reasons({**base, "scope": {"hops": 3, "years": "2021-2026", "coverage": None}})
+    assert reasons({**base, "scope": {"hops": 3, "years": "2021-2026", "coverage": None, "funder_coverage": 0.3}})
+    assert reasons({**base, "scope": {"hops": 3, "years": "2021-2026", "coverage": 0.5, "funder_coverage": None}})
+    assert reasons({**base, "scope": {**base["scope"], "funder_coverage": 0}}) == []  # 0% is a value, not missing
 
     assert reasons({"expert_id": "A1", "kind": "no_tie", "text": "No tie."}), "bare no_tie claim"
 
@@ -1621,6 +1623,58 @@ def test_explain_shows_index_use_for_per_expert_queries():
 
 
 
+
+
+# ---------- 12. hardening round (Aaryan, Oct 16): funder-only coverage, shared BFS ----------
+
+def test_hardening_no_tie_scope_has_graph_and_expert_funder_coverage():
+    """funder_coverage = topic works with any funder / topic works (graph level, never hard-coded);
+    expert_funder_coverage = the expert's non-junk works with any funder / the expert's non-junk works."""
+    m = model()
+    topic = m["on_topic"]
+    funded = {r[0] for r in paged("MATCH (w:Work)-[:FUNDED_BY]->(:Funder) RETURN DISTINCT w.oa_id", "w.oa_id")}
+    graph_cov = round(len(topic & funded) / len(topic), 3)
+    picks = [p for p in sample() if expected(p)[0] == "NONE"][:3] + [p for p in sample() if expected(p)[0] == "A1"][:2]
+    for pid in picks:
+        out = research.check_no_tie(pid)
+        s = out["scope"]
+        assert s["funder_coverage"] == s["coverage_funder_only"] == graph_cov, (s["funder_coverage"], graph_cov)
+        assert s["coverage"] != s["funder_coverage"]  # the old figure also counts affiliations
+        works = {r[0] for r in q("MATCH (p:Person)-[:AUTHORED]->(w:Work) WHERE p.oa_id = $id AND w.junk = false "
+                                 "RETURN DISTINCT w.oa_id", {"id": pid})}
+        assert s["expert_works"] == len(works), (pid, s["expert_works"], len(works))
+        assert s["expert_funder_coverage"] == (round(len(works & funded) / len(works), 3) if works else None), pid
+        if out["data"]["result"] == "NO_TIE_FOUND":
+            w = out["data"]["wording"]
+            mine = f"{len(works & funded)} of " if works else "has no loaded paper"
+            assert f"only {round(100 * graph_cov)}% of topic works" in w and mine in w, w
+            claim = {"expert_id": pid, "kind": "no_tie", "text": w, "query_name": out["data"]["query_name"],
+                     "scope": s}
+            assert verifier.verify_claim(claim, []) == [], "the server's own no-tie scope must pass the Verifier"
+
+
+def test_hardening_searched_hops_skips_only_the_repeated_bfs():
+    nones = [p for p in sample() if expected(p)[0] == "NONE"][:3]
+    for pid in nones:
+        full, shared = research.check_no_tie(pid), research.check_no_tie(pid, searched_hops=3)
+        assert (full["data"], full["scope"]) == (shared["data"], shared["scope"]), pid
+        assert sum("algo.BFS" in c["query"] for c in full["cypher"]) == 3
+        assert not any("algo.BFS" in c["query"] for c in shared["cypher"])
+    cs = [p for p in sample() if expected(p)[0] == "C"][:2]
+    for pid in cs:  # searched_hops below k still searches
+        assert research.check_no_tie(pid, searched_hops=1)["data"]["result"] == "TIE_FOUND", pid
+        assert research.check_no_tie(pid)["data"]["result"] == "TIE_FOUND", pid
+
+
+def test_hardening_tier_basis_and_score_basis_labels():
+    for pid in sample()[:60]:
+        d = research.tie_report(pid)["data"]
+        assert d["tier_basis"] == research.TIER_BASIS[d["tier"]] and d["score_basis"] == research.SCORE_BASIS
+        if d["tier"] in ("A1", "A2"):
+            assert d["tier_basis"] == "direct evidence"
+        if d["tier"] in ("B", "C"):
+            assert "not validated" in d["tier_basis"] and "not validated" in d["wording"], d["wording"]
+        assert not BANNED.search(d["wording"] + d["tier_basis"] + d["score_basis"])
 
 
 # ---------- runner ----------

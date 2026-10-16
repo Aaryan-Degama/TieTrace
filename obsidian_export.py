@@ -118,7 +118,9 @@ def build(log):
             if cur["tier"] == "NONE" and s.get("no_tie"):
                 n = s["no_tie"]
                 parts.append(f"- No tie found in the research record ({n['result']}) within this scope: query "
-                             f"`{n['query_name']}`, hops {n['hops']}, years {n['years']}, coverage {n['coverage']}")
+                             f"`{n['query_name']}`, hops {n['hops']}, years {n['years']}, coverage {n['coverage']}"
+                             + (f", funder coverage {n['funder_coverage']} (this expert: "
+                                f"{n.get('expert_funder_coverage')})" if n.get("funder_coverage") is not None else ""))
             cited = [e for e in s["evidence"] if e["doi"]]
             if cited:
                 parts.append(f"- Ties found in the research record ({len(cited)} evidence items with a DOI):")

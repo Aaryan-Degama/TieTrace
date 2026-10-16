@@ -6,6 +6,7 @@ Checks are run on the real research:obesity-coke graph (read-only). No API calls
 """
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -365,6 +366,126 @@ def test_reviewer_r2_nearest_tier_a_person_stays_anonymous_in_public_mode():
     nearest = ok(out)["nearest"]
     assert nearest and nearest["hops"] > 0, "fixture drifted: pick another Tier C expert"
     assert nearest["tier_a_label"] == "Tier-A #1", nearest["tier_a_label"]
+
+
+# ---------- hardening round (Aaryan, Oct 16) ----------
+
+def test_hardening_uuid7_fallback_is_time_ordered_v7():
+    """Python 3.13 has no uuid.uuid7: force the stdlib fallback and check layout, uniqueness and order."""
+    import uuid
+    real = getattr(uuid, "uuid7", None)
+    if real is not None:
+        del uuid.uuid7
+    try:
+        assert not hasattr(uuid, "uuid7")
+        ids = []
+        for _ in range(20):
+            ids.append(memory.new_id("evt"))
+            time.sleep(0.002)  # next millisecond: ids from different ms must sort by time
+        burst = [memory.new_id("chk") for _ in range(2000)]  # same ms: still unique
+    finally:
+        if real is not None:
+            uuid.uuid7 = real
+    assert ids == sorted(ids) and len(set(burst)) == len(burst)
+    for i in ids + burst[:50]:
+        assert memory.ID_RE.fullmatch(i), i
+        u = uuid.UUID(i.split("_", 1)[1])
+        assert u.version == 7 and u.variant == uuid.RFC_4122, i
+    ms = int(ids[0][4:16], 16)  # first 48 bits: Unix time in ms
+    assert abs(ms - time.time() * 1000) < 60_000, ms
+    if real is not None:  # the real uuid7 and the fallback sort together
+        assert memory.new_id("evt") > ids[-1]
+
+
+def test_hardening_every_event_has_duration_ms():
+    server.find_experts("obesity", 2, True)
+    server.tie_report("A0")  # an error call is timed too
+    rows = q(NR, "MATCH (s:Session {id: $sid})-[:HAS_EVENT]->(e:Event) RETURN e.tool, e.duration_ms "
+                 "ORDER BY e.ts DESC LIMIT 2", {"sid": memory.SESSION_ID})
+    assert [r[0] for r in rows] == ["tie_report", "find_experts"], rows
+    for tool, ms in rows:
+        assert isinstance(ms, float) and 0 < ms < 60_000, (tool, ms)
+    assert memory.log_event("list_cases", {"agent": None}, {"ok": True, "data": {}}) is None  # old callers still fine
+
+
+def test_hardening_report_runs_the_none_bfs_once_and_saves_funder_coverage():
+    with research.on_graph("research:obesity-coke"):
+        rep, nt = server._report(NONE_EXPERT, "Expert #1", False)
+        alone = research.check_no_tie(NONE_EXPERT, 3, server._span(), "Expert #1", False)
+    assert rep["data"]["tier"] == "NONE" and nt["data"]["result"] == "NO_TIE_FOUND"
+    assert sum("algo.BFS" in c["query"] for c in rep["cypher"]) == 3, "the BFS ran twice"
+    assert (nt["data"], nt["scope"]) == (alone["data"], alone["scope"]), "sharing the BFS changed the answer"
+    snap = memory.snapshot(rep, nt)["no_tie"]
+    assert snap["funder_coverage"] == nt["scope"]["funder_coverage"] and 0 < snap["funder_coverage"] < 1
+    assert snap["expert_funder_coverage"] == nt["scope"]["expert_funder_coverage"]
+    c = ok(server.open_case("Funder scope", "Coca-Cola", "obesity", [NONE_EXPERT]))
+    chk = ok(server.tie_report(NONE_EXPERT, case_id=c["case_id"]))["check_id"]
+    saved = json.loads(q(NR, "MATCH (k:Check {id: $id}) RETURN k.snapshot_json", {"id": chk})[0][0])["no_tie"]
+    assert saved["funder_coverage"] == snap["funder_coverage"], saved
+
+
+def test_hardening_check_case_puts_tier_a_first_then_input_order():
+    ids = [NONE_EXPERT, HILL, BLAIR]  # NONE, A2, A1 in input order
+    res = ok(server.check_case(expert_ids=ids))
+    assert [r["expert_id"] for r in res["results"]] == [BLAIR, HILL, NONE_EXPERT]
+    assert [r["tier_basis"] for r in res["results"][:2]] == ["direct evidence", "direct evidence"]
+    assert "not ranked by score" in res["order"].lower()
+
+
+# ---------- Reviewer, hardening round (Oct 16) ----------
+
+def test_reviewer_h_funder_coverage_is_per_graph_and_recounted_not_meta_copied():
+    """Kills a hard-coded 0.563: on the second graph the share must be that graph's own, recounted by Cypher."""
+    seen = {}
+    for g in ("research:obesity-coke", "research:philip-morris-lung"):
+        topic, funded = DB.select_graph(g).ro_query(
+            "MATCH (w:Work)-[:ABOUT]->(:Topic) WITH DISTINCT w OPTIONAL MATCH (w)-[f:FUNDED_BY]->(:Funder) "
+            "WITH w, count(f) AS nf RETURN count(w), sum(CASE WHEN nf > 0 THEN 1 ELSE 0 END)",
+            timeout=60000).result_set[0]
+        pid = q(g, "MATCH (p:Person)-[:AUTHORED]->(w:Work) WHERE NOT w.junk RETURN p.oa_id LIMIT 1")[0][0]
+        with research.on_graph(g):
+            out = research.check_no_tie(pid, 3, server._span())
+        assert out["ok"], out.get("error")
+        seen[g] = out["scope"]["funder_coverage"]
+        assert seen[g] == round(int(funded) / int(topic), 3), (g, seen[g], funded, topic)
+    assert seen["research:obesity-coke"] != seen["research:philip-morris-lung"], seen
+
+
+def test_reviewer_h_expert_with_only_junk_works_gets_null_share_and_passes_verifier():
+    import verifier
+    pid = q("research:obesity-coke", "MATCH (p:Person)-[:AUTHORED]->(w:Work) WITH p, "
+            "sum(CASE WHEN w.junk THEN 0 ELSE 1 END) AS good WHERE good = 0 RETURN p.oa_id LIMIT 1")[0][0]
+    with research.on_graph("research:obesity-coke"):
+        out = research.check_no_tie(pid, 3, server._span(), "Expert #1")
+    s, d = out["scope"], out["data"]
+    assert s["expert_works"] == 0 and s["expert_funder_coverage"] is None and 0 < s["funder_coverage"] < 1, s
+    assert d["result"] == "NO_TIE_FOUND" and "has no loaded paper" in d["wording"], d["wording"]
+    assert not re.search(r"\b(independent|conflicted)\b", d["wording"], re.I)
+    claim = {"expert_id": pid, "kind": "no_tie", "text": d["wording"], "query_name": d["query_name"], "scope": s}
+    assert verifier.verify_claim(claim, []) == []
+
+
+def test_reviewer_h_searched_hops_never_hides_a_tier_a_expert():
+    """searched_hops only skips the BFS; an expert with direct Tier A evidence is still TIE_FOUND at 0 hops."""
+    with research.on_graph("research:obesity-coke"):
+        for pid in (BLAIR, HILL):
+            a, b = research.check_no_tie(pid, 3, server._span()), research.check_no_tie(pid, 3, server._span(), searched_hops=3)
+            assert a["data"] == b["data"] and b["data"]["result"] == "TIE_FOUND" and b["data"]["nearest"]["hops"] == 0, b
+
+
+def test_reviewer_h_check_case_by_case_id_orders_and_saves_funder_scope():
+    ids = [NONE_EXPERT, HILL, BLAIR]
+    c = ok(server.open_case("Order and scope", "Coca-Cola", "obesity", ids))
+    res = ok(server.check_case(case_id=c["case_id"]))
+    assert [r["expert_id"] for r in res["results"]] == [BLAIR, HILL, NONE_EXPERT], res["results"]
+    none_row = res["results"][2]
+    assert none_row["no_tie"] == "NO_TIE_FOUND" and none_row["check_id"]
+    snap = json.loads(q(NR, "MATCH (k:Check {id: $id}) RETURN k.snapshot_json", {"id": none_row["check_id"]})[0][0])
+    assert snap["no_tie"]["funder_coverage"] is not None and "expert_funder_coverage" in snap["no_tie"], snap["no_tie"]
+    with research.on_graph("research:obesity-coke"):
+        fresh = research.check_no_tie(NONE_EXPERT, 3, server._span(), none_row["label"])
+    assert snap["no_tie"]["funder_coverage"] == fresh["scope"]["funder_coverage"]
+    assert snap["no_tie"]["expert_funder_coverage"] == fresh["scope"]["expert_funder_coverage"]
 
 
 def cleanup():

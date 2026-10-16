@@ -547,8 +547,15 @@ def test_check_case_tiers_scores_ranking_counts_and_labels():
         else:
             assert r["no_tie"] is None
         assert r["check_id"] is None
-    keys = [(rank[r["tier"]], -r["score"]) for r in rows]
-    assert keys == sorted(keys), "rows are not ranked tier then score desc"
+    # Contract change (Aaryan, Oct 16, E1/E2 failed): Tier A1, then A2, then B/C/NONE together; input order
+    # inside each group; never by score. tier_basis labels B/C as context only.
+    group = {"A1": 0, "A2": 1, "B": 2, "C": 2, "NONE": 2}
+    keys = [(group[r["tier"]], order.index(r["expert_id"])) for r in rows]
+    assert keys == sorted(keys), "rows are not Tier A1, A2, then the rest in input order"
+    for r in rows:
+        assert r["tier_basis"] == ("direct evidence" if r["tier"] in ("A1", "A2") else
+                                   research.TIER_BASIS[r["tier"]]), r
+    assert "not ranked by score" in out["data"]["order"].lower() and out["data"]["score_basis"] == research.SCORE_BASIS
     exp_counts = {t: sum(tr.expected(p)[0] == t for p in order) for t in rank}
     assert out["data"]["counts"] == exp_counts and sum(exp_counts.values()) == len(order)
     assert all(exp_counts[t] > 0 for t in rank), exp_counts

@@ -2,12 +2,13 @@
 
 A claim is a dict: {"expert_id": "A..", "text": "...", "kind": "tie" | "no_tie",
                     "evidence_refs": ["10.1/abc", ...],               # tie claims
-                    "query_name": "q3_bfs_v1", "scope": {"hops":..,"years":..,"coverage":..}}  # no_tie claims
+                    "query_name": "q3_bfs_v1", "scope": {"hops":..,"years":..,"coverage":..,"funder_coverage":..}}  # no_tie
 `kind` may be left out: a claim that carries a query_name or a scope is treated as "no_tie".
 
 Rules (CLAUDE.md, redesign section 3):
   1. A tie claim needs at least one evidence ref, and every ref must be a DOI that is in the expert's stored evidence.
-  2. A no-tie claim needs a known query_name plus a scope with hops, years and coverage.
+  2. A no-tie claim needs a known query_name plus a scope with hops, years, coverage and funder_coverage
+     (funder-only share of topic works; added Oct 16 by Aaryan, because coverage also counts affiliations).
   3. The words "independent" and "conflicted" are never allowed in the text.
 """
 import re
@@ -17,7 +18,7 @@ BANNED_WORDS = ("independent", "conflicted")
 # the old tool was called prove_independence. Whole-word match only, so "interdependent" stays allowed.
 CLAIM_WORDS = ("independence", "independently")
 KNOWN_QUERIES = {"q3_bfs_v1"}              # query names the server stores (see research.check_no_tie)
-SCOPE_FIELDS = ("hops", "years", "coverage")
+SCOPE_FIELDS = ("hops", "years", "coverage", "funder_coverage")
 
 
 def norm_doi(doi):
@@ -44,7 +45,7 @@ def verify_claim(claim, stored_dois_for_expert):
             reasons.append(f"no-tie claim needs a stored query_name (one of {sorted(KNOWN_QUERIES)})")
         scope = claim.get("scope")
         if not isinstance(scope, dict):
-            reasons.append("no-tie claim needs a scope with hops, years and coverage")
+            reasons.append("no-tie claim needs a scope with hops, years, coverage and funder_coverage")
         else:
             missing = [f for f in SCOPE_FIELDS if scope.get(f) in (None, "")]
             if missing:

@@ -78,7 +78,7 @@ mcp = MCPServer("tietrace", instructions="TieTrace checks how connected an exper
 
 def tool(annotations=READ_ONLY):
     """Register fn as a tool; its docstring plus the wording rules is the description. Every call is logged
-    as one Event (tool, args, result digest, agent). `agent` is checked here, before the tool runs."""
+    as one Event (tool, args, result digest, agent, duration_ms). `agent` is checked here, before the tool runs."""
     def register(fn):
         params = inspect.signature(fn).parameters
         note = CASE_NOTE if "case" in params else ""
@@ -86,6 +86,7 @@ def tool(annotations=READ_ONLY):
 
         @functools.wraps(fn)
         def logged(*args, **kwargs):
+            t0 = time.perf_counter()
             call = inspect.signature(fn).bind(*args, **kwargs)
             call.apply_defaults()
             agent = call.arguments.get("agent")
@@ -94,7 +95,8 @@ def tool(annotations=READ_ONLY):
                 call.arguments["agent"] = None  # never store a bad value
             else:
                 out = fn(*args, **kwargs)
-            warning = memory.log_event(fn.__name__, dict(call.arguments), out)
+            duration_ms = round(1000 * (time.perf_counter() - t0), 1)  # the tool's wall time, before the Event write
+            warning = memory.log_event(fn.__name__, dict(call.arguments), out, duration_ms)
             if warning:
                 log.warning("%s: %s", fn.__name__, warning)
                 if out.get("ok"):
@@ -194,7 +196,7 @@ def _report(expert_id, label, public_case):
     rep = research.tie_report(expert_id, label, public_case)
     nt = None
     if rep["ok"] and rep["data"]["tier"] == "NONE":
-        nt = research.check_no_tie(expert_id, 3, _span(), label, public_case)
+        nt = research.check_no_tie(expert_id, 3, _span(), label, public_case, searched_hops=3)
         rep["cypher"] += nt["cypher"]
     return rep, nt
 
@@ -238,7 +240,8 @@ def tie_report(expert_id: str, expert_number: int = 1, case: str | None = None, 
                agent: str | None = None) -> dict[str, Any]:
     """One expert in detail: tier A1/A2 (company or foundation money or affiliation), B (repeated small-paper
     co-authorship with a Tier-A person), C (within 3 co-author hops), or NONE; a score; the evidence with
-    DOIs; and a ready sentence in data.wording. expert_id is an OpenAlex author ID (A5023888391).
+    DOIs; and a ready sentence in data.wording. Only A1/A2 rest on direct evidence (data.tier_basis); B, C and
+    the score are network context only, not validated (E1/E2 failed): never call them a finding or rank by them. expert_id is an OpenAlex author ID (A5023888391).
     With case_id (from open_case) the label comes from the case and the result is saved as a Check
     (data.check_id). Without it, expert_number (1-99) only sets the display label 'Expert #n'; use the
     same number for the same expert in a story. Scope and data gaps are in the scope block."""
@@ -258,9 +261,11 @@ def _tie_report_saved(kase, expert_id, agent):
 def check_no_tie(expert_id: str, k: int = 3, years: int = 5, expert_number: int = 1,
                  case: str | None = None, case_id: str | None = None, agent: str | None = None) -> dict[str, Any]:
     """Search for the shortest co-author path from an expert to a Tier-A person (k hops, 1 to 3). Returns
-    NO_TIE_FOUND or TIE_FOUND with the query name and the scope (hops, years, coverage). A NO_TIE_FOUND
+    NO_TIE_FOUND or TIE_FOUND with the query name and the scope (hops, years, funder_coverage = share of topic
+    works with any funder, expert_funder_coverage = share of this expert's works with a funder, and coverage,
+    which also counts affiliations). A NO_TIE_FOUND
     answer is only 'no tie found in the research record within this scope'. It is not proof of no tie, and
-    the scope must be quoted with it. years must be the graph's recent span (5 for obesity-coke). With
+    the scope, with the funder-only figures, must be quoted with it. years must be the graph's recent span (5 for obesity-coke). With
     case_id the label comes from the case."""
     if case_id is None:
         return _with_label(research.check_no_tie, expert_number, expert_id, k, years, case=case)
@@ -287,7 +292,8 @@ def check_case(expert_ids: list[str] | None = None, public_case: bool = False, c
     """Check up to 25 experts in one run: tie_report for each, plus check_no_tie for those with tier NONE.
     Give case_id (from open_case: its experts, labels and research case are used, and each result is saved
     as a Check with a check_id) or expert_ids (nothing is saved). Labels are 'Expert #1..#n' in the order
-    given. Returns results ranked by tier then score, and counts per tier. Use tie_report for the evidence
+    given. Returns results with Tier A1 then A2 first, then everyone else in input order (never ranked by
+    score: Tier B/C and the score are network context only, not validated), and counts per tier. Use tie_report for the evidence
     behind one result. public_case=true (expert_ids only) is honoured only when every id is in the case's
     approved public list; otherwise it is ignored and labels stay 'Expert #n'."""
     if (expert_ids is None) == (case_id is None):
@@ -411,7 +417,12 @@ def _recheck(old, kase, agent):
 
 # ---------- check_case: a loop over tie_report and check_no_tie ----------
 
-TIER_ORDER = {"A1": 0, "A2": 1, "B": 2, "C": 3, "NONE": 4}
+TIER_ORDER = {"A1": 0, "A2": 1, "B": 2, "C": 3, "NONE": 4}  # the keys of data.counts
+# Decided by Aaryan, Oct 16 (E1 and E2 failed): rows are NOT ranked by score or by Tier B/C. Tier A (direct
+# evidence) comes first, then every other checked expert, then failed rows; input order inside each group.
+RANK = {"A1": 0, "A2": 1, "B": 2, "C": 2, "NONE": 2}
+ORDER_NOTE = ("Tier A1, then A2, then every other checked expert (B, C, NONE mixed), then failed rows; "
+              "input order inside each group. Not ranked by score: Tier B/C and the score are context only (E1/E2).")
 
 
 def _check_case(expert_ids, public_case, kase=None, agent=None):
@@ -451,13 +462,13 @@ def _check_case(expert_ids, public_case, kase=None, agent=None):
         rep = research.tie_report(eid, label, public_case)
         merge(rep)
         if not rep["ok"]:
-            results.append({"label": label, "expert_id": eid, "tier": None, "score": None, "check_id": None,
-                            "no_tie": None, "error": rep["error"]})
+            results.append({"label": label, "expert_id": eid, "tier": None, "tier_basis": None, "score": None,
+                            "check_id": None, "no_tie": None, "error": rep["error"]})
             continue
         d = rep["data"]
         no_tie, nt = None, None
         if d["tier"] == "NONE":
-            nt = research.check_no_tie(eid, 3, _span(), label, public_case)
+            nt = research.check_no_tie(eid, 3, _span(), label, public_case, searched_hops=3)
             merge(nt)
             no_tie = nt["data"]["result"] if nt["ok"] else None
             if not nt["ok"]:
@@ -467,18 +478,18 @@ def _check_case(expert_ids, public_case, kase=None, agent=None):
             saved = {"cypher": [], "warnings": []}
             check_id = _save(saved, kase["id"], rep, nt, agent=agent)
             merge(saved)
-        results.append({"label": d["label"], "expert_id": eid, "tier": d["tier"], "score": d["score"],
-                        "check_id": check_id, "no_tie": no_tie, "error": None})
+        results.append({"label": d["label"], "expert_id": eid, "tier": d["tier"], "tier_basis": d["tier_basis"],
+                        "score": d["score"], "check_id": check_id, "no_tie": no_tie, "error": None})
 
     codes = {r["error"]["code"] if r["error"] else None for r in results}
     if len(codes) == 1 and codes <= {"DB_ERROR", "NO_GRAPH"}:  # every row failed the same way: the graph is the problem
         return _error(codes.pop(), results[0]["error"]["message"], list(by_query.values()))
     if skipped:
         warnings.append(f"time budget of {BATCH_BUDGET_S} s reached: {len(skipped)} expert(s) not checked")
-    # ranked by tier, then score high to low; failed rows last
-    results.sort(key=lambda r: (TIER_ORDER.get(r["tier"], 9), -(r["score"] or 0)))
+    results.sort(key=lambda r: RANK.get(r["tier"], 3))  # stable: input order inside each group
     counts = {t: sum(r["tier"] == t for r in results) for t in TIER_ORDER}
-    data = {"results": results, "counts": counts, "not_checked": skipped}
+    data = {"results": results, "counts": counts, "not_checked": skipped, "order": ORDER_NOTE,
+            "score_basis": research.SCORE_BASIS}
     if kase:
         data["case_id"] = kase["id"]
         scope["memory_graph"] = memory.GRAPH

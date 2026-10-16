@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import re
+import time
 import uuid
 from datetime import datetime, timezone
 
@@ -31,9 +32,19 @@ GRAPH = None        # "newsroom:<id>", set by use_newsroom()
 SESSION_ID = None   # this server process's Session
 
 
+def _uuid7_hex():
+    """Python 3.13 has no uuid.uuid7 (added in 3.14): the same layout by hand. 48-bit Unix time in ms,
+    version 7, 12 random bits, variant 10, 62 random bits. Ids made in the same millisecond are not
+    ordered among themselves (uuid.uuid7 adds a counter for that); nothing here relies on it."""
+    ms = time.time_ns() // 1_000_000
+    rand = int.from_bytes(os.urandom(10))  # 80 random bits
+    value = (ms << 80) | (0x7 << 76) | ((rand >> 68) << 64) | (0b10 << 62) | (rand & ((1 << 62) - 1))
+    return f"{value:032x}"
+
+
 def new_id(prefix):
     """case_..., chk_..., evt_..., ses_...: a UUIDv7 (time-ordered, like the ULID the spec names)."""
-    return f"{prefix}_{uuid.uuid7().hex}"
+    return f"{prefix}_{uuid.uuid7().hex if hasattr(uuid, 'uuid7') else _uuid7_hex()}"
 
 
 def now():
@@ -110,7 +121,7 @@ def init():
 LOG_EVENT_Q = (
     "MERGE (s:Session {id: $sid}) ON CREATE SET s.started_at = $ts, s.pid = $pid "
     "CREATE (s)-[:HAS_EVENT]->(:Event {id: $id, tool: $tool, args_json: $args_json, result_digest: $digest, "
-    "ok: $ok, error_code: $error_code, agent: $agent, case_id: $case_id, ts: $ts})")
+    "ok: $ok, error_code: $error_code, agent: $agent, case_id: $case_id, duration_ms: $duration_ms, ts: $ts})")
 
 
 def _short(value):
@@ -129,8 +140,9 @@ def _args_json(args):
     return text
 
 
-def log_event(tool, args, result):
-    """Write one Event under this process's Session. Never raises: returns None, or a warning to show."""
+def log_event(tool, args, result, duration_ms=None):
+    """Write one Event under this process's Session. Never raises: returns None, or a warning to show.
+    duration_ms: the tool's wall time in ms (server.py measures it), or None."""
     try:
         data = result.get("data") if isinstance(result, dict) and isinstance(result.get("data"), dict) else {}
         ok = bool(isinstance(result, dict) and result.get("ok"))
@@ -144,7 +156,8 @@ def log_event(tool, args, result):
             "ok": ok,
             "error_code": (result.get("error") or {}).get("code") if isinstance(result, dict) else "INTERNAL",
             "agent": agent if isinstance(agent, str) else None,
-            "case_id": case_id if isinstance(case_id, str) and ID_RE.fullmatch(case_id) else None}
+            "case_id": case_id if isinstance(case_id, str) and ID_RE.fullmatch(case_id) else None,
+            "duration_ms": float(duration_ms) if isinstance(duration_ms, (int, float)) and not isinstance(duration_ms, bool) else None}
         write(LOG_EVENT_Q, params, None)
         return None
     except Exception as e:  # logging must never break a tool
@@ -256,7 +269,9 @@ def snapshot(report, no_tie=None):
     if no_tie and no_tie.get("ok"):
         s = no_tie["scope"]
         snap["no_tie"] = {"result": no_tie["data"]["result"], "query_name": no_tie["data"]["query_name"],
-                          "hops": s.get("hops"), "years": s.get("years"), "coverage": s.get("coverage")}
+                          "hops": s.get("hops"), "years": s.get("years"), "coverage": s.get("coverage"),
+                          "funder_coverage": s.get("funder_coverage"),
+                          "expert_funder_coverage": s.get("expert_funder_coverage")}
     return snap
 
 

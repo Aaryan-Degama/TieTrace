@@ -26,6 +26,12 @@ GRAPH = "research:obesity-coke"     # the default case graph
 GRAPH_RE = re.compile(r"research:[a-z0-9][a-z0-9-]{1,39}")  # research:<slug>, same slug rule as loader.SLUG_RE
 QUERY_NAME_Q3 = "q3_bfs_v1"
 TIER_WEIGHT = {"A1": 100, "A2": 50}  # fixed score formula, redesign section 4
+# Decided by Aaryan, Oct 16: E1 (placebo lift 0.96x) and E2 (score no better than volume) failed, so Tier B/C
+# and the score are shown as labelled context only. Only Tier A rests on direct evidence with a DOI.
+CONTEXT_ONLY = "network context only — not validated (E1/E2)"
+TIER_BASIS = {"A1": "direct evidence", "A2": "direct evidence", "B": CONTEXT_ONLY, "C": CONTEXT_ONLY,
+              "NONE": "no tie found in the research record (see check_no_tie for the scope)"}
+SCORE_BASIS = "context only — not validated (E1/E2); do not rank or compare experts by it"
 BIG = 10000                          # row_cap for the "who is Tier A" queries
 SERVER_CAP = 10000                   # FalkorDB silently stops a result at 10,000 rows, so reaching it is an error
 STOPWORDS = {"and", "the", "for", "with", "from", "that", "this", "are", "of", "in", "on", "to"}
@@ -192,12 +198,28 @@ def _years(meta):
 
 
 def _coverage(log):
-    """Share of topic works with funder data, and with funder or affiliation data. The counts were
-    computed at load time and stored in the Meta node (loader.load_stats)."""
+    """Graph-level shares of topic works, from counts the loader stored in the Meta node (loader.load_stats).
+    coverage = funder OR affiliation data (kept for older callers; affiliation says little about funding);
+    funder_coverage = funder data only, the honest figure for a "no tie" (coverage_funder_only is the old name)."""
     m = _meta(log)
     total = m["topic_works"]
     return {"coverage": round(m["topic_with_funder_or_affiliation"] / total, 3),
-            "coverage_funder_only": round(m["topic_with_funder"] / total, 3), "topic_works": total}
+            "coverage_funder_only": round(m["topic_with_funder"] / total, 3), "topic_works": total,
+            "funder_coverage": round(m["topic_with_funder"] / total, 3)}
+
+
+# Share of ONE expert's loaded works (junk records left out) that list any funder. Run per call, never cached.
+EXPERT_FUNDER_Q = (
+    "MATCH (p:Person) WHERE p.oa_id = $id MATCH (p)-[:AUTHORED]->(w:Work) WHERE " + NOT_JUNK + " "
+    "OPTIONAL MATCH (w)-[f:FUNDED_BY]->(:Funder) WITH w, count(f) AS nf "
+    "RETURN count(w), sum(CASE WHEN nf > 0 THEN 1 ELSE 0 END)")
+
+
+def _expert_funder_coverage(log, expert_id):
+    """(works, works with a funder, share or None when the expert has no loaded paper)."""
+    works, funded = ro_query(current_graph(), EXPERT_FUNDER_Q, {"id": expert_id}, log=log)[0]
+    works, funded = int(works), int(funded or 0)  # sum() comes back as a float
+    return works, funded, (round(funded / works, 3) if works else None)
 
 
 def _caveats(log):
@@ -511,7 +533,8 @@ def _tie_report(log, expert_id, label, public_case):
         warnings.append("some evidence works have no DOI in OpenAlex; they cannot back a note claim")
     if any(e["n_authors"] and e["reason"].endswith("+ authors)") for e in evidence):
         warnings.append("an evidence work lists 100+ authors; its author list was cut by OpenAlex")
-    data = {"expert_id": expert_id, "label": label, "tier": tier, "score": round(score, 4),
+    data = {"expert_id": expert_id, "label": label, "tier": tier, "tier_basis": TIER_BASIS[tier],
+            "score": round(score, 4), "score_basis": SCORE_BASIS,
             "score_parts": {"tier_weight": TIER_WEIGHT.get(tier, 0), "coauth_w": round(coauth_w, 4),
                             "tier_a_links": len(ties)},
             "evidence": evidence, "coauth_ties": coauth_ties, "nearest": nearest,
@@ -536,20 +559,22 @@ def _wording(label, tier, evidence, coauth_ties, nearest, meta):
     if tier == "B":
         n = sum(t["n_papers"] for t in coauth_ties)
         return (f"OpenAlex records {label} as co-author of {n} small papers since {meta['recent_year']} "
-                f"with {len(coauth_ties)} Tier-A person(s).")
+                f"with {len(coauth_ties)} Tier-A person(s) (network context only, not validated; not a finding).")
     if tier == "C":
         return (f"OpenAlex records {label} within {nearest['hops']} co-author hops of a Tier-A person "
-                f"(context only, not for a note).")
+                f"(network context only, not validated; not for a note).")
     return f"OpenAlex records no tie for {label} within the loaded data; absence is not proof."
 
 
 # ---------- Q3: check_no_tie ----------
 
-def check_no_tie(expert_id, k=3, years=5, label=None, public_case=False):
-    return _run(_check_no_tie, expert_id, k, years, label, public_case)
+def check_no_tie(expert_id, k=3, years=5, label=None, public_case=False, searched_hops=0):
+    """searched_hops: the caller already ran the same BFS up to this depth and reached no Tier-A person
+    (server._report passes 3 after a tie_report with tier NONE), so it is not run twice."""
+    return _run(_check_no_tie, expert_id, k, years, label, public_case, searched_hops)
 
 
-def _check_no_tie(log, expert_id, k, years, label, public_case):
+def _check_no_tie(log, expert_id, k, years, label, public_case, searched_hops):
     _check_label_args(label, public_case)
     _str(expert_id, "expert_id")
     _int(k, "k", 1, 3)
@@ -567,23 +592,28 @@ def _check_no_tie(log, expert_id, k, years, label, public_case):
     nearest = None
     if expert_id in tier_a:  # the expert has direct Tier A evidence: 0 hops
         nearest = {"tier_a_label": label, "tier_a_id": expert_id, "anchor_tier": tier_a[expert_id], "hops": 0}
-    else:
+    elif searched_hops < k:  # searched_hops >= k: the same search already found nothing
         hops, count, pid, name = _nearest_tier_a(log, expert_id, k, tier_a)
         if hops:
             nearest = {"tier_a_label": _label(name, "Tier-A #1", False), "tier_a_id": pid,
                        "anchor_tier": tier_a[pid], "hops": hops, "anchor_count": count}
     found = nearest is not None
-    pct, pct_funder = round(100 * cov["coverage"]), round(100 * cov["coverage_funder_only"])
+    works, funded, expert_cov = _expert_funder_coverage(log, expert_id)
+    pct, pct_funder = round(100 * cov["coverage"]), round(100 * cov["funder_coverage"])
     if found:
         wording = (f"OpenAlex records a Tier A tie or a Tier-A person {nearest['hops']} co-author hop(s) "
                    f"from {label}; see tie_report for the DOIs.")
     else:
+        mine = (f"{funded} of {label}'s {works} loaded works ({round(100 * expert_cov)}%) list a funder"
+                if works else f"{label} has no loaded paper")
         wording = (f"No Tier A or B tie and no Tier-A person within {k} co-author hops of {label} "
-                   f"({_years(meta)}; {pct_funder}% of topic works have funder data and {pct}% have funder or "
-                   f"affiliation data). "
+                   f"({_years(meta)}). Funding records are thin: only {pct_funder}% of topic works in the graph "
+                   f"list any funder, and {mine} ({pct}% of topic works have funder or affiliation data, but "
+                   f"affiliation says little about funding). "
                    f"Absence in the research record is not proof.")
     scope = {"hops": k, "years": _years(meta), "coverage": cov["coverage"],
-             "coverage_funder_only": cov["coverage_funder_only"], "load_scope": meta["load_scope"],
+             "coverage_funder_only": cov["coverage_funder_only"], "funder_coverage": cov["funder_coverage"],
+             "expert_funder_coverage": expert_cov, "expert_works": works, "load_scope": meta["load_scope"],
              "caveats": _caveats(log)}
     data = {"result": "TIE_FOUND" if found else "NO_TIE_FOUND", "nearest": nearest,
             "query_name": QUERY_NAME_Q3, "label": label, "wording": wording}

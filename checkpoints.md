@@ -132,6 +132,7 @@ Claimed (→ Aaryan, Oct 16).
 
 **Gate:** a new Claude Code session recalls an earlier case (E11).
 - [x] Extra: `obsidian_export.py` shows the newsroom memory live in Obsidian's Graph view (Aaryan, Oct 16). Review: round 1 FAIL (5 must-fix) → round 2 FAIL (2 in the `.trash` move) → round 3 PASS; `test_obsidian` 22/22. Minor open: case-only Funder/Org name clashes, empty placeholder left in `.trash` if a move fails
+- [x] Extra: hardening after an external review (Aaryan, Oct 16): Python 3.13 fix, funder-only no-tie coverage, Tier B/C context only, `duration_ms`, README rewrite, localhost-only FalkorDB. Reviewer PASS. Open: LICENSE (decide with Abdul), `requirepass`, CI
 
 ## 7. Verdicts, notes, Writer
 - [ ] `record_verdict` (PAPER_EXCLUDED) with an impact report

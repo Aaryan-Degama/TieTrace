@@ -62,18 +62,19 @@ TieTrace checks how connected an expert is to the company in a story, using an O
 - **Cut order if behind:** second topic, deployment, blog post, Review Desk, `set_policy`, the max-flow test (E4).
 
 ## Commands
-- **FalkorDB:** start with the AOF `docker run` command under *FalkorDB data persistence* below (Browser at http://localhost:3000)
-- **Ports on Abdul's machine (Oct 15):** 6379 and 3000 are taken by other containers, so FalkorDB runs on host ports 6380 and 3001 (`-p 6380:6379 -p 3001:3000`). Set `FALKORDB_PORT=6380` for `loader.py`, tests and the server (default 6379). Browser: http://localhost:3001.
+- **FalkorDB:** start with the AOF `docker run` command under *FalkorDB data persistence* below (Browser at http://127.0.0.1:3001)
+- **Ports on Abdul's machine (Oct 15):** 6379 and 3000 are taken by other containers, so FalkorDB runs on host ports 6380 and 3001 (`-p 127.0.0.1:6380:6379 -p 127.0.0.1:3001:3000`). Set `FALKORDB_PORT=6380` for `loader.py`, tests and the server (default 6379). Browser: http://localhost:3001.
+- **Bind to localhost only** (Aaryan, Oct 16): every `-p` is `127.0.0.1:...`, so FalkorDB (no password) is not reachable from the network.
 - **FalkorDB data persistence:** the container is named `falkordb` and uses the named volume `falkordb-data`. The volume alone is not enough: FalkorDB keeps the graph in RAM and only snapshots it now and then, so a hard stop lost data once (Oct 16). AOF fixes that (at most about 1 s lost on a crash). Start it with `docker start falkordb`.
-  - **New container:** `docker run -d --name falkordb -p 6379:6379 -p 3000:3000 -v falkordb-data:/var/lib/falkordb/data -e REDIS_ARGS="--appendonly yes --appendfsync everysec" --stop-timeout 120 falkordb/falkordb:v4.22.1`
+  - **New container:** `docker run -d --name falkordb -p 127.0.0.1:6379:6379 -p 127.0.0.1:3001:3000 -v falkordb-data:/var/lib/falkordb/data -e REDIS_ARGS="--appendonly yes --appendfsync everysec" --stop-timeout 120 falkordb/falkordb:v4.22.1`
   - **Pin `v4.22.1`, never `:latest`** (decided by Aaryan, Oct 16). On Oct 8 `:latest` pointed to 6.0.2 (Rust rewrite), where `toLower()` on a title with U+FFFD errors and then crashes the server; 4.22.1 cannot read 6.x data files, so switching means a fresh volume plus a rebuild from cache.
-  - **Aaryan's machine:** volume `falkordb-data-v4` (old 6.0.2 data kept in `falkordb-data` as a backup), Browser on host port 3001 (`-p 3001:3000`), Redis on 6379, Docker context `default`.
+  - **Aaryan's machine:** volume `falkordb-data-v4` (old 6.0.2 data kept in `falkordb-data` as a backup), Browser on host port 3001 (`-p 127.0.0.1:3001:3000`), Redis on 6379, Docker context `default`.
   - **Migrating an existing container (keeps the data):** first `docker exec falkordb redis-cli CONFIG SET appendonly yes` and wait until `INFO persistence` shows `aof_rewrite_in_progress:0`; then `redis-cli SAVE`, `docker stop -t 120 falkordb`, `docker rm falkordb`, and the `docker run` above. Turning AOF on in a fresh container before the AOF file exists would start empty.
   - **Check:** `docker exec falkordb redis-cli CONFIG GET appendonly` must say `yes`.
 - **Build the research graph:**
   - `uv run python loader.py --rebuild` rebuilds from the `data/raw/` cache, with zero API calls once the cache exists;
   - add `--refresh` to re-download;
   - the OpenAlex key lives in `.env` (`OPENALEX_API_KEY`). Never print or log it.
-- **Tests:** `uv run python tests/<suite>.py` for `test_loader`, `test_research`, `test_server`, `test_eval`, `test_cases`, `test_discover`, `test_memory` (plain asserts, no pytest). Suites use `zz-test-*` newsrooms, never `alpha`.
+- **Tests:** `uv run python tests/<suite>.py` for `test_loader`, `test_research`, `test_server`, `test_eval`, `test_cases`, `test_discover`, `test_memory`, `test_obsidian` (plain asserts, no pytest). Suites use `zz-test-*` newsrooms, never `alpha`.
 - **See the memory graph in Obsidian:** `uv run python obsidian_export.py --watch 5` writes linked notes (cases, experts, papers, funders) to `~/Documents/Obsidian Vault/TieTrace/<newsroom>/`; open Graph view (Ctrl+G). Read-only on FalkorDB; writes only in that folder, and moves stale notes to the vault's `.trash/`. The full research graph is better viewed in the FalkorDB Browser.
-- **Register the server:** `claude mcp add tietrace-alpha -e TIETRACE_NEWSROOM=alpha -e FALKORDB_PORT=6380 -- uv run --directory C:\Users\Azeem\Desktop\TieTrace python server.py` (`uv run --directory` finds the venv from any folder; drop `FALKORDB_PORT` if FalkorDB is on 6379). The server exits at once if `TIETRACE_NEWSROOM` is unset.
+- **Register the server:** `claude mcp add tietrace-alpha -e TIETRACE_NEWSROOM=alpha -e FALKORDB_PORT=6380 -- uv run --directory <path-to-repo> python server.py` (`uv run --directory` finds the venv from any folder; drop `FALKORDB_PORT` if FalkorDB is on 6379). The server exits at once if `TIETRACE_NEWSROOM` is unset.
