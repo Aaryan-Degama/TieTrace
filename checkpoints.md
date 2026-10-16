@@ -3,21 +3,22 @@
 Tick a box when it is **done and verified**, not just written. Each checkpoint ends in a gate: don't start the next one until the gate passes, or take the fallback.
 Deadline: **submit by Oct 18, 6 PM IST.** Specs: `tietrace-v2-redesign.md`, `docs/mcp-spec.md`.
 
-| # | Checkpoint | Target (IST) | Status | Owner |
-|---|---|---|---|---|
-| 0 | Setup | Oct 15 morning | 🟨 | Abdul |
-| 1 | Toy graph: assumptions tested | Oct 15, hours 1-2 | ✅ | Abdul |
-| 2 | Loader: research graph built | Oct 15, by hour 8 | ✅ | Abdul |
-| 3 | Research queries Q1-Q4 + Verifier | Oct 16 morning | ✅ | Abdul |
-| 4 | Evaluation E1, E2, E3, E7 | Oct 16 afternoon | ✅ | Abdul |
-| 5 | MCP server: Track 1 tools | Oct 16 evening | 🟨 | Abdul |
-| 5b | Persistence fix (AOF) | Oct 16 | ✅ | Aaryan |
-| 6 | Memory graph: Track 2 tools | Oct 17 morning | ⬜ | unassigned |
-| 7 | Verdicts, notes, Writer | Oct 17 midday | ⬜ | unassigned |
-| 8 | Remaining evaluation + golden tests | Oct 17 afternoon | ⬜ | unassigned |
-| 9 | README, video, submit | Oct 18, by 6 PM | ⬜ | unassigned |
+| # | Checkpoint | Target (IST) | Status |
+|---|---|---|---|
+| 0 | Setup | Oct 15 morning | 🟨 |
+| 1 | Toy graph: assumptions tested | Oct 15, hours 1-2 | ✅ |
+| 2 | Loader: research graph built | Oct 15, by hour 8 | ✅ |
+| 3 | Research queries Q1-Q4 + Verifier | Oct 16 morning | ✅ |
+| 4 | Evaluation E1, E2, E3, E7 | Oct 16 afternoon | ✅ |
+| 5 | MCP server: Track 1 tools | Oct 16 evening | ✅ |
+| 5b | Persistence fix (AOF) | Oct 16 | ✅ |
+| 5c-5f | Any company/topic: case config, case-aware tools, discover, Philip Morris demo | Oct 16-17 | 🟨 |
+| 6 | Memory graph: Track 2 tools | Oct 17 morning | ⬜ |
+| 7 | Verdicts, notes, Writer | Oct 17 midday | ⬜ |
+| 8 | Remaining evaluation + golden tests | Oct 17 afternoon | ⬜ |
+| 9 | README, video, submit | Oct 18, by 6 PM | ⬜ |
 
-**Team: Abdul and Aaryan.** Every checkpoint has an Owner (table above). Tag each checkbox with who did it: `- [x] item (Abdul)` or `(Aaryan)`; use `(Abdul + Aaryan)` for pairing. Unticked items may carry `(→ Aaryan)` for who will do them. Add the date when you tick, e.g. `(Abdul, Oct 16)`. Checkpoints 0-2 were built in Abdul's sessions, so they are attributed to Abdul; Aaryan can correct that.
+**Team: Abdul and Aaryan.** Tag each checkbox with who did it: `- [x] item (Abdul)` or `(Aaryan)`; use `(Abdul + Aaryan)` for pairing. Unticked items carry `(→ Aaryan)` to claim them. Add the date when you tick, e.g. `(Abdul, Oct 16)`. Checkpoints 0-2 were built in Abdul's sessions, so they are attributed to Abdul; Aaryan can correct that.
 
 Status key: ⬜ not started · 🟨 in progress · ✅ done · ✂️ cut
 
@@ -95,7 +96,7 @@ Result: Reviewer fixes applied; `tests/test_eval.py` 13/13. Details in `eval/res
 - [x] `resolve_experts`, `find_experts`, `tie_report`, `check_no_tie`, `bridges` (Abdul, Oct 15)
 - [x] `check_case` (batch run) (Abdul, Oct 15)
 - [x] Registered with `claude mcp add`; tools are visible in Claude Code (Abdul, Oct 15)
-- [ ] Orchestrator test: paste a draft story and get tiers back (→ Abdul: open a NEW Claude Code session in this folder; `claude -p` failed here with an expired login)
+- [x] Orchestrator test: paste a draft story and get tiers back (Aaryan, Oct 16): new Claude Code session, server `tietrace-alpha` connected, FalkorDB 4.22.1. Steven Blair → A1 and James Hill → A2 with DOIs; 5 "no ties found" experts as Expert #n with scope (3 hops, 2021-2026, funder coverage 56%); flagged the ambiguous "James Hill". Follow-ups: the reply said "clean source" (editorialising: add to the Verifier's banned words in checkpoint 7); decide how a journalist sees names of anonymised experts. Re-run after the 5c/5d review fixes.
 
 Hand-off (Abdul, Oct 16): everything is built, reviewed and registered. Only the orchestrator test is left: Abdul runs it in a new Claude Code session.
 
@@ -109,6 +110,14 @@ Result: `tests/test_server.py` 26/26 (Reviewer PASS in round 2); server register
 - [x] Verified: `CONFIG GET appendonly` = yes after recreate; research graph intact (85,511 Person) (Aaryan, Oct 16)
 - [x] Crash test: write a node, `docker kill` 2 s later (no save), start: node is back (Aaryan, Oct 16)
 - [ ] Abdul: migrate your container the same way (steps in `CLAUDE.md` Commands; uses your ports 6380/3001) (→ Abdul)
+
+## 5c-5f. Any company and topic (from `IMPROVEMENT.md`)
+- [ ] 5c `cases/<slug>/case.json`, `loader.py --case`, staging + RENAME swap, `--dry-run` (→ Aaryan)
+- [ ] 5d `case` argument on tools, `list_cases`, `NO_GRAPH`, per-graph caches (→ Aaryan)
+- [x] 5e `discover.py` CLI (funders, institutions, topics, authors): Reviewer FAIL (5 must-fix) → fixed → PASS; 26/26 tests offline and live; never auto-picks, shows split-profile siblings (strong/weak) (Aaryan, Oct 16)
+- [ ] 5f Philip Morris × lung cancer case: human-approved `case.json`, real build, results in `eval/results.md` (→ Aaryan)
+
+Decision (Aaryan, Oct 16): D9 resolved as the plan recommends: tools take a `case` slug (validated against `cases/`), default `TIETRACE_CASE` env, fallback `obesity-coke`; the newsroom stays env-only.
 
 ## 6. Memory graph: Track 2 tools
 - [ ] `TIETRACE_NEWSROOM` env var picks the tenant graph

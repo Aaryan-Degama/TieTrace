@@ -6,11 +6,11 @@ TieTrace checks how connected an expert is to the company in a story, using an O
 ## Team and attribution (two people: Abdul and Aaryan)
 - **Who is working:** find out at the start of each session from `git config user.name` (Abdul = `23abdul23`); if it does not clearly say Abdul or Aaryan, ask once and remember it for the session. Both are beginners and must be able to explain everything (rules 12-13).
 - **Record who did what, in every doc you touch:**
-  - `checkpoints.md`: each ticked box ends with `(Abdul)` or `(Aaryan)` plus the date; the checkpoint table has an Owner column. Never tick a box on someone else's behalf without naming who actually did it.
+  - `checkpoints.md`: each ticked box ends with `(Abdul)` or `(Aaryan)` plus the date (no Owner column; claims are `(→ name)` on items). Never tick a box on someone else's behalf without naming who actually did it.
   - `AI_USE.md`: every new row has a `Who` column value; `Learned` lines end with `[Abdul]` or `[Aaryan]`.
   - Other docs (spec, redesign, README, `eval/results.md`): put a one-line `Last updated by <name>, <date>: <what>` at the top when you change them. Decisions in the spec/redesign get `(decided by <name>)`.
   - Commits: name the person in the message body (`Work by: Abdul`); the git author already shows it.
-- **Avoid collisions:** before starting a checkpoint, check its Owner in `checkpoints.md`. If it belongs to the other person, do not edit it without asking. Claim work by writing `(→ name)` on the item, and pull/merge before editing shared docs.
+- **Avoid collisions:** before starting a checkpoint, check its items for a `(→ name)` claim in `checkpoints.md`. If they belong to the other person, do not edit it without asking. Claim work by writing `(→ name)` on the item, and pull/merge before editing shared docs.
 - **Hand-off:** when stopping mid-checkpoint, leave a one-line note under that checkpoint in `checkpoints.md` saying what is done and what is next.
 
 ## Read first
@@ -65,7 +65,9 @@ TieTrace checks how connected an expert is to the company in a story, using an O
 - **FalkorDB:** start with the AOF `docker run` command under *FalkorDB data persistence* below (Browser at http://localhost:3000)
 - **Ports on Abdul's machine (Oct 15):** 6379 and 3000 are taken by other containers, so FalkorDB runs on host ports 6380 and 3001 (`-p 6380:6379 -p 3001:3000`). Set `FALKORDB_PORT=6380` for `loader.py`, tests and the server (default 6379). Browser: http://localhost:3001.
 - **FalkorDB data persistence:** the container is named `falkordb` and uses the named volume `falkordb-data`. The volume alone is not enough: FalkorDB keeps the graph in RAM and only snapshots it now and then, so a hard stop lost data once (Oct 16). AOF fixes that (at most about 1 s lost on a crash). Start it with `docker start falkordb`.
-  - **New container:** `docker run -d --name falkordb -p 6379:6379 -p 3000:3000 -v falkordb-data:/var/lib/falkordb/data -e REDIS_ARGS="--appendonly yes --appendfsync everysec" --stop-timeout 120 falkordb/falkordb:latest`
+  - **New container:** `docker run -d --name falkordb -p 6379:6379 -p 3000:3000 -v falkordb-data:/var/lib/falkordb/data -e REDIS_ARGS="--appendonly yes --appendfsync everysec" --stop-timeout 120 falkordb/falkordb:v4.22.1`
+  - **Pin `v4.22.1`, never `:latest`** (decided by Aaryan, Oct 16). On Oct 8 `:latest` pointed to 6.0.2 (Rust rewrite), where `toLower()` on a title with U+FFFD errors and then crashes the server; 4.22.1 cannot read 6.x data files, so switching means a fresh volume plus a rebuild from cache.
+  - **Aaryan's machine:** volume `falkordb-data-v4` (old 6.0.2 data kept in `falkordb-data` as a backup), Browser on host port 3001 (`-p 3001:3000`), Redis on 6379, Docker context `default`.
   - **Migrating an existing container (keeps the data):** first `docker exec falkordb redis-cli CONFIG SET appendonly yes` and wait until `INFO persistence` shows `aof_rewrite_in_progress:0`; then `redis-cli SAVE`, `docker stop -t 120 falkordb`, `docker rm falkordb`, and the `docker run` above. Turning AOF on in a fresh container before the AOF file exists would start empty.
   - **Check:** `docker exec falkordb redis-cli CONFIG GET appendonly` must say `yes`.
 - **Build the research graph:**
