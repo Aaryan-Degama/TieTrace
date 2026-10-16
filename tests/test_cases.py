@@ -14,7 +14,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-os.environ.setdefault("TIETRACE_NEWSROOM", "alpha")  # server.py exits without it
+os.environ["TIETRACE_NEWSROOM"] = "zz-test-cases"  # server.py exits without it; scratch, deleted at the end
 import loader  # noqa: E402
 import research  # noqa: E402
 import server  # noqa: E402
@@ -706,6 +706,7 @@ def test_lock_release_never_deletes_another_builds_lock():
 # ---------- runner ----------
 if __name__ == "__main__":
     tests = [(n, f) for n, f in list(globals().items()) if n.startswith("test_") and callable(f)]
+    server.memory.init()  # create the scratch newsroom first, so its first Event does not look like a new graph
     failed = 0
     for name, fn in tests:
         try:
@@ -715,5 +716,7 @@ if __name__ == "__main__":
             failed += 1
             line = traceback.extract_tb(e.__traceback__)[-1].lineno
             print(f"FAIL  {name}  (line {line}): {str(e)[:300] or type(e).__name__}")
+    if "newsroom:zz-test-cases" in DB.list_graphs():  # the Events this suite logged
+        DB.select_graph("newsroom:zz-test-cases").delete()
     print(f"\n{len(tests) - failed}/{len(tests)} passed")
     sys.exit(1 if failed else 0)

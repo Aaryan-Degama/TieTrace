@@ -12,7 +12,7 @@ Deadline: **submit by Oct 18, 6 PM IST.** Specs: `tietrace-v2-redesign.md`, `doc
 | 4 | Evaluation E1, E2, E3, E7 | Oct 16 afternoon | ✅ |
 | 5 | MCP server: Track 1 tools | Oct 16 evening | ✅ |
 | 5b | Persistence fix (AOF) | Oct 16 | ✅ |
-| 5c-5f | Any company/topic: case config, case-aware tools, discover, Philip Morris demo | Oct 16-17 | 🟨 |
+| 5c-5f | Any company/topic: case config, case-aware tools, discover, Philip Morris demo | Oct 16-17 | ✅ |
 | 6 | Memory graph: Track 2 tools | Oct 17 morning | ⬜ |
 | 7 | Verdicts, notes, Writer | Oct 17 midday | ⬜ |
 | 8 | Remaining evaluation + golden tests | Oct 17 afternoon | ⬜ |
@@ -116,18 +116,19 @@ Result: `tests/test_server.py` 26/26 (Reviewer PASS in round 2); server register
 - [x] 5d `case` argument on tools, `list_cases`, `NO_GRAPH`, per-graph caches, cache dropped after a rebuild (Aaryan, Oct 16). Review: round 1 FAIL (1 must-fix), round 2 PASS; suites on v4.22.1: cases 23/23, loader 49/49, research 51/51, server 26/26, eval 13/13, discover 26/26
 - [x] 5e `discover.py` CLI (funders, institutions, topics, authors): Reviewer FAIL (5 must-fix) → fixed → PASS; 26/26 tests offline and live; never auto-picks, shows split-profile siblings (strong/weak) (Aaryan, Oct 16)
 - [x] 5f Philip Morris × lung cancer case built (Aaryan, Oct 16): GATE 0 approved by Aaryan (PMI + FSFW as A2; Altria, Vectura, Swedish Match rejected; T10202 cap 20,000). 21,756 works, 68,723 people, 726 MB, 915 API calls, 13 min. Tier A: 3,649 (A1 3,176, A2 473)
-- [ ] 5f end-to-end: run a Philip Morris story prompt in Claude Code and record the result honestly in `eval/results.md` (→ Aaryan)
+- [x] 5f end-to-end: Philip Morris prompt run in Claude Code, recorded in `eval/results.md` (Aaryan, Oct 16): scope stated honestly (PMI only, other tobacco companies named as not checked); 5 no-tie experts; funder coverage 37.5%; finding: Tier C covers 52 of 73 top authors
 
 Decision (Aaryan, Oct 16): D9 resolved as the plan recommends: tools take a `case` slug (validated against `cases/`), default `TIETRACE_CASE` env, fallback `obesity-coke`; the newsroom stays env-only.
 
 ## 6. Memory graph: Track 2 tools
 Claimed (→ Aaryan, Oct 16).
-- [ ] `TIETRACE_NEWSROOM` env var picks the tenant graph
-- [ ] Event logger: every call writes an `Event` under a `Session`
-- [ ] `open_case` with `prior_memory`
-- [ ] `recall` timeline
-- [ ] Staged load: works up to year Y, save a check, load the newer slice
-- [ ] `recheck` shows the diff
+- [x] `TIETRACE_NEWSROOM` env var picks the tenant graph (Aaryan, Oct 16)
+- [x] Event logger: every call writes an `Event` under a `Session` (Aaryan, Oct 16): ~0.3 ms per call; 4 processes × 50 calls = 200/200 Events
+- [x] `open_case` with `prior_memory` (Aaryan, Oct 16)
+- [x] `recall` timeline (Aaryan, Oct 16)
+- [x] Staged load: works up to year Y, save a check, load the newer slice (Aaryan, Oct 16): `cases/obesity-coke-staged`, `loader.py --until-year 2023`, 0 API calls; steps in spec 9d
+- [x] `recheck` shows the diff (Aaryan, Oct 16): e.g. an expert went C → A1 after the 2024-26 slice (a 2026 Coca-Cola-funded paper). Review: round 1 FAIL (5 must-fix: NONE checks without scope, public-case name leak, forked SUPERSEDES chains, recall on unknown ids, tests writing into newsroom:alpha) → round 2 PASS; suites: loader 49, research 51, server 26, eval 13, cases 27, discover 26, memory 24
+- [ ] Gate E11 in real Claude Code: session 1 opens and checks a case, a fresh session's `open_case` shows `prior_memory` (→ Aaryan; passed with two fresh server processes, not yet in Claude Code)
 
 **Gate:** a new Claude Code session recalls an earlier case (E11).
 

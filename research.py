@@ -265,6 +265,8 @@ def _topic_ids(log, topic):
 
 
 def _label(name, label, public_case):
+    """public_case names only the expert being checked (the server allows it only for the case's public_ids).
+    Co-authors, Tier-A people and bridge nodes are always called with public_case=False, so they stay anonymous."""
     return name if public_case is True and name else label or "Expert #1"
 
 
@@ -485,7 +487,7 @@ def _tie_report(log, expert_id, label, public_case):
     coauth_ties = []
     for pid, name, n_papers, w, dois in ties:
         if dois is not None and n_papers >= 2:
-            coauth_ties.append({"to_label": _label(name, f"Tier-A #{len(coauth_ties) + 1}", public_case),
+            coauth_ties.append({"to_label": _label(name, f"Tier-A #{len(coauth_ties) + 1}", False),
                                 "to_expert_id": pid, "anchor_tier": tier_a[pid], "n_papers": n_papers,
                                 "w": round(w, 4), "dois": [d for d in dois if d]})
     coauth_w = sum(t[3] for t in ties)
@@ -568,7 +570,7 @@ def _check_no_tie(log, expert_id, k, years, label, public_case):
     else:
         hops, count, pid, name = _nearest_tier_a(log, expert_id, k, tier_a)
         if hops:
-            nearest = {"tier_a_label": _label(name, "Tier-A #1", public_case), "tier_a_id": pid,
+            nearest = {"tier_a_label": _label(name, "Tier-A #1", False), "tier_a_id": pid,
                        "anchor_tier": tier_a[pid], "hops": hops, "anchor_count": count}
     found = nearest is not None
     pct, pct_funder = round(100 * cov["coverage"]), round(100 * cov["coverage_funder_only"])
@@ -644,8 +646,8 @@ def _bridges(log, expert_id, depth, limit, label, public_case):
         a_id, a_name = r[2 * n_mid], r[2 * n_mid + 1]
         rest = r[2 * n_mid + 2:]
         paths.append({
-            "nodes": [label] + [_label(nm, f"Co-author #{i}.{j}", public_case) for j, (_, nm) in enumerate(mid, 1)]
-                     + [_label(a_name, f"Tier-A #{i}", public_case)],
+            "nodes": [label] + [_label(nm, f"Co-author #{i}.{j}", False) for j, (_, nm) in enumerate(mid, 1)]
+                     + [_label(a_name, f"Tier-A #{i}", False)],
             "node_ids": [expert_id] + [m for m, _ in mid] + [a_id],
             "anchor_tier": tier_a[a_id],
             "edges": [{"dois": [d for d in rest[2 * j] if d], "w": round(rest[2 * j + 1], 4)} for j in range(depth)],

@@ -1,6 +1,6 @@
 # TieTrace evaluation results (checkpoint 4: E3, E7, E1, E2)
 
-*Last updated by Abdul, Oct 16: Reviewer fixes (anonymised control, placebo-spread headline interval for E1, paper counts for E3, banned-word cleanup); first full run of `eval/e3_e7.py`, `eval/e1.py`, `eval/e2.py` on `research:obesity-coke` (data version openalex@2026-10-15). The Reviewer has not checked this yet.*
+*Last updated by Aaryan, Oct 16: added the checkpoint 5f end-to-end run (Philip Morris × lung cancer). Earlier: Abdul, Oct 16: Reviewer fixes (anonymised control, placebo-spread headline interval for E1, paper counts for E3, banned-word cleanup); first full run of `eval/e3_e7.py`, `eval/e1.py`, `eval/e2.py` on `research:obesity-coke` (data version openalex@2026-10-15). The Reviewer has not checked this yet.*
 
 Re-run: `FALKORDB_PORT=6380 uv run python eval/e3_e7.py` (7 s), `eval/e1.py` (82 s), `eval/e2.py` (20 s). All seeds are fixed (20261016), so the numbers repeat.
 Pass rules are copied from `tietrace-v2-redesign.md` section 7 and were not changed after seeing results. The score formula is the fixed one (section 4).
@@ -153,6 +153,24 @@ Differences with 95% bootstrap intervals: weighted - volume **-0.004** [-0.054, 
 - The bottler affiliations and foundation grants count as Tier A2 targets, as in the shipped tier rules.
 
 ---
+
+## 5f: end-to-end run on a second case (Philip Morris × lung cancer)
+
+*Run by Aaryan, Oct 16, in a fresh Claude Code session (server `tietrace-alpha`, FalkorDB v4.22.1, graph `research:philip-morris-lung`, data version openalex@2026-10-16). Numbers below are what that session reported; they were not re-computed by a script.*
+
+Prompt: "I'm writing about lung cancer screening and Philip Morris. Suggest 5 experts with no ties found and check any cigarette company."
+
+| What | Result |
+|---|---|
+| Scope honesty | Pass. It said only Philip Morris (PMI funder and institutions, plus FSFW as A2) was checked, named what was left out on purpose (Altria, Vectura, Swedish Match) and what is not in the graph at all (BAT, Japan Tobacco, Imperial Brands), and said a new case needs human approval to build. |
+| Experts with no ties found | 5 returned as Expert #1-#5 (25, 22, 19, 18, 18 papers in the graph), plus 4 spares. Scope stated: 3 co-author hops, 2021-2026, topic coverage 0.97. |
+| Funder coverage | 37.5% of works in this graph list any funder (obesity-coke: 56%), so "no tie found" is weaker here; the reply said so and told the reporter to ask each expert directly. |
+| Base rate (session-reported, not a stored number) | 73 authors checked to find 9 with no ties: 52 Tier C, 11 Tier B, 1 Tier A1. |
+| Wording | No banned words. |
+
+**Findings to act on:**
+- **Tier C saturates in this field.** 52 of 73 top authors are Tier C. The session blamed big multi-author papers, but Tier C runs over `COAUTH_B` (2+ recent papers with 25 or fewer authors), so that explanation is not right as stated. Needs a check before any claim about it: is Tier C still informative when most of a field has it?
+- **Topic is wider than screening.** OpenAlex has no screening topic; T10202 also covers diagnosis and treatment. The session ranked by the phrase "lung cancer screening" in titles, which is not a stored query.
 
 ## Judgement calls for the Reviewer to challenge
 1. E3: only four names could be confirmed publicly; I did not guess a fifth. Hill and Peters are Tier A2 (foundation), so "Tier A" is read as A1 or A2.

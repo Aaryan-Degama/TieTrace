@@ -1,23 +1,29 @@
-"""Checkpoint 5: the TieTrace MCP server (stdio), Track 1 tools. See docs/mcp-spec.md sections 4, 5 and 9.
+"""Checkpoints 5 and 6: the TieTrace MCP server (stdio). See docs/mcp-spec.md sections 4, 5, 9b-9d.
 
-Tools: resolve_experts, find_experts, tie_report, check_no_tie, bridges, check_case, list_cases.
-All of them call research.py (reads only, through GRAPH.RO_QUERY) and return the section-4 envelope.
+Track 1 tools: resolve_experts, find_experts, tie_report, check_no_tie, bridges, check_case, list_cases.
+They call research.py (reads only, through GRAPH.RO_QUERY) and return the section-4 envelope.
+Track 2 tools (checkpoint 6): open_case, recall, recheck. They call memory.py (the newsroom graph).
 No LLM call, no API key.
 
-Case (checkpoint 5d): every tool except list_cases takes an optional `case` slug. It must name a folder
-cases/<slug>/ with a valid case.json, and the tool then reads research:<slug>. The default is env
-TIETRACE_CASE, else obesity-coke. A tool never takes a graph name.
+Case (checkpoint 5d): every research tool except list_cases takes an optional `case` slug. It must name a
+folder cases/<slug>/ with a valid case.json, and the tool then reads research:<slug>. The default is env
+TIETRACE_CASE, else obesity-coke. A tool never takes a graph name. A call with a newsroom `case_id` uses
+the research case that newsroom case was opened on.
 
-Newsroom: TIETRACE_NEWSROOM (env, required, [a-z0-9_-]+) is read at startup and logged on stderr.
-Nothing is written to the newsroom graph yet (memory is checkpoint 6), so it is only held here.
+Newsroom: TIETRACE_NEWSROOM (env, required) picks the memory graph newsroom:<id>; no tool takes it.
+Every tool call writes one Event under this process's Session (memory.log_event); a logging failure is
+only a warning on the answer.
 
-Names: tools never take a name or a label. Single-expert tools take `expert_number` and say
-"Expert #<n>". Only check_case(public_case=true) puts a name in the label, and only for the case's
-approved public_ids (case.json; for obesity-coke the documented GEBN case).
+Names: tools never take a name or a label. Single-expert tools say "Expert #<n>": from `expert_number`,
+or from the expert's place in the newsroom case. A name appears only in a case whose experts are all in
+the research case's approved public_ids (case.json; for obesity-coke the documented GEBN case).
 
 Stdout belongs to the MCP protocol. Everything we print goes to stderr.
 Run: FALKORDB_PORT=6380 TIETRACE_NEWSROOM=alpha uv run python server.py
 """
+import functools
+import inspect
+import json
 import logging
 import os
 import re
@@ -27,13 +33,15 @@ import time
 from typing import Any
 
 NEWSROOM = os.environ.get("TIETRACE_NEWSROOM", "")
-if not re.fullmatch(r"[a-z0-9_-]+", NEWSROOM):
-    sys.exit("TieTrace: set TIETRACE_NEWSROOM to the newsroom id, lower case letters, digits, - or _ (for example alpha)")
+if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,39}", NEWSROOM):  # same rule as memory.NEWSROOM_RE
+    sys.exit("TieTrace: set TIETRACE_NEWSROOM to the newsroom id: 1 to 40 lower case letters, digits, - or _, "
+             "starting with a letter or digit (for example alpha)")
 
 from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 
 import loader
+import memory
 import research
 
 try:  # a wrong TIETRACE_CASE must stop the server at once, like a missing TIETRACE_NEWSROOM
@@ -41,6 +49,8 @@ try:  # a wrong TIETRACE_CASE must stop the server at once, like a missing TIETR
 except (ValueError, OSError):
     sys.exit(f"TieTrace: TIETRACE_CASE={research.default_case()!r} is not a case with a valid cases/<slug>/case.json; "
              f"known cases: {', '.join(research.known_cases()) or 'none'}")
+
+memory.use_newsroom(NEWSROOM)
 
 logging.basicConfig(stream=sys.stderr, level=logging.INFO, format="tietrace %(levelname)s %(message)s")
 log = logging.getLogger("tietrace")
@@ -56,14 +66,43 @@ RULES = (" Say 'ties found in the research record'; absence of a tie is not proo
 CASE_NOTE = (" case: optional research case slug (see list_cases); default is the server's case. "
              "Answers name the graph and data_version in scope.")
 READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
+# Tools that add memory records (a Case or Checks) to the newsroom graph. Nothing is ever deleted, and the
+# research graph is never written. (Every tool also writes its Event; that log is not counted here.)
+WRITES = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)
+AGENT_RE = re.compile(r"[a-z][a-z0-9_-]{0,29}")
 
 mcp = MCPServer("tietrace", instructions="TieTrace checks how connected an expert is to the company in a story, "
-                "using an OpenAlex research graph (read-only)." + RULES)
-def tool(fn):
-    """Register fn as a read-only tool; its docstring plus the wording rules is the description."""
-    note = CASE_NOTE if "case" in fn.__code__.co_varnames[:fn.__code__.co_argcount] else ""
-    return mcp.tool(structured_output=True, description=" ".join(fn.__doc__.split()) + note + RULES,
-                    annotations=READ_ONLY)(fn)
+                "using an OpenAlex research graph (read-only) and this newsroom's memory of earlier cases and "
+                "checks." + RULES)
+
+
+def tool(annotations=READ_ONLY):
+    """Register fn as a tool; its docstring plus the wording rules is the description. Every call is logged
+    as one Event (tool, args, result digest, agent). `agent` is checked here, before the tool runs."""
+    def register(fn):
+        params = inspect.signature(fn).parameters
+        note = CASE_NOTE if "case" in params else ""
+        note += " agent: optional name of the calling agent (for example writer), for the memory log only."
+
+        @functools.wraps(fn)
+        def logged(*args, **kwargs):
+            call = inspect.signature(fn).bind(*args, **kwargs)
+            call.apply_defaults()
+            agent = call.arguments.get("agent")
+            if agent is not None and not (isinstance(agent, str) and AGENT_RE.fullmatch(agent)):
+                out = _error("INVALID_ARG", "agent must be 1 to 30 lower case letters, digits, - or _ (for example writer)")
+                call.arguments["agent"] = None  # never store a bad value
+            else:
+                out = fn(*args, **kwargs)
+            warning = memory.log_event(fn.__name__, dict(call.arguments), out)
+            if warning:
+                log.warning("%s: %s", fn.__name__, warning)
+                if out.get("ok"):
+                    out["warnings"].append(warning)
+            return out
+        return mcp.tool(structured_output=True, description=" ".join(fn.__doc__.split()) + note + RULES,
+                        annotations=annotations)(logged)
+    return register
 
 
 _lock = threading.Lock()  # research.py keeps one DB connection and one cache per process: one call at a time
@@ -71,6 +110,11 @@ _lock = threading.Lock()  # research.py keeps one DB connection and one cache pe
 
 def _error(code, message, cypher=None):
     return {"ok": False, "error": {"code": code, "message": message}, "cypher": cypher or []}
+
+
+def _ok(data, cypher, scope, warnings=None):
+    return {"ok": True, "data": data, "cypher": cypher, "scope": scope, "verdicts_applied": [],
+            "warnings": warnings or []}
 
 
 def _case_config(case):
@@ -118,10 +162,61 @@ def _with_label(fn, expert_number, *args, case=None):
     return _safe(fn, *args, label, case=case)
 
 
+def _in_case(fn, case_id, case, *args):
+    """Run fn(newsroom_case, *args) on the research case that newsroom case was opened on.
+    The memory reads that found the case come first in `cypher`."""
+    mlog = []
+    try:
+        kase = memory.get_case(case_id, mlog)
+        if case is not None and case != kase["research_case"]:
+            raise research.ToolError("INVALID_ARG", f"case_id {case_id} was opened on research case "
+                                                    f"'{kase['research_case']}'; leave case out or pass that one")
+    except research.ToolError as e:
+        return _error(e.code, e.message, mlog)
+    out = _safe(fn, kase, *args, case=kase["research_case"])
+    out["cypher"] = mlog + out.get("cypher", [])
+    return out
+
+
+def _built_at():
+    """built_at of the research graph in use (from its cached Meta node; no extra query once warm)."""
+    return research._meta([]).get("built_at")
+
+
+def _span():
+    """The graph's precomputed recent span in years (5 for obesity-coke; a staged slice can be shorter)."""
+    m = research._meta([])
+    return m["last_year"] - m["recent_year"]
+
+
+def _report(expert_id, label, public_case):
+    """tie_report, plus check_no_tie when the tier is NONE (a saved "no tie" needs its query_name and scope)."""
+    rep = research.tie_report(expert_id, label, public_case)
+    nt = None
+    if rep["ok"] and rep["data"]["tier"] == "NONE":
+        nt = research.check_no_tie(expert_id, 3, _span(), label, public_case)
+        rep["cypher"] += nt["cypher"]
+    return rep, nt
+
+
+def _save(env, case_id, report, no_tie=None, old_id=None, diff=None, agent=None):
+    """Save a Check; its write goes into env's cypher. A failed save is a warning, the answer still stands.
+    A tier NONE check is saved only together with its check_no_tie result and scope."""
+    if report["data"]["tier"] == "NONE" and not (no_tie and no_tie.get("ok")):
+        code = no_tie["error"]["code"] if no_tie else "not run"
+        env["warnings"].append(f"check not saved: tier NONE needs its check_no_tie scope, and check_no_tie failed ({code})")
+        return None
+    try:
+        return memory.save_check(env["cypher"], case_id, report, no_tie, _built_at(), old_id, diff, agent)
+    except research.ToolError as e:
+        env["warnings"].append(f"check not saved ({e.code}: {e.message})")
+        return None
+
+
 # ---------- the tools (each docstring is what the model reads) ----------
 
-@tool
-def resolve_experts(names: list[str], topic: str, case: str | None = None) -> dict[str, Any]:
+@tool()
+def resolve_experts(names: list[str], topic: str, case: str | None = None, agent: str | None = None) -> dict[str, Any]:
     """Turn names from the story into OpenAlex author IDs. Returns, per name, status MATCHED (one exact
     match), AMBIGUOUS (several, or a loose match: ask the human to pick, never guess) or NOT_FOUND, with
     candidates ranked by works on the topic. Topic is an OpenAlex topic ID (T10010) or plain words
@@ -129,59 +224,81 @@ def resolve_experts(names: list[str], topic: str, case: str | None = None) -> di
     return _safe(research.resolve_experts, names, topic, case=case)
 
 
-@tool
-def find_experts(topic: str, n: int = 20, exclude_target_staff: bool = True, case: str | None = None) -> dict[str, Any]:
+@tool()
+def find_experts(topic: str, n: int = 20, exclude_target_staff: bool = True, case: str | None = None,
+                 agent: str | None = None) -> dict[str, Any]:
     """Suggest authors who work on a topic, when the journalist names no one (n from 1 to 100). Ranked by
     works on the topic; people affiliated with the company are left out unless exclude_target_staff is
     false. This is a list of active authors in the research record, not a recommendation or a vetting."""
     return _safe(research.find_experts, topic, n, exclude_target_staff, case=case)
 
 
-@tool
-def tie_report(expert_id: str, expert_number: int = 1, case: str | None = None) -> dict[str, Any]:
+@tool(WRITES)
+def tie_report(expert_id: str, expert_number: int = 1, case: str | None = None, case_id: str | None = None,
+               agent: str | None = None) -> dict[str, Any]:
     """One expert in detail: tier A1/A2 (company or foundation money or affiliation), B (repeated small-paper
     co-authorship with a Tier-A person), C (within 3 co-author hops), or NONE; a score; the evidence with
     DOIs; and a ready sentence in data.wording. expert_id is an OpenAlex author ID (A5023888391).
-    expert_number (1-99) only sets the display label 'Expert #n'; use the same number for the same
-    expert in a story. Scope and data gaps are in the scope block."""
+    With case_id (from open_case) the label comes from the case and the result is saved as a Check
+    (data.check_id). Without it, expert_number (1-99) only sets the display label 'Expert #n'; use the
+    same number for the same expert in a story. Scope and data gaps are in the scope block."""
+    if case_id is None:
+        return _with_label(research.tie_report, expert_number, expert_id, case=case)
+    return _in_case(_tie_report_saved, case_id, case, expert_id, agent)
 
-    return _with_label(research.tie_report, expert_number, expert_id, case=case)
+
+def _tie_report_saved(kase, expert_id, agent):
+    rep, nt = _report(expert_id, memory.label_in_case(kase, expert_id), kase["public_case"])
+    if rep["ok"]:
+        rep["data"]["check_id"] = _save(rep, kase["id"], rep, nt, agent=agent)
+    return rep
 
 
-@tool
+@tool()
 def check_no_tie(expert_id: str, k: int = 3, years: int = 5, expert_number: int = 1,
-                 case: str | None = None) -> dict[str, Any]:
+                 case: str | None = None, case_id: str | None = None, agent: str | None = None) -> dict[str, Any]:
     """Search for the shortest co-author path from an expert to a Tier-A person (k hops, 1 to 3). Returns
     NO_TIE_FOUND or TIE_FOUND with the query name and the scope (hops, years, coverage). A NO_TIE_FOUND
     answer is only 'no tie found in the research record within this scope'. It is not proof of no tie, and
-    the scope must be quoted with it. years must be 5 (the graph is precomputed for the last 5 years)."""
+    the scope must be quoted with it. years must be the graph's recent span (5 for obesity-coke). With
+    case_id the label comes from the case."""
+    if case_id is None:
+        return _with_label(research.check_no_tie, expert_number, expert_id, k, years, case=case)
+    return _in_case(lambda kase: research.check_no_tie(expert_id, k, years, memory.label_in_case(kase, expert_id),
+                                                       kase["public_case"]), case_id, case)
 
-    return _with_label(research.check_no_tie, expert_number, expert_id, k, years, case=case)
 
-
-@tool
+@tool()
 def bridges(expert_id: str, depth: int = 2, limit: int = 5, expert_number: int = 1,
-            case: str | None = None) -> dict[str, Any]:
+            case: str | None = None, case_id: str | None = None, agent: str | None = None) -> dict[str, Any]:
     """Show the strongest co-author paths (depth 2 or 3 links) from an expert to Tier-A people, each link with
     its DOIs and strength. Use it to explain a Tier B or C result. Co-authors appear as 'Co-author #i.j' and
-    'Tier-A #i'. bridge_count can be null when counting took too long; the paths are still valid."""
+    'Tier-A #i'. bridge_count can be null when counting took too long; the paths are still valid. With
+    case_id the label comes from the case."""
+    if case_id is None:
+        return _with_label(research.bridges, expert_number, expert_id, depth, limit, case=case)
+    return _in_case(lambda kase: research.bridges(expert_id, depth, limit, memory.label_in_case(kase, expert_id),
+                                                  kase["public_case"]), case_id, case)
 
-    return _with_label(research.bridges, expert_number, expert_id, depth, limit, case=case)
 
-
-@tool
-def check_case(expert_ids: list[str], public_case: bool = False, case: str | None = None) -> dict[str, Any]:
+@tool(WRITES)
+def check_case(expert_ids: list[str] | None = None, public_case: bool = False, case: str | None = None,
+               case_id: str | None = None, agent: str | None = None) -> dict[str, Any]:
     """Check up to 25 experts in one run: tie_report for each, plus check_no_tie for those with tier NONE.
-    Labels are 'Expert #1..#n' in the order given. Returns results ranked by tier then score, and counts per
-    tier. Rows with the same tier and score keep the order given. Use tie_report for the evidence behind one
-    result. public_case=true is honoured only when every id is in the case's approved public list (for
-    obesity-coke the documented GEBN experts); otherwise it is ignored and labels stay 'Expert #n'."""
+    Give case_id (from open_case: its experts, labels and research case are used, and each result is saved
+    as a Check with a check_id) or expert_ids (nothing is saved). Labels are 'Expert #1..#n' in the order
+    given. Returns results ranked by tier then score, and counts per tier. Use tie_report for the evidence
+    behind one result. public_case=true (expert_ids only) is honoured only when every id is in the case's
+    approved public list; otherwise it is ignored and labels stay 'Expert #n'."""
+    if (expert_ids is None) == (case_id is None):
+        return _error("INVALID_ARG", "give either case_id (a case from open_case) or expert_ids, not both")
+    if case_id is None:
+        return _safe(_check_case, expert_ids, public_case, case=case)
+    return _in_case(lambda kase: _check_case(kase["expert_ids"], kase["public_case"], kase, agent), case_id, case)
 
-    return _safe(_check_case, expert_ids, public_case, case=case)
 
-
-@tool
-def list_cases() -> dict[str, Any]:
+@tool()
+def list_cases(agent: str | None = None) -> dict[str, Any]:
     """List the research cases: each case slug, whether its graph is loaded, its build status, data_version,
     built_at, topic and funder ids, and node and edge counts. Use it to pick the `case` argument of the
     other tools, or to see that a company or topic has no case yet (then a human must approve and build one)."""
@@ -193,12 +310,112 @@ def list_cases() -> dict[str, Any]:
         return _error("INTERNAL", f"unexpected {type(e).__name__}; see the server log")
 
 
+# ---------- Track 2: memory tools (newsroom graph) ----------
+
+@tool(WRITES)
+def open_case(story: str, company: str, topic: str, expert_ids: list[str], public_case: bool = False,
+              case: str | None = None, agent: str | None = None) -> dict[str, Any]:
+    """Open a newsroom case for a story before checking its experts. Stores the story title, company, topic
+    and the experts (1-25 OpenAlex author ids, labelled 'Expert #1..#n' in this order) and returns case_id.
+    data.prior_memory lists earlier checks of these experts in other cases of this newsroom (who checked,
+    when, which tier): mention them to the reporter. Then run check_case(case_id). public_case=true names
+    the experts only when every id is in the research case's approved public list; otherwise it is ignored."""
+    mlog = []
+    try:
+        if not isinstance(public_case, bool):
+            raise research.ToolError("INVALID_ARG", "public_case must be true or false")
+        cfg = _case_config(case)
+        warnings = []
+        memory.expert_ids_arg(expert_ids)
+        if public_case and not set(expert_ids) <= set(cfg["public_ids"]):
+            public_case = False
+            warnings.append("public_case ignored: not every expert is in the documented public case; labels stay 'Expert #n'")
+        data = memory.open_case(mlog, story, company, topic, expert_ids, public_case, cfg["slug"])
+    except research.ToolError as e:
+        return _error(e.code, e.message, mlog)
+    return _ok(data, mlog, {"graph": memory.GRAPH, "research_case": cfg["slug"]}, warnings)
+
+
+@tool()
+def recall(expert_id: str | None = None, case_id: str | None = None, session_id: str | None = None,
+           limit: int = 20, agent: str | None = None) -> dict[str, Any]:
+    """This newsroom's memory as a timeline, oldest first (the newest `limit` items, 1-100). Give exactly
+    one of: expert_id (every saved check of that expert, in any case), case_id (the case's checks and tool
+    calls) or session_id (one server session's checks and tool calls). Each item has ts, kind (check or
+    event), summary and ref_id (a check_id can be passed to recheck). data.session_id is the current session."""
+    mlog = []
+    try:
+        data = memory.recall(mlog, expert_id, case_id, session_id, limit)
+    except research.ToolError as e:
+        return _error(e.code, e.message, mlog)
+    return _ok(data, mlog, {"graph": memory.GRAPH})
+
+
+@tool(WRITES)
+def recheck(check_id: str, agent: str | None = None) -> dict[str, Any]:
+    """Run a saved check again on the current research graph and show what changed: data.before and data.after
+    (tier, score, nearest, data_version, built_at), data.diff (new_evidence, removed_evidence with DOIs,
+    rebuilt, changed, and cause: new_data when the result changed after a rebuild, else null), and the new
+    check_id. The new Check SUPERSEDES the old one (kept). Rechecking a check that was already replaced
+    rechecks its newest replacement."""
+    mlog = []
+    try:
+        old = memory.get_check(check_id, mlog)
+        kase = memory.get_case(old["case_id"], mlog)
+    except research.ToolError as e:
+        return _error(e.code, e.message, mlog)
+    out = _safe(_recheck, old, kase, agent, case=kase["research_case"])
+    out["cypher"] = mlog + out.get("cypher", [])
+    return out
+
+
+def _recheck(old, kase, agent):
+    asked, mlog = old["id"], []
+    if old["superseded_by"]:  # only the head of a chain is rechecked, so there is one current Check
+        head = memory.head_of(asked, mlog)
+        if head is None:  # a chain longer than 100 links, or a broken one
+            return _error("NOT_FOUND", f"{asked} was superseded, but the newest check of its chain was not found "
+                                       "within 100 links; recheck a newer check_id (see recall)", mlog)
+        old = memory.get_check(head, mlog)
+    rep, nt = _report(old["expert_id"], old["label"], kase["public_case"])
+    rep["cypher"] = mlog + rep["cypher"]
+    if not rep["ok"]:
+        return rep
+    before_snap, after_snap = json.loads(old["snapshot_json"]), memory.snapshot(rep, nt)
+    new_ev, removed_ev = memory.evidence_diff(before_snap, after_snap)
+    built_at = _built_at()
+    rebuilt = (old["data_version"], old["built_at"]) != (rep["scope"]["data_version"], built_at)
+    d = rep["data"]
+    before = {"check_id": old["id"], "tier": old["tier"], "score": old["score"], "nearest": before_snap["nearest"],
+              "data_version": old["data_version"], "built_at": old["built_at"], "ts": old["ts"], "no_tie": old["no_tie"]}
+    after = {"tier": d["tier"], "score": d["score"], "nearest": d["nearest"], "data_version": rep["scope"]["data_version"],
+             "built_at": built_at, "no_tie": (after_snap["no_tie"] or {}).get("result")}
+    changed = (bool(new_ev or removed_ev) or (before["tier"], before["score"], before["nearest"], before["no_tie"])
+               != (after["tier"], after["score"], after["nearest"], after["no_tie"]))
+    diff = {"new_evidence": new_ev, "removed_evidence": removed_ev,
+            "cause": "new_data" if changed and rebuilt else None, "rebuilt": rebuilt,
+            "changed": changed, "tier_changed": before["tier"] != after["tier"],
+            "score_change": round(after["score"] - before["score"], 4)}
+    warnings = rep["warnings"]
+    if old["id"] != asked:
+        warnings.append(f"{asked} was already superseded; rechecked its newest replacement {old['id']}")
+    if changed and not rebuilt:
+        warnings.append("the result changed although the research graph was not rebuilt (a server code change?)")
+    env = _ok({"label": old["label"], "case_id": kase["id"], "before": before, "after": after, "diff": diff},
+              rep["cypher"], {**rep["scope"], "memory_graph": memory.GRAPH}, warnings)
+    env["data"]["check_id"] = _save(env, kase["id"], rep, nt, old_id=old["id"], diff=diff, agent=agent)
+    if env["data"]["check_id"] is None:  # another recheck superseded old first: point at its Check
+        env["data"]["check_id"] = memory.head_of(old["id"], env["cypher"])
+    return env
+
+
 # ---------- check_case: a loop over tie_report and check_no_tie ----------
 
 TIER_ORDER = {"A1": 0, "A2": 1, "B": 2, "C": 3, "NONE": 4}
 
 
-def _check_case(expert_ids, public_case):
+def _check_case(expert_ids, public_case, kase=None, agent=None):
+    """kase=None: a plain run over expert_ids. With a newsroom case: its experts, and a Check saved per row."""
     if (not isinstance(expert_ids, list) or not expert_ids or not all(isinstance(e, str) and e.strip() for e in expert_ids)
             or len(set(expert_ids)) != len(expert_ids)):
         return _error("INVALID_ARG", "expert_ids must be a non-empty list of distinct non-empty strings")
@@ -238,15 +455,20 @@ def _check_case(expert_ids, public_case):
                             "no_tie": None, "error": rep["error"]})
             continue
         d = rep["data"]
-        no_tie = None
+        no_tie, nt = None, None
         if d["tier"] == "NONE":
-            nt = research.check_no_tie(eid, label=label, public_case=public_case)
+            nt = research.check_no_tie(eid, 3, _span(), label, public_case)
             merge(nt)
             no_tie = nt["data"]["result"] if nt["ok"] else None
             if not nt["ok"]:
                 warnings.append(f"{label}: check_no_tie failed ({nt['error']['code']})")
+        check_id = None
+        if kase:
+            saved = {"cypher": [], "warnings": []}
+            check_id = _save(saved, kase["id"], rep, nt, agent=agent)
+            merge(saved)
         results.append({"label": d["label"], "expert_id": eid, "tier": d["tier"], "score": d["score"],
-                        "check_id": None, "no_tie": no_tie, "error": None})
+                        "check_id": check_id, "no_tie": no_tie, "error": None})
 
     codes = {r["error"]["code"] if r["error"] else None for r in results}
     if len(codes) == 1 and codes <= {"DB_ERROR", "NO_GRAPH"}:  # every row failed the same way: the graph is the problem
@@ -257,11 +479,19 @@ def _check_case(expert_ids, public_case):
     results.sort(key=lambda r: (TIER_ORDER.get(r["tier"], 9), -(r["score"] or 0)))
     counts = {t: sum(r["tier"] == t for r in results) for t in TIER_ORDER}
     data = {"results": results, "counts": counts, "not_checked": skipped}
+    if kase:
+        data["case_id"] = kase["id"]
+        scope["memory_graph"] = memory.GRAPH
     return {"ok": True, "data": data, "cypher": list(by_query.values()), "scope": scope, "verdicts_applied": [], "warnings": warnings}
 
 
 def warm():
     """Load the shared facts once, so the first real call is fast. A failure here is only logged."""
+    try:
+        memory.init()  # newsroom indexes (creates the newsroom graph on first start)
+    except Exception as e:
+        log.warning("memory indexes not created (%s); memory tools will report DB_ERROR until the database is up",
+                    type(e).__name__)
     try:
         t = time.time()
         scratch = []
@@ -275,7 +505,7 @@ def warm():
 
 
 if __name__ == "__main__":
-    log.info("starting, newsroom=%s, case=%s, FalkorDB port=%s", NEWSROOM, research.default_case(),
-             os.environ.get("FALKORDB_PORT", "6379"))
+    log.info("starting, newsroom=%s, session=%s, case=%s, FalkorDB port=%s", NEWSROOM, memory.SESSION_ID,
+             research.default_case(), os.environ.get("FALKORDB_PORT", "6379"))
     warm()
     mcp.run("stdio")

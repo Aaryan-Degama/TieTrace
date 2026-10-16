@@ -39,7 +39,8 @@ SLUG_RE = re.compile(r"[a-z0-9][a-z0-9-]{1,39}")  # graph name is research:<slug
 DECISIONS = ("funders", "institutions", "topics", "years", "topic_cap", "public_ids", "small_paper",
              "recent_year", "works_count_anomaly", "max_api_calls")
 CASE_KEYS = {"slug", "company", "decided_by", *DECISIONS}
-OPTIONAL_KEYS = {"notes", "rejected"}  # free text; candidates turned down, each with a reason
+OPTIONAL_KEYS = {"notes", "rejected", "cache_from"}  # free text; candidates turned down, each with a reason;
+# cache_from: a demo copy of another case that reads that case's raw cache and never calls the API (checkpoint 6)
 ITEM_KEYS = {"funders": {"id", "name", "kind"}, "institutions": {"id", "name", "rel"},
              "topics": {"id", "name"}, "rejected": {"id", "name", "reason"}}
 ID_RE = {"funders": r"F\d+", "institutions": r"I\d+", "topics": r"T\d+", "public_ids": r"A\d+",
@@ -64,6 +65,9 @@ def check_config(cfg, slug):
     need(cfg["slug"] == slug, "slug must equal the folder name")
     need(isinstance(cfg["company"], str) and cfg["company"].strip(), "company must be a non-empty string")
     need(isinstance(cfg.get("notes", ""), str), "notes must be a string")
+    src = cfg.get("cache_from", "")
+    need(src == "" or (isinstance(src, str) and SLUG_RE.fullmatch(src) and src != slug),
+         "cache_from must be another case's slug")
     for key in ("funders", "institutions", "topics", "rejected"):
         items = cfg.get(key, [])
         need(isinstance(items, list) and len(items) <= MAX_IDS, f"{key} must be a list of at most {MAX_IDS}")
@@ -122,11 +126,12 @@ def use_case(slug):
     "the company family of the current case"."""
     global CONFIG, SLUG, GRAPH, RAW, FUNDER_KIND, COMPANY_FUNDER, FOUNDATION_FUNDER, TOPICS, TOPIC_YEARS
     global TOPIC_CAP, PER_YEAR, COKE_PARENT, COKE_FAMILY, COKE_CHILD_REL, SMALL_PAPER, RECENT_YEAR
-    global WORKS_COUNT_ANOMALY, MAX_API_CALLS
+    global WORKS_COUNT_ANOMALY, MAX_API_CALLS, BORROWED
     CONFIG = load_config(slug)
     SLUG, GRAPH = slug, f"research:{slug}"
-    RAW = CASES / slug / "raw"
-    if slug == DEFAULT_CASE and not RAW.exists():
+    source = CONFIG.get("cache_from", slug)  # a demo copy reads the other case's cache (and never writes it)
+    RAW = CASES / source / "raw"
+    if source == DEFAULT_CASE and not RAW.exists():
         RAW = ROOT / "data" / "raw"  # the checkpoint-2 cache, so obesity-coke rebuilds with zero API calls
     FUNDER_KIND = {f["id"]: f["kind"] for f in CONFIG["funders"]}
     # Kept for tests and old scripts: the first company and the first foundation funder (None if absent).
@@ -148,6 +153,7 @@ def use_case(slug):
     # ponytail: works_count above this is treated as a likely merged profile; a guess, not a study.
     WORKS_COUNT_ANOMALY = CONFIG["works_count_anomaly"]
     MAX_API_CALLS = CONFIG["max_api_calls"]  # get() stops the run past this many calls
+    BORROWED = "cache_from" in CONFIG
 
 
 use_case(DEFAULT_CASE)
@@ -176,6 +182,9 @@ def api_key():
 def get(path, params):
     """One OpenAlex GET with retry. Errors name the path only: the URL holds the API key."""
     global api_calls
+    if BORROWED:  # a demo copy must never refetch into (and overwrite) the other case's cache
+        raise SystemExit(f"case {SLUG} reads the cache of case {CONFIG['cache_from']} and never calls the API; "
+                         f"a cache miss means its case.json no longer matches that case")
     for attempt in range(TRIES):
         with calls_lock:
             if api_calls >= MAX_API_CALLS:
@@ -295,6 +304,8 @@ def fetch_by_id(name, ids, fetch_chunk, params, refresh):
     path = RAW / f"{name}.jsonl"
     cache = {}
     lines = read_cache(name, params, refresh)
+    if lines is None and BORROWED:  # never truncate the other case's cache file
+        raise SystemExit(f"case {SLUG}: no matching {name} cache in {CONFIG['cache_from']}; this demo copy never calls the API")
     if lines is None:
         path.write_text(header_line(params))
     for line in lines or []:
@@ -701,11 +712,18 @@ def main():
     ap.add_argument("--refresh", action="store_true", help="ignore the raw cache and call the API")
     ap.add_argument("--rebuild", action="store_true", help="replace the graph if it exists (built aside, then swapped)")
     ap.add_argument("--dry-run", action="store_true", help="print counts, calls, cost and RAM; write nothing")
+    ap.add_argument("--until-year", type=int, help="staged demo: load only works published up to this year "
+                                                   "(only for a case with cache_from, so a real case is never cut)")
     args = ap.parse_args()
     try:
         use_case(args.case)
     except (ValueError, OSError) as e:
         raise SystemExit(f"cannot load case {args.case!r}: {e}")
+    if args.until_year is not None and (not BORROWED or not RECENT_YEAR <= args.until_year < TOPIC_YEARS[-1]):
+        raise SystemExit(f"--until-year needs a demo case with cache_from (this protects real case graphs) and a "
+                         f"year from recent_year {RECENT_YEAR} to {TOPIC_YEARS[-1] - 1}")
+    if args.refresh and BORROWED:
+        raise SystemExit(f"case {SLUG} borrows the cache of {CONFIG['cache_from']}; refresh that case instead")
     KEY = api_key()
     if args.dry_run:
         return dry_run()
@@ -738,12 +756,17 @@ def main():
 
 def build(args):
     works, scope, truncated, year_totals, removed = load_works(args.refresh)
+    years = list(TOPIC_YEARS)
+    until = args.until_year
+    if until is not None:  # staged demo slice: works up to `until` (a work with no year is kept)
+        works = {w: rec for w, rec in works.items() if (rec.get("publication_year") or 0) <= until}
+        truncated = truncated & set(works)
+        years = [y for y in years if y <= until]
     person_ids = sorted({p for w in works.values() for p in author_slots(w)[0]})
     works_counts = fetch_by_id("authors", person_ids, fetch_works_counts,
                                {"select": "id,works_count"}, args.refresh)
     rows = build_rows(works, truncated, works_counts, scope)
 
-    years = list(TOPIC_YEARS)
     loaded = defaultdict(int)  # loaded works whose primary topic is a chosen topic, per year
     for w in works.values():
         if short((w.get("primary_topic") or {}).get("id")) in TOPICS:
@@ -751,14 +774,16 @@ def build(args):
     meta = {
         "graph": GRAPH, "slug": SLUG, "config_hash": config_hash(CONFIG),
         "built_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "data_version": "openalex@" + min(fetch_dates)[:10],  # oldest cache used
+        "data_version": "openalex@" + min(fetch_dates)[:10] + (f"+until{until}" if until else ""),  # oldest cache used
         "load_scope": (f"all works funded by {' or '.join(FUNDER_KIND) or 'no funder'} (any topic, any year); "
                        f"all works with an author affiliated to {'|'.join(COKE_FAMILY) or 'no institution'} "
                        f"(lineage, any topic); "
                        f"plus the {PER_YEAR} most-cited works per year {years[0]}-{years[-1]} with primary "
                        f"topic in {list(TOPICS)}; co-authors' other works not loaded; topic works list at "
                        f"most {LIST_TRUNCATION} authors each; duplicate records merged by DOI and by "
-                       f"title+year+authors"),
+                       f"title+year+authors"
+                       + (f"; STAGED DEMO SLICE: only works published up to {until}" if until else "")),
+        **({"until_year": until} if until else {}),
         "topic_ids": list(TOPICS), "funder_ids": list(FUNDER_KIND),
         "topic_cap": TOPIC_CAP, "topic_per_year": PER_YEAR,
         "topic_total": sum(year_totals.get(y, 0) for y in years),

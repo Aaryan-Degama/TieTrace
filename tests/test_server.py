@@ -35,23 +35,33 @@ BANNED = re.compile(r"\b(independent|conflicted)\b", re.IGNORECASE)
 ERROR_CODES = {"INVALID_ARG", "NOT_FOUND", "AMBIGUOUS", "TIMEOUT", "ROW_LIMIT", "VERIFIER_REJECT",
                "NOT_APPROVED", "READ_ONLY", "DB_ERROR", "INTERNAL", "NO_GRAPH"}  # NO_GRAPH: spec s4, checkpoint 5d
 TOOLS = {"resolve_experts", "find_experts", "tie_report", "check_no_tie", "bridges", "check_case",
-         "list_cases"}  # list_cases: spec s5, checkpoint 5d
-SPEC_INPUTS = {  # name -> (required, allowed) according to docs/mcp-spec.md sections 4, 5, 9b, 9c
-    "resolve_experts": ({"names", "topic"}, {"names", "topic", "case"}),
-    "find_experts": ({"topic"}, {"topic", "n", "exclude_target_staff", "case"}),
-    "tie_report": ({"expert_id"}, {"expert_id", "expert_number", "case"}),
-    "check_no_tie": ({"expert_id"}, {"expert_id", "k", "years", "expert_number", "case"}),
-    "bridges": ({"expert_id"}, {"expert_id", "depth", "limit", "expert_number", "case"}),
-    "check_case": ({"expert_ids"}, {"expert_ids", "public_case", "case"}),
-    "list_cases": (set(), set()),
+         "list_cases",  # list_cases: spec s5, checkpoint 5d
+         "open_case", "recall", "recheck"}  # Track 2 memory tools: spec s5, checkpoint 6
+# Checkpoint 6 (spec s4, s5, 9d): every tool takes the optional `agent` (spec s4 "Logging"); tie_report,
+# check_no_tie and bridges take an optional case_id; check_case takes case_id OR expert_ids (spec s5 "In: case_id").
+SPEC_INPUTS = {  # name -> (required, allowed) according to docs/mcp-spec.md sections 4, 5, 9b, 9c, 9d
+    "resolve_experts": ({"names", "topic"}, {"names", "topic", "case", "agent"}),
+    "find_experts": ({"topic"}, {"topic", "n", "exclude_target_staff", "case", "agent"}),
+    "tie_report": ({"expert_id"}, {"expert_id", "expert_number", "case", "case_id", "agent"}),
+    "check_no_tie": ({"expert_id"}, {"expert_id", "k", "years", "expert_number", "case", "case_id", "agent"}),
+    "bridges": ({"expert_id"}, {"expert_id", "depth", "limit", "expert_number", "case", "case_id", "agent"}),
+    "check_case": (set(), {"expert_ids", "public_case", "case", "case_id", "agent"}),
+    "list_cases": (set(), {"agent"}),
+    "open_case": ({"story", "company", "topic", "expert_ids"},
+                  {"story", "company", "topic", "expert_ids", "public_case", "case", "agent"}),
+    "recall": (set(), {"expert_id", "case_id", "session_id", "limit", "agent"}),
+    "recheck": ({"check_id"}, {"check_id", "agent"}),
 }
+# Tools that save memory records (spec s5: tie_report/check_case with case_id save Checks); never destructive.
+WRITE_TOOLS = {"tie_report", "check_case", "open_case", "recheck"}
 GEBN = {"James O. Hill": "A5031318756", "Steven N. Blair": "A5105003630",
         "Gregory A. Hand": "A5046953968", "John C. Peters": "A5045252457"}
 CMD = ["uv", "run", "--directory", str(ROOT), "python", "server.py"]
+NEWSROOM = "zz-test-srv"  # a scratch newsroom (checkpoint 6: every call writes an Event); deleted at the end
 
 
 def server_env(**over):
-    env = dict(os.environ, TIETRACE_NEWSROOM="alpha", FALKORDB_PORT=os.environ["FALKORDB_PORT"])
+    env = dict(os.environ, TIETRACE_NEWSROOM=NEWSROOM, FALKORDB_PORT=os.environ["FALKORDB_PORT"])
     env.update(over)
     return {k: v for k, v in env.items() if v is not None}
 
@@ -179,7 +189,7 @@ def picked():
 
 # ---------- 1. tool list, schemas, descriptions ----------
 
-def test_exactly_the_seven_tools_with_spec_inputs_and_read_only_hints():
+def test_exactly_the_spec_tools_with_spec_inputs_and_read_only_hints():
     tools = {t.name: t for t in client().tools()}
     assert set(tools) == TOOLS, sorted(tools)
     for name, t in tools.items():
@@ -188,7 +198,7 @@ def test_exactly_the_seven_tools_with_spec_inputs_and_read_only_hints():
         assert props == allowed, (name, props)
         assert set(t.input_schema.get("required", [])) == req, name
         a = t.annotations
-        assert a and a.read_only_hint is True and a.destructive_hint is False, name
+        assert a and a.read_only_hint is (name not in WRITE_TOOLS) and a.destructive_hint is False, name
         assert t.description and 80 < len(t.description) < 1800, (name, len(t.description))
         assert t.output_schema is not None, name
 
@@ -196,7 +206,8 @@ def test_exactly_the_seven_tools_with_spec_inputs_and_read_only_hints():
 def test_no_tool_takes_a_newsroom_or_a_name():
     for t in client().tools():
         props = set(t.input_schema["properties"])
-        assert not props & {"newsroom", "newsroom_id", "name", "label", "agent"}, (t.name, props)
+        # "agent" is allowed since checkpoint 6 (spec s4: attribution in the Event log only, never echoed)
+        assert not props & {"newsroom", "newsroom_id", "name", "label", "graph"}, (t.name, props)
     s = client().raw("find_experts", {"topic": "obesity", "n": 2, "newsroom": "beta"})
     assert not s.is_error  # extra args are dropped, never used
     assert "beta" not in json.dumps(s.structured_content)
@@ -447,8 +458,8 @@ def test_newsroom_comes_from_env_only_and_is_validated_at_startup():
         assert p.stdout == "", (label, "stdout must stay empty", p.stdout[:100])
         assert "Traceback" not in p.stderr, label
         assert time.time() - t < 30
-    # good values are accepted (checked by the raw-protocol test for 'alpha')
-    for good in ("a_b-1",):
+    # good values are accepted (checked by the raw-protocol test for the scratch newsroom)
+    for good in ("zz-test-a_b-1",):
         p = subprocess.Popen(CMD, env=dict(base, TIETRACE_NEWSROOM=good, FALKORDB_PORT=os.environ["FALKORDB_PORT"]),
                              stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         time.sleep(8)
@@ -500,7 +511,7 @@ def test_stdout_is_only_json_rpc_and_shutdown_is_clean_with_no_orphans():
         msg = json.loads(line)  # every stdout line is JSON
         assert msg.get("jsonrpc") == "2.0", line[:100]
     assert "Traceback" not in err, err[-500:]
-    assert "newsroom=alpha" in err
+    assert f"newsroom={NEWSROOM}" in err
     assert time.time() - t < 15
     time.sleep(1.5)
     leftover = server_processes() - before
@@ -567,7 +578,7 @@ def test_check_case_unknown_id_duplicates_empty_and_over_limit():
 
 
 def test_check_case_time_budget_stops_starting_new_experts():
-    os.environ["TIETRACE_NEWSROOM"] = "alpha"
+    os.environ["TIETRACE_NEWSROOM"] = NEWSROOM
     import server  # imported, not run: we patch it in this process
     ids = picked()[:6]
     real = research.tie_report
@@ -781,5 +792,8 @@ if __name__ == "__main__":
     finally:
         for c in _C:
             c.close()
+        for g in research._conn().list_graphs():  # the scratch newsrooms this suite created
+            if g.startswith("newsroom:zz-test-"):
+                research._conn().select_graph(g).delete()
     print(f"\n{len(tests) - failed}/{len(tests)} passed")
     sys.exit(1 if failed else 0)
