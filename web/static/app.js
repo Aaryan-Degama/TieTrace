@@ -66,6 +66,7 @@ form.addEventListener("submit", (ev) => {
 async function ask(story, sid) {
   let reader = null;
   busy = true; sendBtn.disabled = true; statusEl.textContent = "Checking… this can take a minute or two.";
+  $("hero").hidden = true;
   messages.append(el("div", { class: "msg user", text: story }));
   const reply = { box: el("div", { class: "msg reply" }), cards: el("div", { class: "cards" }), byId: {} };
   reply.box.append(reply.cards);
