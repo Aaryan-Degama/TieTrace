@@ -129,7 +129,10 @@ def test_registered_in_settings():
                for h in hooks), hooks
     assert s["permissions"]["ask"] == [  # the human-only gate is unchanged (CLAUDE.md)
         "mcp__tietrace-alpha__record_verdict", "mcp__tietrace-alpha__approve_note",
-        "mcp__tietrace-beta__record_verdict", "mcp__tietrace-beta__approve_note"]
+        "mcp__tietrace-beta__record_verdict", "mcp__tietrace-beta__approve_note",
+        # P2-2 GATE 2 (Aaryan, Oct 17): the usual loader spellings prompt, even in auto mode (a seatbelt; the guard hook is the main check)
+        "Bash(uv run python loader.py *)", "Bash(python loader.py *)", "Bash(python3 loader.py *)",
+        "Bash(*loader.py *)"]  # Reviewer round 1: other spellings (uv run loader.py, ./loader.py, --directory)
     # /path in project settings = <primary working directory>/path (permissions docs, Oct 17)
     assert {"Read(/.env)", "Edit(/.env)"} <= set(s["permissions"]["deny"])
 

@@ -1,6 +1,6 @@
 # TieTrace checklist, phase 2: improvements after the MVP
 
-*Last updated by Aaryan, Oct 17 2026: ticked Abdul's three P2-0 machine items from his own report. Earlier the same day: ticked P2-1 hardening (Reviewer PASS after 3 rounds). Earlier the same day: ticked the licence (MIT); added the `--force` guard to `e5_sample.py`. Earlier the same day: ticked the `total_graph_sz_mb` check. Earlier: ticked W1-W6 (web app, Reviewer PASS after 3 rounds). Before that, by Abdul, Oct 17 2026: added section P2-W (web app, follow `WebApp.md`) before P2-0. Earlier the same day: first version, built from `IMPROVEMENT.md` and the state of `checkpoints.md` after checkpoint 9 started.*
+*Last updated by Aaryan, Oct 17 2026: ticked P2-2 case-builder skill (Reviewer PASS after 2 rounds). Earlier the same day: ticked Abdul's three P2-0 machine items from his own report. Earlier the same day: ticked P2-1 hardening (Reviewer PASS after 3 rounds). Earlier the same day: ticked the licence (MIT); added the `--force` guard to `e5_sample.py`. Earlier the same day: ticked the `total_graph_sz_mb` check. Earlier: ticked W1-W6 (web app, Reviewer PASS after 3 rounds). Before that, by Abdul, Oct 17 2026: added section P2-W (web app, follow `WebApp.md`) before P2-0. Earlier the same day: first version, built from `IMPROVEMENT.md` and the state of `checkpoints.md` after checkpoint 9 started.*
 
 **What this file is.** `checkpoints.md` is the plan to ship by **Oct 18, 6 PM IST**. This file is everything in `IMPROVEMENT.md` that is **not built yet**, plus loose ends found along the way. It is *not* part of the submission: do not start phase 2 work until the submission is confirmed, except the items marked **before submit**.
 
@@ -15,7 +15,7 @@ Status key: ⬜ not started · 🟨 in progress · ✅ done · ✂️ cut
 | P2-W | **Web app** (follow `WebApp.md`) | before P2-0, after submit | ⬜ |
 | P2-0 | Loose ends (some **before submit**) | Oct 17-18 | ⬜ |
 | P2-1 | Hardening (`IMPROVEMENT.md` 5g) | after submit | ✅ |
-| P2-2 | Case-builder skill and agent (5e polish) | after submit | ⬜ |
+| P2-2 | Case-builder skill and agent (5e polish) | after submit | ✅ |
 | P2-3 | Corporate-family candidate pipeline (5h) | after submit | ⬜ |
 | P2-4 | Data quality and scale | after submit | ⬜ |
 | P2-5 | Future work, document only (5i) | later | ⬜ |
@@ -56,10 +56,10 @@ Status key: ⬜ not started · 🟨 in progress · ✅ done · ✂️ cut
 - [x] Idle-graph policy (docs only, in CLAUDE.md): list sizes, delete an idle `research:<slug>`, rebuild from cache with 0 API calls; never delete `newsroom:*` (Aaryan, Oct 17)
 
 ## P2-2. Case-builder skill and agent (`IMPROVEMENT.md` 5e polish)
-- [ ] Check the current Claude Code format for skills / slash commands and sub-agents before writing anything (→ unassigned)
-- [ ] A `case-builder` skill or command that runs the target workflow: extract company / topic / names, call `list_cases`, run `discover.py`, write `cases/<slug>/case.json`, stop at the human gates (→ unassigned)
-- [ ] Gates written into the skill text: Gate 0 (approve family, topic, expert profiles), Gate 1 (confirm the `--dry-run` estimate), Gate 2 (permission prompt on the exact `--build` command; never allowlisted) (→ unassigned)
-- [ ] A dry run with the Philip Morris prompt in a fresh Claude Code session; record the result honestly in `eval/results.md` (→ unassigned)
+- [x] Check the current Claude Code format for skills / slash commands and sub-agents before writing anything: skills, sub-agents and permissions docs read; URLs in `AI_USE.md` Learned (Aaryan, Oct 17)
+- [x] A `case-builder` skill or command that runs the target workflow: extract company / topic / names, call `list_cases`, run `discover.py`, write `cases/<slug>/case.json`, stop at the human gates: `.claude/skills/case-builder/SKILL.md`, run as `/case-builder <story>` (Aaryan, Oct 17). Skill only, no sub-agent: sub-agents cannot wait for a human answer at a gate (decided by Aaryan, Oct 17)
+- [x] Gates written into the skill text: Gate 0 (approve family, topic, expert profiles), Gate 1 (confirm the `--dry-run` estimate), Gate 2 (the exact `--rebuild` command; the loader has no `--build` flag). The human runs the build; `permissions.ask` rules (`Bash(*loader.py *)` and 3 more) make the usual spellings prompt in every mode, proven in bypass mode with a stub loader; never allowlisted; `tests/test_case_builder.py` 20/20 (Aaryan, Oct 17)
+- [x] A dry run with the Philip Morris prompt in a fresh Claude Code session; record the result honestly in `eval/results.md`: two headless `claude -p` runs (haiku). Philip Morris stopped at "case exists"; a sugar / dental caries story stopped at GATE 0 with no invented IDs. GATE 1/2 and an interactive session were not run (Aaryan, Oct 17)
 
 ## P2-3. Corporate-family candidate pipeline (`IMPROVEMENT.md` 5h, D3, D4)
 - [ ] New `family.py` that writes `cases/<slug>/candidates.json` rows with `status: proposed` from ROR relationships, Wikidata (class-filtered), GLEIF children and SEC Exhibit 21; resolve the seed by ROR or Wikidata ID, not by name (→ unassigned)

@@ -1,6 +1,6 @@
 # TieTrace evaluation results (checkpoint 4: E3, E7, E1, E2)
 
-*Last updated by Aaryan, Oct 17 2026: added the E5 AI pre-check section (`eval/e5_precheck.py`). Before that, Abdul, Oct 17 2026: added E4 (max flow vs aggregate, `eval/e4.py`). Before that, Abdul, Oct 16: added E6 (mega-paper ablation, `eval/e6.py`). Before that, Aaryan, Oct 16: 5f funder share now says "topic works" and gives the Meta counts. Before that: added the checkpoint 5f end-to-end run (Philip Morris × lung cancer). Earlier: Abdul, Oct 16: Reviewer fixes (anonymised control, placebo-spread headline interval for E1, paper counts for E3, banned-word cleanup); first full run of `eval/e3_e7.py`, `eval/e1.py`, `eval/e2.py` on `research:obesity-coke` (data version openalex@2026-10-15). The Reviewer has not checked this yet.*
+*Last updated by Aaryan, Oct 17 2026: added the P2-2 case-builder dry run section (two headless `claude -p` runs). Before that, Aaryan, Oct 17 2026: added the E5 AI pre-check section (`eval/e5_precheck.py`). Before that, Abdul, Oct 17 2026: added E4 (max flow vs aggregate, `eval/e4.py`). Before that, Abdul, Oct 16: added E6 (mega-paper ablation, `eval/e6.py`). Before that, Aaryan, Oct 16: 5f funder share now says "topic works" and gives the Meta counts. Before that: added the checkpoint 5f end-to-end run (Philip Morris × lung cancer). Earlier: Abdul, Oct 16: Reviewer fixes (anonymised control, placebo-spread headline interval for E1, paper counts for E3, banned-word cleanup); first full run of `eval/e3_e7.py`, `eval/e1.py`, `eval/e2.py` on `research:obesity-coke` (data version openalex@2026-10-15). The Reviewer has not checked this yet.*
 
 Re-run: `FALKORDB_PORT=6380 uv run python eval/e3_e7.py` (7 s), `eval/e1.py` (82 s), `eval/e2.py` (20 s). All seeds are fixed (20261016), so the numbers repeat.
 Pass rules are copied from `tietrace-v2-redesign.md` section 7 and were not changed after seeing results. The score formula is the fixed one (section 4).
@@ -235,6 +235,27 @@ Prompt: "I'm writing about lung cancer screening and Philip Morris. Suggest 5 ex
 **Findings to act on:**
 - **Tier C saturates in this field.** 52 of 73 top authors are Tier C. The session blamed big multi-author papers, but Tier C runs over `COAUTH_B` (2+ recent papers with 25 or fewer authors), so that explanation is not right as stated. Needs a check before any claim about it: is Tier C still informative when most of a field has it?
 - **Topic is wider than screening.** OpenAlex has no screening topic; T10202 also covers diagnosis and treatment. The session ranked by the phrase "lung cancer screening" in titles, which is not a stored query.
+
+## P2-2 case-builder dry run
+
+*Run by Aaryan's session (Builder agent), Oct 17 2026. **Headless, not interactive:** each run was one `claude -p` call (Claude Code 2.1.302, `--model haiku` = claude-haiku-5-5, `--max-budget-usd 0.50`, `--permission-mode default`). The prompt started with `/case-builder`, so the skill was invoked by name, not picked by the model. Only the TieTrace server was loaded (`--strict-mcp-config`), registered as `tietrace-zz` with `TIETRACE_NEWSROOM=zz-test-case-builder`, so `newsroom:alpha` got no Events; that scratch graph (2 Sessions, 2 Events) was deleted afterwards. Pre-approved tools: `list_cases`, Read, Glob, Grep, `Bash(uv run python discover.py:*)`; anything else was denied, because `-p` has no one to answer a prompt. Costs are Claude Code's own client-side estimates (`total_cost_usd`). No graph was built, and `loader.py` was not run at all.*
+
+| | Run 1: existing case | Run 2: no case |
+|---|---|---|
+| Prompt (after `/case-builder`) | "I'm writing about lung cancer screening and Philip Morris. Build a case for this story." | "I'm writing about the sugar industry, the Sugar Association, and research on dental caries. Build a case for this story. Use the scratch slug zz-sugar-caries." |
+| Where it stopped | Step 2, "a case already covers this": named `philip-morris-lung` (ready, `openalex@2026-10-16`), said T10202 is wider than screening, offered to use it with `case="philip-morris-lung"` or build a narrower case only after a new GATE 0 | **GATE 0**, asking for the family, the topic, the expert names and the `decided_by` name; it wrote no `case.json` |
+| Tool calls | `list_cases` once, 2 Bash reads of `cases/` (1 denied: a `for` loop is not a pre-approved command) | `list_cases` once, 4 Bash calls (1 denied: it added `git config user.name`), 2 Bash calls running 7 `discover.py` searches |
+| OpenAlex calls | 0 | 11 calls, $0.0092 (summed from the 7 saved `candidates_*.json` files) |
+| Model cost, turns, time | $0.009, 6 turns, 13 s | $0.012, 8 turns, 43 s |
+| Files written | none | 7 `candidates_*.json` in `cases/zz-sugar-caries/` (deleted after the run) |
+
+**What run 2 found (real discovery output, not checked further):** no OpenAlex funder for "Sugar Association" or "Sugar Research Foundation" (0 hits each); institutions "Sugar Association" gave the South African Sugar Association and two others, not the US body. It proposed two sugar-industry funders from the "sugar" search (Florida Sugar Cane League `F4320313078`, Beet Sugar Development Foundation `F4320318226`) only as an option, and said they are not the Sugar Association. Both ids, and every topic id it named (T10368, T11363, T12198, T10010, T12964), are in the saved candidates files, so no id was invented. Its closest topic for caries is T10368 "Dental Health and Care Utilization", which it called a loose fit. The story named no experts, so it ran no author search.
+
+**What went wrong or is untested:**
+- Run 1 read the `case.json` files before calling `list_cases` (the skill says `list_cases` first); the outcome was the same.
+- Both runs had one Bash call denied, because only `discover.py` was pre-approved; in an interactive session these would be a permission prompt instead.
+- The skill names `mcp__tietrace-alpha__list_cases` as its example; the model found `tietrace-zz` itself.
+- **Not run:** GATE 1 and GATE 2 (no `case.json` was approved, so no `--dry-run`), an interactive session, the default model, and the case where a story quotes expert names (author search with `--topic`).
 
 ## Judgement calls for the Reviewer to challenge
 1. E3: only four names could be confirmed publicly; I did not guess a fifth. Hill and Peters are Tier A2 (foundation), so "Tier A" is read as A1 or A2.
