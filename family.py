@@ -61,7 +61,9 @@ def http_json(url, params=None):
     r = httpx.get(url, params=params, headers={"User-Agent": UA, "Accept": "application/json, application/sparql-results+json"},
                   timeout=90)
     if r.status_code == 429:  # Wikidata limits hard during outages (1 request per minute on Oct 17)
-        raise SystemExit(f"{url.split('/')[2]} says 429 (rate limit): wait a minute and run again")
+        wait = r.headers.get("retry-after", "60")
+        raise SystemExit(f"{url.split('/')[2]} says 429 (rate limit): wait {wait} s before running again "
+                         "(retrying sooner can restart the wait)")
     r.raise_for_status()
     return r.json()
 
@@ -333,7 +335,10 @@ def propose(slug, ror=None, qid=None, force=False):
 
 
 def read(slug):
-    return json.loads((CASES / slug / "candidates.json").read_text(encoding="utf-8"))
+    path = CASES / slug / "candidates.json"
+    if not path.exists():
+        raise SystemExit(f"{path} does not exist yet: run `family.py propose --case {slug} ...` first")
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def review(slug):
