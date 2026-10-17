@@ -20,6 +20,7 @@ TieTrace checks how connected an expert is to the company in a story, using an O
 ## Architecture
 - **Claude Code is the agent and MCP client.** The main session is the orchestrator; the subagents live in `.claude/agents/`.
 - **The Python MCP server makes no LLM calls**, and it uses no API key and no Ollama. If a scripted LLM step is ever needed, use `claude -p`, never the API SDK.
+- **Exception, web app only:** `web/agent/` may call a provider SDK (Gemini, OpenAI, Anthropic) with the visitor's own key (or the host's `GEMINI_API_KEY` for tests/local use). The key is never stored, never logged, never returned to the browser. The Local mode keeps using `claude -p`. (decided by Abdul, Oct 17; Aaryan to confirm)
 - **FalkorDB runs locally in Docker** and holds one research graph (`research:<topic>`) plus one memory graph per newsroom (`newsroom:<id>`).
 - **The only UI is `web/`** (local, binds 127.0.0.1): it adds no analysis, and the human-only tools are reachable only by an on-page confirm click, never by the model (decided by Aaryan, Oct 17). **No crawler.** Journalist URLs are read with WebFetch; the data comes from the OpenAlex API.
 
