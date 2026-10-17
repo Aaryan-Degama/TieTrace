@@ -169,3 +169,14 @@ code { font: 13px var(--mono); background: var(--panel-2); padding: 1px 5px; bor
 .msg.auth ol { margin: 8px 0 8px 18px; padding: 0; }
 .msg.auth .row { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 6px; }
 .msg.auth a[hidden] { display: none; }
+
+/* agent provider + key box */
+.provider { display: grid; gap: 4px; }
+select, input[type="password"] {
+  width: 100%; font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line);
+  border-radius: 8px; padding: 9px 10px;
+}
+.keybox { display: grid; gap: 4px; }
+.keybox[hidden], .linkish[hidden] { display: none; }
+.notice { margin: 0; color: var(--muted); font-size: 12.5px; }
+.linkish { justify-self: start; background: none; border: 0; padding: 2px 0; color: var(--accent); text-decoration: underline; }

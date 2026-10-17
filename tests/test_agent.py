@@ -621,6 +621,65 @@ def test_attack_cap_and_empty_reply_edges():
 
 
 
+# ---------- A5: the page (static checks on the files; Abdul's Builder, Oct 17 2026) ----------
+import re  # noqa: E402
+import subprocess  # noqa: E402
+
+STATIC = ROOT / "web" / "static"
+NOTICE = ("We do not save your API key. It is sent with each request and held only in this page's memory. "
+          "Use a temporary key with a spend limit and revoke it afterwards.")
+
+
+def _read(name):
+    return (STATIC / name).read_text(encoding="utf-8")
+
+
+def test_page_has_a_provider_choice_and_a_password_field_for_the_key():
+    html = _read("index.html")
+    sel = re.search(r'<select id="provider".*?</select>', html, re.S).group(0)
+    for v in ("claude", "openai", "gemini"):
+        assert f'value="{v}"' in sel, v
+    assert 'for="provider"' in html and 'for="apikey"' in html          # labelled
+    inp = re.search(r'<input[^>]*id="apikey"[^>]*>', html).group(0)
+    assert 'type="password"' in inp and 'autocomplete="off"' in inp and 'spellcheck="false"' in inp
+    assert 'role="status"' in html                                      # status text is announced
+    js = _read("app.js")
+    assert '"local"' in js and "local_claude" in js and "host_gemini" in js and "/api/agent/providers" in js
+
+
+def test_the_key_is_never_written_to_storage_or_the_url():
+    js = _read("app.js")
+    assert not re.search(r"localStorage|sessionStorage|document\.cookie|indexedDB", js)   # nothing stored at all
+    assert "X-Provider-Key" in js
+    body = re.findall(r"body: JSON\.stringify\(([^)]*\))?", js)
+    assert not any("key" in b.lower() for b in body), body                # never in a body
+    assert not re.search(r"fetch\([^)]*key", js, re.I) and "?key" not in js and "apikey=" not in js
+    assert not re.search(r"(statusEl\.textContent|showError)\([^;]*key", js)    # never in status or error text
+    assert "pagehide" in js and 'keyInput.value = ""' in js              # cleared on leaving and on rejection
+    assert "keyFail" in js and "BAD_KEY" in js and "NO_KEY" in js
+
+
+def test_the_notice_says_the_key_is_not_saved_and_to_use_a_temporary_key():
+    assert NOTICE in _read("index.html")
+
+
+def test_local_mode_path_is_intact():
+    js = _read("app.js")
+    assert 'fetch("/api/ask"' in js and "authHelp" in js and "/api/login" in js
+    assert re.search(r'prov === "local"\s*\?\s*await fetch\("/api/ask"', js)
+    assert 'provSel.value === "local"' in js                               # sign-in help only for Local
+
+
+def test_no_banned_words_or_unsourced_numbers_in_the_new_copy():
+    # reuse the web suite's own checks (they read the served pages, app.js and style.css)
+    r = subprocess.run([sys.executable, str(ROOT / "tests" / "test_web.py"), "banned_words", "every_number"],
+                       capture_output=True, text=True, cwd=ROOT)
+    assert r.returncode == 0, r.stdout[-600:] + r.stderr[-300:]
+    for name in ("index.html", "app.js", "how.html"):
+        assert not re.search(r"(independent|conflicted)", _read(name), re.I), name
+
+
+
 if __name__ == "__main__":
     only = sys.argv[1:]
     tests = [(n, f) for n, f in list(globals().items()) if n.startswith("test_") and callable(f)

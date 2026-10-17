@@ -7,6 +7,34 @@ const messages = $("messages"), steps = $("steps"), form = $("ask-form"), storyB
 const sendBtn = $("send"), statusEl = $("status");
 let sessionId = null;   // claude session, so a name pick continues the same check
 let busy = false;
+// Agent mode (A5): the visitor's API key stays in this input only. It is sent in the X-Provider-Key header, never stored
+// anywhere (no browser storage, no cookie, no URL), and is cleared when the page is left or the server rejects it.
+const provSel = $("provider"), keyBox = $("keybox"), keyInput = $("apikey"), ownKey = $("own-key");
+let hostGemini = false;   // the server may use its own Gemini key; then the key box is optional
+function syncKeyBox() {
+  const p = provSel.value, optional = p === "gemini" && hostGemini && !keyInput.value;
+  keyBox.hidden = p === "local" || (optional && ownKey.dataset.open !== "1");
+  ownKey.hidden = !(p === "gemini" && hostGemini && keyBox.hidden);
+}
+provSel.addEventListener("change", () => { sessionId = null; keyInput.value = ""; ownKey.dataset.open = ""; syncKeyBox(); });
+ownKey.addEventListener("click", () => { ownKey.dataset.open = "1"; syncKeyBox(); keyInput.focus(); });
+addEventListener("pagehide", () => { keyInput.value = ""; });
+fetch("/api/agent/providers").then((r) => r.json()).then((j) => {
+  hostGemini = j.host_gemini === true;
+  for (const p of j.providers || []) {
+    const o = [...provSel.options].find((x) => x.value === p.id);
+    if (o) o.textContent = `${p.label} (${p.model})`;
+  }
+  if (j.local_claude === true) {
+    provSel.append(el("option", { value: "local", text: "Local (Claude Code login)" }));
+    if (!hostGemini) provSel.value = "local";   // default: Gemini when the host key is on, else Local when offered
+  }
+  syncKeyBox();
+}).catch(() => {});
+// A rejected or missing key: forget it and put the cursor back in the key box.
+function keyFail(code) {
+  if (code === "BAD_KEY" || code === "NO_KEY") { keyInput.value = ""; ownKey.dataset.open = "1"; syncKeyBox(); keyInput.focus(); }
+}
 
 function el(tag, attrs = {}, ...kids) {
   const e = document.createElement(tag);
@@ -43,11 +71,16 @@ async function ask(story, sid) {
   reply.box.append(reply.cards);
   messages.append(reply.box); scrollDown();
   try {
-    const res = await fetch("/api/ask", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ story, session_id: sid }) });
+    const prov = provSel.value, headers = { "Content-Type": "application/json" };
+    const key = keyInput.value.trim();
+    if (prov !== "local" && key) headers["X-Provider-Key"] = key;
+    const res = prov === "local"
+      ? await fetch("/api/ask", { method: "POST", headers, body: JSON.stringify({ story, session_id: sid }) })
+      : await fetch("/api/agent/ask", { method: "POST", headers, body: JSON.stringify({ provider: prov, story, session_id: sid }) });
     if (!res.ok || !res.body) {
       const j = await res.json().catch(() => ({}));
       showError(reply, (j.error && j.error.message) || `The server said ${res.status}.`);
+      keyFail(j.error && j.error.code);
       return;
     }
     reader = res.body.getReader();
@@ -78,7 +111,7 @@ function handle(reply, event, d) {
   else if (event === "ambiguous") picker(reply, d);
   else if (event === "note") note(reply, d);
   else if (event === "text") replyText(reply, d.text);
-  else if (event === "error") { showError(reply, d.message); if (d.code === "AUTH") authHelp(reply.box); }
+  else if (event === "error") { showError(reply, d.message); if (d.code === "AUTH" && provSel.value === "local") authHelp(reply.box); keyFail(d.code); }
   else if (event === "warning") reply.box.append(el("div", { class: "msg error", role: "status", text: d.message }));
   else if (event === "done") sessionId = d.session_id || sessionId;
   scrollDown();

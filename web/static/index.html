@@ -39,6 +39,20 @@
     <form class="composer" id="ask-form">
       <label for="story">Story text (or a question about it)</label>
       <textarea id="story" name="story" required maxlength="20000" placeholder="Paste the story here"></textarea>
+      <div class="provider">
+        <label for="provider">Model provider</label>
+        <select id="provider" name="provider">
+          <option value="gemini" selected>Gemini</option>
+          <option value="claude">Claude</option>
+          <option value="openai">OpenAI</option>
+        </select>
+      </div>
+      <div class="keybox" id="keybox">
+        <label for="apikey">API key</label>
+        <input type="password" id="apikey" name="apikey" autocomplete="off" spellcheck="false" maxlength="500" aria-describedby="key-notice">
+        <p class="notice" id="key-notice">We do not save your API key. It is sent with each request and held only in this page's memory. Use a temporary key with a spend limit and revoke it afterwards.</p>
+      </div>
+      <button type="button" class="linkish" id="own-key" hidden>Use your own key instead</button>
       <div class="row">
         <span class="status" id="status" role="status"></span>
         <button type="submit" class="primary" id="send">Check</button>
