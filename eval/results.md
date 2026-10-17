@@ -1,6 +1,6 @@
 # TieTrace evaluation results (checkpoint 4: E3, E7, E1, E2)
 
-*Last updated by Abdul, Oct 17 2026: added E4 (max flow vs aggregate, `eval/e4.py`). Before that, Abdul, Oct 16: added E6 (mega-paper ablation, `eval/e6.py`). Before that, Aaryan, Oct 16: 5f funder share now says "topic works" and gives the Meta counts. Before that: added the checkpoint 5f end-to-end run (Philip Morris × lung cancer). Earlier: Abdul, Oct 16: Reviewer fixes (anonymised control, placebo-spread headline interval for E1, paper counts for E3, banned-word cleanup); first full run of `eval/e3_e7.py`, `eval/e1.py`, `eval/e2.py` on `research:obesity-coke` (data version openalex@2026-10-15). The Reviewer has not checked this yet.*
+*Last updated by Aaryan, Oct 17 2026: added the E5 AI pre-check section (`eval/e5_precheck.py`). Before that, Abdul, Oct 17 2026: added E4 (max flow vs aggregate, `eval/e4.py`). Before that, Abdul, Oct 16: added E6 (mega-paper ablation, `eval/e6.py`). Before that, Aaryan, Oct 16: 5f funder share now says "topic works" and gives the Meta counts. Before that: added the checkpoint 5f end-to-end run (Philip Morris × lung cancer). Earlier: Abdul, Oct 16: Reviewer fixes (anonymised control, placebo-spread headline interval for E1, paper counts for E3, banned-word cleanup); first full run of `eval/e3_e7.py`, `eval/e1.py`, `eval/e2.py` on `research:obesity-coke` (data version openalex@2026-10-15). The Reviewer has not checked this yet.*
 
 Re-run: `FALKORDB_PORT=6380 uv run python eval/e3_e7.py` (7 s), `eval/e1.py` (82 s), `eval/e2.py` (20 s). All seeds are fixed (20261016), so the numbers repeat.
 Pass rules are copied from `tietrace-v2-redesign.md` section 7 and were not changed after seeing results. The score formula is the fixed one (section 4).
@@ -196,6 +196,25 @@ Top 10 ties are broken by author id.
 Time per person: aggregate 0.026 s, flow 0.051 s. No query failed.
 
 **Reading it honestly.** By the fixed rule the ranking does change (rho below 0.95 and 4 of the top 10 differ), so the rule does not force the claim to be dropped. But the two numbers measure different things: the aggregate adds up every short path, the flow counts how much can pass at once and also uses longer routes. The fixed rule is easy to meet, because a sum over paths and a max flow are different quantities; and the path sum can count walks that revisit a person (FalkorDB paths are edge-unique, not node-unique). A different ranking does not show the flow is better; E1 and E2 failed, so neither ranking is validated, and tier B/C stay context only. The README should say: max flow was tested, gives a different ranking from the path sum, is not limited to 3 links, needs whole-number capacities, and is not used for any finding. `bridges` does not use it.
+
+---
+
+## E5: profile guard (AI pre-check only; human check pending)
+
+**Status: no E5 result yet.** E5 needs a person to mark the 50 random profiles in `eval/e5_sample.md` as merged, split or ok. That has not been done, so there is **no error rate**.
+
+**What exists.** `eval/e5_precheck.py` (Aaryan, Oct 17) reads each of the 50 profiles from the OpenAlex API (author record, publication years, up to 200 works, same-name author search) and applies a fixed written rule to add a column `AI suggestion (not a verdict)` with a reason. It is there to help the human look in the right place; the human must confirm or reject every suggestion. 225 API calls on the first run; raw responses are cached in `data/raw/e5/`, so a re-run makes 0.
+
+Suggestion counts, as printed by the script (not an error rate, not a verdict):
+
+| AI suggestion | Profiles |
+|---|---|
+| ok | 22 |
+| split | 14 |
+| merged | 8 |
+| unclear | 6 |
+
+**Known weaknesses of the rule (stated before any human check).** 7 of the 8 "merged" suggestions and 5 of the 6 "unclear" ones come from the "3+ countries in one year" signal, which also fires for people on large multi-country papers, because OpenAlex builds affiliation years from paper bylines. The "split" signal (a same-surname, same-initial profile sharing an institution) fires often for common names at large institutions, where two different people can share both. The domain signal also fires too easily when one domain's works have few or no co-authors (in #9 the Health works have 2 distinct co-authors, and 2 of the 6 are solo papers). The same-name search reads only the first 100 results. So these counts are likely to overstate problems; how much is unknown until the human check.
 
 ---
 

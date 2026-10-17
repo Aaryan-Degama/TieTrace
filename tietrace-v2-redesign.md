@@ -1,6 +1,6 @@
 # TieTrace v2: redesign (Graph Hacks, Oct 15-18 2026)
 
-*Last updated by Aaryan, Oct 16 2026: `Work.junk` added to the graph model (decided by Aaryan).*
+*Last updated by Aaryan, Oct 17 2026: D9 (case slug as a tool argument) and the `web/` UI rule recorded in section 6. Before that, Oct 16: `Work.junk` added to the graph model (decided by Aaryan).*
 *Earlier: Abdul, Oct 15: added team attribution convention (see CLAUDE.md). Past content authored in Abdul's sessions.*
 
 Written Oct 14 2026, about 5 hours before the event starts. Notes and sketches only; all code is written during the event.
@@ -132,7 +132,8 @@ Build a thin Python MCP server (official MCP SDK) exposing fixed tools. Optional
 - **Tie-checking is a server tool, not an agent.** It is deterministic, so it needs no LLM.
 - **Writer:** a Claude Code subagent that drafts the note. **Review Desk:** a subagent (stretch).
 - **Verifier:** plain code in the server, no LLM. **The human approves before anything is exported.**
-- **Client:** Claude Code (subscription login, no API key), plus FalkorDB Browser to show the graph. No custom UI and no crawler: journalist URLs are read with WebFetch.
+- **Cases and tenants (D9, decided by Aaryan, Oct 16):** research tools take an optional `case` slug, checked against `cases/` (default env `TIETRACE_CASE`, else `obesity-coke`); the newsroom comes only from `TIETRACE_NEWSROOM`, never from a tool argument.
+- **Client:** Claude Code (subscription login, no API key), plus FalkorDB Browser to show the graph. The only UI is the local `web/` app (binds 127.0.0.1, adds no analysis; human-only tools only by an on-page click; decided by Aaryan, Oct 17). No crawler: journalist URLs are read with WebFetch.
 
 ---
 

@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How TieTrace works</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<!-- WebApp.md 3.2 (W2). Every number on this page is copied from README.md or eval/results.md; each section's
+     comment names the place. tests/test_web.py checks that every number in the visible text appears in one of them. -->
+<a class="skip" href="#content">Skip to the content</a>
+<header class="top">
+  <a class="brand" href="index.html" aria-label="TieTrace home">
+    <svg viewBox="0 0 34 24" aria-hidden="true"><line x1="5" y1="18" x2="17" y2="6" stroke="#2f5f58" stroke-width="2"/><line x1="17" y1="6" x2="29" y2="16" stroke="#2f5f58" stroke-width="2"/><circle cx="5" cy="18" r="4" fill="#6fd3c1"/><circle cx="17" cy="6" r="4" fill="#9aa7b4"/><circle cx="29" cy="16" r="4" fill="#f6c08c"/></svg>
+    TieTrace
+  </a>
+  <nav aria-label="Main"><a href="index.html">Check a story</a><a href="how.html" aria-current="page">How it works</a></nav>
+</header>
+
+<main class="how" id="content">
+  <div class="hero">
+    <div>
+      <h1>Every tie has a DOI. Every "no tie" has a scope.</h1>
+      <p>TieTrace helps a journalist check how connected an expert is to the company in a story. It answers from a research graph built from OpenAlex and stored in FalkorDB, with evidence, not opinions.</p>
+    </div>
+    <svg viewBox="0 0 260 160" role="img" aria-label="A graph: an expert, two co-authors, a paper and the company's funder, joined by edges">
+      <g stroke="#2f5f58" stroke-width="2"><line x1="30" y1="120" x2="100" y2="50"/><line x1="100" y1="50" x2="170" y2="95"/><line x1="170" y1="95" x2="232" y2="36"/><line x1="100" y1="50" x2="130" y2="140"/><line x1="170" y1="95" x2="130" y2="140"/><line x1="30" y1="120" x2="130" y2="140"/></g>
+      <circle cx="30" cy="120" r="12" fill="#6fd3c1"/><circle cx="100" cy="50" r="9" fill="#9aa7b4"/><circle cx="170" cy="95" r="9" fill="#9aa7b4"/><circle cx="130" cy="140" r="7" fill="#19212a" stroke="#9aa7b4" stroke-width="2"/><circle cx="232" cy="36" r="12" fill="#f6c08c"/>
+      <g font-family="ui-monospace, monospace" font-size="11" fill="#9aa7b4"><text x="14" y="148">expert</text><text x="200" y="66">funder</text><text x="112" y="26">co-author</text></g>
+    </svg>
+  </div>
+
+  <section aria-labelledby="s1">
+    <h2 id="s1"><span class="n">1</span>The problem</h2>
+    <p>A story quotes a scientist. Was their work funded by the company the story is about, or did they list an affiliation with it? Reporters rarely have time to read a whole publication record. TieTrace reads it for them and shows each tie with the paper it rests on.</p>
+  </section>
+
+  <section aria-labelledby="s2">
+    <h2 id="s2"><span class="n">2</span>The four steps</h2>
+    <ol>
+      <li><strong>Paste the story.</strong> Claude Code reads it and picks the research case for the company and topic.</li>
+      <li><strong>Names are resolved</strong> to OpenAlex author records. If a name matches more than one record, you pick; it never guesses.</li>
+      <li><strong>Ties are checked in the graph</strong> with read-only queries. The live evidence panel shows every query as it runs.</li>
+      <li><strong>The answer</strong> comes back per expert as "Expert #n", with DOIs for every tie and the scope for every "no tie found".</li>
+    </ol>
+  </section>
+
+  <section aria-labelledby="s3">
+    <!-- README.md "What it finds" table -->
+    <h2 id="s3"><span class="n">3</span>What the tiers mean</h2>
+    <table>
+      <thead><tr><th scope="col">Tier</th><th scope="col">Meaning</th><th scope="col">How to use it</th></tr></thead>
+      <tbody>
+        <tr><td><span class="chip A1">A1</span></td><td>Authored a small paper (25 authors or fewer) funded by the company, or listed a company affiliation on one</td><td>Direct evidence, with DOIs</td></tr>
+        <tr><td><span class="chip A2">A2</span></td><td>Foundation grant, bottler affiliation, or the only evidence is a large multi-author paper</td><td>Direct evidence, with DOIs and the reason</td></tr>
+        <tr><td><span class="chip B">B</span></td><td>2 or more recent small papers (since 2021) with a Tier A person</td><td>Network context only, not validated</td></tr>
+        <tr><td><span class="chip C">C</span></td><td>Within 2-3 such co-author hops of a Tier A person</td><td>Network context only, not validated</td></tr>
+        <tr><td><span class="chip NONE">NONE</span></td><td>Nothing above within 3 hops</td><td>"No tie found in the research record", always with its scope</td></tr>
+      </tbody>
+    </table>
+    <p>A1 and A2 are direct evidence. B and C are network context only: they describe who wrote papers with whom, and our own tests (below) showed they are not a sign of unusual closeness.</p>
+  </section>
+
+  <section aria-labelledby="s4">
+    <!-- README.md "Evaluation results" (E7 row, 5f row) and "Honest limits" -->
+    <h2 id="s4"><span class="n">4</span>Why "no tie found" is never bare</h2>
+    <p>A missing tie can simply mean missing data. So every "no tie found" states:</p>
+    <ul>
+      <li><strong>Hops:</strong> how far through co-authors it searched (up to 3).</li>
+      <li><strong>Years:</strong> which years of collaboration count as recent (since 2021).</li>
+      <li><strong>Funder coverage:</strong> how much of the data records funders at all, for the whole graph and for that expert's own works.</li>
+    </ul>
+    <p>In the Coca-Cola graph only <span class="stat">56.3%</span> of the 30,140 loaded topic works list a funder (96.6% list a funder or an affiliation, but affiliation says little about funding). In the Philip Morris graph it is <span class="stat">37.5%</span> (7,482 of 19,964), so "no tie found" is weaker there. The topic part of the graph is a sample of the most-cited works per year, about 11.5% of the field.</p>
+  </section>
+
+  <section aria-labelledby="s5">
+    <!-- README.md "Evaluation results" table; full method in eval/results.md -->
+    <h2 id="s5"><span class="n">5</span>What we tested, honestly</h2>
+    <p>Pass rules were fixed before the runs and not changed after.</p>
+    <table>
+      <thead><tr><th scope="col">Test</th><th scope="col">Result</th></tr></thead>
+      <tbody>
+        <tr><td>E3 known case (GEBN)</td><td><span class="pass">Passed for the four.</span> 4 of 4 publicly confirmed GEBN leaders found as Tier A with DOIs. A fifth name could not be confirmed from a public source.</td></tr>
+        <tr><td>E1 placebo lift (Tier B)</td><td><span class="fail">FAIL.</span> Lift 0.96x (interval 0.84-1.09) against works-count-matched random groups: Tier B is not a sign of unusual closeness.</td></tr>
+        <tr><td>E2 temporal hold-out</td><td><span class="fail">FAIL.</span> The weighted score (AUC 0.716) does not beat publication volume (0.720) or a plain count of Tier A co-authors (0.749).</td></tr>
+        <tr><td>E6 mega-paper ablation</td><td>Without the 25-author cap A1 would grow from 949 to 1,069 people and Tier B from 1,309 to 1,889; 23.7% of A1+B people exist only through big papers. The cap is kept.</td></tr>
+        <tr><td>E8 golden tests</td><td>15 of 15 pass.</td></tr>
+        <tr><td>E9 concurrency</td><td>Two server processes checking and ruling at the same time: nothing lost.</td></tr>
+        <tr><td>E10 tenant isolation</td><td>All 13 tools tried with another newsroom's ids: nothing visible.</td></tr>
+      </tbody>
+    </table>
+    <p>Because E1 and E2 failed, <strong>only Tier A is a finding</strong>. Tier B, Tier C and the score are shown as labelled network context, and experts are never ranked by score.</p>
+  </section>
+
+  <section aria-labelledby="s6">
+    <h2 id="s6"><span class="n">6</span>Who decides</h2>
+    <p>The model never records a verdict and never approves a sourcing note. On this page those are buttons: you click, read what will happen (for a note, the whole note), and confirm a second time. Excluding a paper re-runs every saved check in the newsroom and shows what changed; merging two split profiles is possible through the API only. A sourcing note can be approved only after the Verifier has checked every claim against the graph.</p>
+  </section>
+
+  <section aria-labelledby="s7">
+    <!-- README.md "Honest limits" -->
+    <h2 id="s7"><span class="n">7</span>Limits</h2>
+    <ul>
+      <li><strong>Funding data is thin.</strong> Many papers list no funder, so "no tie found" often means "no funding recorded".</li>
+      <li><strong>Split author profiles.</strong> OpenAlex sometimes splits one person into several records; a check on the wrong record can miss evidence. A human can merge two profiles.</li>
+      <li><strong>The graph is a sample.</strong> Co-authors' other works are not loaded, so ties through unloaded papers are invisible.</li>
+      <li><strong>Gifts to universities</strong> and other money that OpenAlex funder fields do not record are invisible.</li>
+      <li><strong>Profile merge and split error rate is unknown.</strong> The hand check (E5) was cut.</li>
+    </ul>
+  </section>
+
+  <section aria-labelledby="s8">
+    <!-- README.md "The 13 tools" and "How it works" -->
+    <h2 id="s8"><span class="n">8</span>For judges</h2>
+    <ul>
+      <li>The MCP server has 13 tools and makes no LLM calls. Claude Code is the agent and the MCP client; this page only shows its steps.</li>
+      <li>Every model-reachable read uses <code>GRAPH.RO_QUERY</code> with a timeout and a row cap; writes are fixed, parameterised queries. Every tool returns the Cypher it ran, and the live evidence panel shows it.</li>
+      <li>In the web app the model gets the read tools and the memory-writing tools (<code>open_case</code>, <code>check_case</code>, <code>recheck</code>, <code>draft_note</code>, which save cases, checks and draft notes), but never <code>record_verdict</code> or <code>approve_note</code>: those run only from a confirmed click on the page.</li>
+      <li>Code and contract: <a href="https://github.com/Aaryan-Degama/TieTrace">the GitHub repository</a> and <a href="https://github.com/Aaryan-Degama/TieTrace/blob/main/docs/mcp-spec.md">docs/mcp-spec.md</a>.</li>
+    </ul>
+  </section>
+</main>
+
+<footer class="foot">Ties found in the research record. A missing tie is not proof.</footer>
+</body>
+</html>

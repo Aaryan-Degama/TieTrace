@@ -1625,6 +1625,36 @@ def test_explain_shows_index_use_for_per_expert_queries():
     assert not bad, f"label scan / no index on: {bad}"
 
 
+def test_bridges_tier_a_filter_is_a_hash_join_not_a_per_path_list_scan():
+    """Reviewer, Oct 17: the 3-s speed gate does not catch a revert to `a.oa_id IN $tier_a` (cold 1.3 s), so pin
+    the plan: both bridges queries (paths and count) join the Tier-A people on id(a) with a Value Hash Join."""
+    hub = q("MATCH (a:Person)-[:COAUTH_B]->(b) WITH a, count(b) AS d ORDER BY d DESC LIMIT 1 RETURN a.oa_id")[0][0]
+    for depth in (2, 3):
+        out = research.bridges(hub, depth, 5)
+        assert out["ok"], out
+        qs = [c for c in out["cypher"] if "COAUTH_B" in c["query"] and "$tier_a" in c["query"]]
+        assert len(qs) == 2, [c["query"] for c in qs]  # paths + count
+        for c in qs:
+            assert "a.oa_id IN $tier_a" not in c["query"], c["query"]
+            plan = str(G.explain(c["query"], c["params"]))
+            assert "Value Hash Join" in plan, (depth, plan)
+
+
+def test_bridges_order_is_total_so_the_limit_keeps_the_same_paths():
+    """Polish, Oct 17: (strength, Tier-A id) ties in hubs' top 50, so the order also uses the co-authors' ids;
+    the result must be sorted by that full key and the same on a second call."""
+    hub = q("MATCH (a:Person)-[:COAUTH_B]->(b) WITH a, count(b) AS d ORDER BY d DESC LIMIT 1 RETURN a.oa_id")[0][0]
+    for depth in (2, 3):
+        out = research.bridges(hub, depth, 50)
+        assert out["ok"], out
+        paths = out["data"]["paths"]
+        keys = [(-p["strength"], p["node_ids"][-1], *p["node_ids"][1:-1]) for p in paths]
+        assert keys == sorted(keys) and len(set(keys)) == len(keys), (depth, keys[:5])
+        tied = len(keys) - len({k[:2] for k in keys})
+        assert depth == 2 or tied > 0, "fixture: the biggest hub should have (strength, Tier-A) ties at depth 3"
+        assert research.bridges(hub, depth, 50)["data"]["paths"] == paths, depth
+
+
 
 
 

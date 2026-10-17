@@ -168,7 +168,7 @@ def env_key_value():
     """The OpenAlex key (if .env exists), only to prove it is never echoed. Never printed."""
     p = ROOT / ".env"
     if p.exists():
-        m = re.search(r"OPENALEX_API_KEY\s*=\s*(\S+)", p.read_text())
+        m = re.search(r"OPENALEX_API_KEY\s*=\s*(\S+)", p.read_text(encoding="utf-8"))
         if m and len(m.group(1)) > 6:
             return m.group(1).strip("'\"")
     return None

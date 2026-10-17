@@ -21,7 +21,7 @@ TieTrace checks how connected an expert is to the company in a story, using an O
 - **Claude Code is the agent and MCP client.** The main session is the orchestrator; the subagents live in `.claude/agents/`.
 - **The Python MCP server makes no LLM calls**, and it uses no API key and no Ollama. If a scripted LLM step is ever needed, use `claude -p`, never the API SDK.
 - **FalkorDB runs locally in Docker** and holds one research graph (`research:<topic>`) plus one memory graph per newsroom (`newsroom:<id>`).
-- **No custom UI and no crawler.** Journalist URLs are read with WebFetch; the data comes from the OpenAlex API.
+- **The only UI is `web/`** (local, binds 127.0.0.1): it adds no analysis, and the human-only tools are reachable only by an on-page confirm click, never by the model (decided by Aaryan, Oct 17). **No crawler.** Journalist URLs are read with WebFetch; the data comes from the OpenAlex API.
 
 ## Rules the code must keep
 - **Model-reachable reads use `GRAPH.RO_QUERY`**, with a timeout and a row cap. Writes are fixed, parameterised queries only. Never build Cypher by string formatting with user input.
@@ -76,5 +76,6 @@ TieTrace checks how connected an expert is to the company in a story, using an O
   - add `--refresh` to re-download;
   - the OpenAlex key lives in `.env` (`OPENALEX_API_KEY`). Never print or log it.
 - **Tests:** `uv run python tests/<suite>.py` for `test_loader`, `test_research`, `test_server`, `test_eval`, `test_cases`, `test_discover`, `test_memory`, `test_obsidian` (plain asserts, no pytest). Suites use `zz-test-*` newsrooms, never `alpha`.
+- **Web app:** `uv run uvicorn web.app:app --host 127.0.0.1 --port 8000` (needs a logged-in `claude`; env `TIETRACE_NEWSROOM`, default `alpha`, and `FALKORDB_PORT`). Tests: `uv run python tests/test_web.py` (`WEB_LIVE=1` adds a real `claude -p` run).
 - **See the memory graph in Obsidian:** `uv run python obsidian_export.py --watch 5` writes linked notes (cases, experts, papers, funders) to `~/Documents/Obsidian Vault/TieTrace/<newsroom>/`; open Graph view (Ctrl+G). Read-only on FalkorDB; writes only in that folder, and moves stale notes to the vault's `.trash/`. The full research graph is better viewed in the FalkorDB Browser.
 - **Register the server:** `claude mcp add tietrace-alpha -e TIETRACE_NEWSROOM=alpha -e FALKORDB_PORT=6380 -- uv run --directory <path-to-repo> python server.py` (`uv run --directory` finds the venv from any folder; drop `FALKORDB_PORT` if FalkorDB is on 6379). The server exits at once if `TIETRACE_NEWSROOM` is unset.

@@ -60,7 +60,7 @@ def test_first_export_writes_notes_and_never_writes_the_graph():
     assert w > 10 and r == 0, (w, r)
     after = DB.select_graph(NR).query("MATCH (n) RETURN count(n)").result_set[0][0]
     assert before == after
-    src = (ROOT / "obsidian_export.py").read_text()
+    src = (ROOT / "obsidian_export.py").read_text(encoding="utf-8")
     assert ".query(" not in src and "research:" not in src.replace("research:{c['research']}", "")
     assert "openalex.org" not in src and "requests" not in src
 
@@ -142,7 +142,7 @@ def test_refuses_a_folder_that_is_not_a_vault_and_a_bad_newsroom():
 def test_missing_graph_gives_an_empty_index():
     w, _ = ox.export(VAULT, "zz-test-obs-none")
     empty = VAULT / "TieTrace" / "zz-test-obs-none"
-    assert w == 1 and "no memory yet" in (empty / "TieTrace index.md").read_text()
+    assert w == 1 and "no memory yet" in (empty / "TieTrace index.md").read_text(encoding="utf-8")
     assert "newsroom:zz-test-obs-none" not in DB.list_graphs()  # reading did not create it
 
 
@@ -268,12 +268,13 @@ def test_deletion_never_follows_symlinks_or_touches_unmarked_or_odd_files():
         folder = vault / "TieTrace" / XNR
         target = vault / "Owned elsewhere.md"
         target.write_text(ox.note({"type": "paper"}, "# a marked note outside the folder"), encoding="utf-8")
-        (folder / "Link.md").symlink_to(target)
+        linked = try_symlink(folder / "Link.md", target)
         (folder / "Starts with marker text.md").write_text("tietrace: true\n# not frontmatter\n", encoding="utf-8")
         (folder / "Sub.md").mkdir()  # a folder whose name ends in .md
         (folder / "Sub.md" / "Inner.md").write_text(ox.note({}, "nested"), encoding="utf-8")
         ox.export(vault, XNR)
         assert target.exists() and target.read_text(encoding="utf-8").startswith(ox.MARKER)
+        assert not linked or (folder / "Link.md").is_symlink(), "a symlink note was deleted"
         assert (folder / "Starts with marker text.md").exists() and (folder / "Sub.md" / "Inner.md").exists()
     finally:
         shutil.rmtree(vault, ignore_errors=True)
@@ -311,18 +312,48 @@ def test_row_cap_is_an_error_not_a_silent_cut():
         shutil.rmtree(vault, ignore_errors=True)
 
 
-def test_watch_retries_on_db_errors_and_stops_cleanly_on_ctrl_c():
-    import signal
+def start_watch(args, **kw):
+    """Start the watch loop in a child process that ctrl_c() can stop (Windows has no SIGINT for a child)."""
     import subprocess
+    if os.name == "nt":
+        kw["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP  # needed to send CTRL_BREAK_EVENT
+    return subprocess.Popen([sys.executable, ox.__file__, *args], stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, text=True, **kw)
+
+
+def try_symlink(link, target, **kw):
+    """Make a symlink, or (Windows only, without Developer Mode) return False with a message. Elsewhere a failure
+    is an error: the symlink checks must never be skipped quietly on Linux or macOS."""
+    try:
+        link.symlink_to(target, **kw)
+        return True
+    except (OSError, NotImplementedError) as e:
+        if os.name != "nt":
+            raise
+        print(f"      note: symlink sub-step skipped, Windows refused a symlink here ({type(e).__name__}: {e})")
+        return False
+
+
+def link_folder(link, target):
+    """A folder link: a symlink, or on Windows without symlink rights a directory junction (needs no rights)."""
+    if not try_symlink(link, target, target_is_directory=True):
+        import subprocess
+        subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)], check=True, capture_output=True)
+
+
+def ctrl_c(p):
+    import signal
+    p.send_signal(signal.CTRL_BREAK_EVENT if os.name == "nt" else signal.SIGINT)
+
+
+def test_watch_retries_on_db_errors_and_stops_cleanly_on_ctrl_c():
     vault = fresh_vault()
     try:
         env = {**os.environ, "FALKORDB_PORT": "1"}  # nothing listens there: every export is a DB error
-        p = subprocess.Popen([sys.executable, ox.__file__, "--vault", str(vault),
-                              "--newsroom", XNR, "--watch", "0.2"], env=env, cwd=ROOT,
-                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        p = start_watch(["--vault", str(vault), "--newsroom", XNR, "--watch", "0.2"], env=env, cwd=ROOT)
         time.sleep(3)
         assert p.poll() is None, f"watch loop died: {p.stdout.read()}"
-        p.send_signal(signal.SIGINT)
+        ctrl_c(p)
         out, _ = p.communicate(timeout=10)
         assert p.returncode == 0 and "retrying" in out and out.rstrip().endswith("stopped"), (p.returncode, out)
         assert "Traceback" not in out, out
@@ -333,8 +364,6 @@ def test_watch_retries_on_db_errors_and_stops_cleanly_on_ctrl_c():
 
 def test_watch_survives_a_file_error_and_loses_nothing():
     # `.trash` is a file, so moving a stale note fails with an OSError: the watch loop must retry, not die.
-    import signal
-    import subprocess
     hostile_cases()
     vault = fresh_vault()
     try:
@@ -342,11 +371,10 @@ def test_watch_survives_a_file_error_and_loses_nothing():
         folder = vault / "TieTrace" / XNR
         folder.mkdir(parents=True)
         (folder / "Old.md").write_text(ox.note({"type": "paper"}, "# stale"), encoding="utf-8")
-        p = subprocess.Popen([sys.executable, ox.__file__, "--vault", str(vault), "--newsroom", XNR,
-                              "--watch", "0.2"], cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        p = start_watch(["--vault", str(vault), "--newsroom", XNR, "--watch", "0.2"], cwd=ROOT)
         time.sleep(4)
         assert p.poll() is None, f"watch loop died: {p.stdout.read()}"
-        p.send_signal(signal.SIGINT)
+        ctrl_c(p)
         out, _ = p.communicate(timeout=10)
         assert p.returncode == 0 and "Traceback" not in out, (p.returncode, out)
         assert (folder / "Old.md").exists() and (vault / ".trash").read_text(encoding="utf-8") == "not a folder"
@@ -382,7 +410,7 @@ def test_trash_move_never_leaves_the_vault_through_a_symlink():
         hostile_cases()
         folder = vault / "TieTrace" / XNR
         folder.mkdir(parents=True)
-        (vault / ".trash").symlink_to(outside, target_is_directory=True)
+        link_folder(vault / ".trash", outside)
         (folder / "Old.md").write_text(ox.note({"type": "paper"}, "# stale"), encoding="utf-8")
         try:
             ox.export(vault, XNR)
@@ -392,6 +420,29 @@ def test_trash_move_never_leaves_the_vault_through_a_symlink():
     finally:
         shutil.rmtree(vault, ignore_errors=True)
         shutil.rmtree(outside, ignore_errors=True)
+
+
+def test_a_linked_export_folder_is_refused():
+    """The TieTrace folder or the newsroom folder being a link (symlink or junction) would send every note, and
+    every removal, outside the vault: the export must refuse and write nothing there."""
+    for linked in ("TieTrace", f"TieTrace/{XNR}"):
+        vault, outside = fresh_vault(), Path(tempfile.mkdtemp(prefix="tt-outside-"))
+        try:
+            hostile_cases()
+            if linked != "TieTrace":
+                (vault / "TieTrace").mkdir()
+            link_folder(vault / linked, outside)
+            (outside / "Old.md").write_text(ox.note({"type": "paper"}, "# stale"), encoding="utf-8")
+            try:
+                ox.export(vault, XNR)
+                raise AssertionError(f"exported through a linked {linked}")
+            except SystemExit as e:
+                assert "is a link" in str(e), e
+            assert [p.name for p in outside.iterdir()] == ["Old.md"], list(outside.iterdir())
+            assert not (vault / ".trash").exists()
+        finally:
+            shutil.rmtree(vault, ignore_errors=True)
+            shutil.rmtree(outside, ignore_errors=True)
 
 
 def test_an_empty_newsroom_does_not_remove_many_notes():

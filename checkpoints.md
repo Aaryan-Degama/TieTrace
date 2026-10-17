@@ -18,7 +18,7 @@ Deadline: **submit by Oct 18, 6 PM IST.** Specs: `tietrace-v2-redesign.md`, `doc
 | 8 | Remaining evaluation + golden tests | Oct 17 afternoon | ✅ |
 | 9 | README, video, submit | Oct 18, by 6 PM | 🟨 |
 
-**Team: Abdul and Aaryan.** Tag each checkbox with who did it: `- [x] item (Abdul)` or `(Aaryan)`; use `(Abdul + Aaryan)` for pairing. Unticked items carry `(→ Aaryan)` to claim them. Add the date when you tick, e.g. `(Abdul, Oct 16)`. Checkpoints 0-2 were built in Abdul's sessions, so they are attributed to Abdul; Aaryan can correct that.
+**Team: Aaryan, Abdul and Kavyan.** 
 
 Status key: ⬜ not started · 🟨 in progress · ✅ done · ✂️ cut
 
@@ -47,13 +47,13 @@ Status key: ⬜ not started · 🟨 in progress · ✅ done · ✂️ cut
 **Gate:** every item above has a one-line note in `AI_USE.md` saying what was learned.
 
 ## 2. Loader: research graph built
-- [ ] `loader.py` loads works for a configurable target organization, funder, or domain/URL
-- [ ] Loads works matching the configured topic(s) since 2010; topic filters are optional and configurable
-- [ ] Person, Work, Org, Funder, Topic nodes plus `AUTHORED`, `AFFILIATED`, `FUNDED_BY`, `ABOUT` edges
-- [ ] `PARENT_OF` relationships for the configured organization and its related entities, when applicable
-- [ ] `COAUTH` derived with `n_papers`, `w`, `recency_w`, `small_papers`, `dois[]`
-- [ ] `profile_flag` set on Person
-- [ ] Node and edge counts recorded
+- [x] `loader.py` loads works for a configurable target organization, funder, or domain/URL (Abdul, Oct 15)
+- [x] Loads works matching the configured topic(s) since 2010; topic filters are optional and configurable (Abdul, Oct 15)
+- [x] Person, Work, Org, Funder, Topic nodes plus `AUTHORED`, `AFFILIATED`, `FUNDED_BY`, `ABOUT` edges (Abdul, Oct 15)
+- [x] `PARENT_OF` relationships for the configured organization and its related entities, when applicable (Abdul, Oct 15)
+- [x] `COAUTH` derived with `n_papers`, `w`, `recency_w`, `small_papers`, `dois[]` (Abdul, Oct 15)
+- [x] `profile_flag` set on Person (Abdul, Oct 15)
+- [x] Node and edge counts recorded (Abdul, Oct 15)
 
 Counts (after checkpoint 3 loader changes): 85,511 Person, 31,291 Work, 1,326,194 COAUTH, 50,436 COAUTH_B (reviewed: PASS in round 2, 49/49 tests).
 

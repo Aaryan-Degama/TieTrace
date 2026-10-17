@@ -1,12 +1,12 @@
 # TieTrace checklist, phase 2: improvements after the MVP
 
-*Last updated by Abdul, Oct 17 2026: added section P2-W (web app, follow `WebApp.md`) before P2-0. Earlier the same day: first version, built from `IMPROVEMENT.md` and the state of `checkpoints.md` after checkpoint 9 started.*
+*Last updated by Aaryan, Oct 17 2026: ticked the `total_graph_sz_mb` check. Earlier the same day: ticked W1-W6 (web app, Reviewer PASS after 3 rounds). Before that, by Abdul, Oct 17 2026: added section P2-W (web app, follow `WebApp.md`) before P2-0. Earlier the same day: first version, built from `IMPROVEMENT.md` and the state of `checkpoints.md` after checkpoint 9 started.*
 
 **What this file is.** `checkpoints.md` is the plan to ship by **Oct 18, 6 PM IST**. This file is everything in `IMPROVEMENT.md` that is **not built yet**, plus loose ends found along the way. It is *not* part of the submission: do not start phase 2 work until the submission is confirmed, except the items marked **before submit**.
 
 **Already built (do not redo; Aaryan, Oct 16):** `IMPROVEMENT.md` checkpoints 5b (AOF persistence), 5c (`cases/<slug>/case.json`, `loader.py --case`, staging swap, `--dry-run`), 5d (`case` argument, `list_cases`, `NO_GRAPH`, per-graph caches, graph-name guard `GRAPH_RE`), 5e (`discover.py`), 5f (Philip Morris × lung cancer case, run end to end). The "second topic" cut item is therefore already done.
 
-**Rules (same as `CLAUDE.md`):** tick a box only when done and verified, with `(Abdul)` or `(Aaryan)` and the date; claim an item with `(→ name)`; the Builder/Reviewer loop applies to every code item; tests are never weakened; the Coca-Cola case stays the default and the existing suites stay green.
+**Rules (same as `CLAUDE.md`):** tick a box only when done and verified, with the date; claim an item with `(→ name)`; the Builder/Reviewer loop applies to every code item; tests are never weakened; the Coca-Cola case stays the default and the existing suites stay green.
 
 Status key: ⬜ not started · 🟨 in progress · ✅ done · ✂️ cut
 
@@ -24,32 +24,32 @@ Status key: ⬜ not started · 🟨 in progress · ✅ done · ✂️ cut
 
 ## P2-W. Web app (**follow `WebApp.md`**)
 **All design decisions (layout, look, pages, build order, tests, open questions) are in [`WebApp.md`](WebApp.md). Read it first; if this list and `WebApp.md` disagree, `WebApp.md` wins.** Abdul chose: chat layout B (chat + live evidence panel), dark graph-motif look, a separate "How It Works" page, local first, the deployable free-tier version last.
-- [ ] Decide the open questions in `WebApp.md` section 8 (O1 stack, O2 human gates on the web, O3 expert names, O4 file location) and record who decided (→ Abdul + Aaryan)
-- [ ] W1 static shell: chat page and "How It Works" page, dark theme, hero with the node-and-edge drawing, "Try an example" buttons (→ unassigned)
-- [ ] W2 "How It Works" content with real numbers copied from `README.md` / `eval/results.md`; no banned words (→ unassigned)
-- [ ] W3 backend: `POST /api/ask` runs `claude -p` with the MCP server and streams steps; clear message for an expired login or FalkorDB down (→ unassigned)
-- [ ] W4 chat UI: expert cards, tier chips, scope on every no-tie, evidence panel showing the Cypher, ambiguous-name picker, "Expert #n" only (→ unassigned)
-- [ ] W5 human gates: Approve buttons for `record_verdict` / `approve_note`; the model cannot trigger them (→ unassigned)
-- [ ] W6 tests and Builder/Reviewer pass (tests listed in `WebApp.md` section 7); the Coca-Cola example matches `tests/test_golden.py` (Blair A1, Hill A2) (→ unassigned)
+- [x] Decide the open questions in `WebApp.md` section 8 (Aaryan, Oct 17): O1 FastAPI + `claude -p` + plain HTML/JS + SSE; O2 the model never gets `record_verdict`/`approve_note` on the web, an on-page Approve button with a confirm step calls them directly; O3 always "Expert #n" on the web; O4 `web/`
+- [x] W1 static shell: chat page and "How It Works" page, dark theme, hero with the node-and-edge drawing, "Try an example" buttons (Aaryan, Oct 17)
+- [x] W2 "How It Works" content with real numbers copied from `README.md` / `eval/results.md`; no banned words (Aaryan, Oct 17)
+- [x] W3 backend: `POST /api/ask` runs `claude -p` with the MCP server and streams steps; clear message for an expired login or FalkorDB down (Aaryan, Oct 17)
+- [x] W4 chat UI: expert cards, tier chips, scope on every no-tie, evidence panel showing the Cypher, ambiguous-name picker, "Expert #n" only (Aaryan, Oct 17)
+- [x] W5 human gates: Approve buttons for `record_verdict` / `approve_note`; the model cannot trigger them (Aaryan, Oct 17)
+- [x] W6 tests and Builder/Reviewer pass (tests listed in `WebApp.md` section 7); the Coca-Cola example matches `tests/test_golden.py` (Blair A1, Hill A2) (Aaryan, Oct 17)
 - [ ] W7 deployable version with a free-tier hosted model, request limits, no write tools exposed: **built last**, cut first if short (→ unassigned)
 
 ## P2-0. Loose ends (from checkpoints 5b-9)
 - [ ] **Before submit.** Migrate Abdul's container the same way as Aaryan's (`checkpoints.md` 5b): done as a **side container** `falkordb-v4` (v4.22.1, AOF on, port 6381); still to do: stop using the old `falkordb` (`:latest`, AOF off) and move to one container on 6380/3001 (→ Abdul)
 - [ ] **Before submit.** Re-register the MCP server for the new port: `claude mcp add tietrace-alpha -e TIETRACE_NEWSROOM=alpha -e FALKORDB_PORT=6381 -- uv run --directory <path> python server.py` (→ Abdul)
-- [ ] **Before submit.** Load `research:philip-morris-lung` on Abdul's machine so `test_memory` passes: `uv run python loader.py --case philip-morris-lung --rebuild` needs `cases/philip-morris-lung/raw/` from Aaryan (the cache is not in git) (→ Abdul + Aaryan)
-- [ ] Fix the 6 `test_discover` failures: a fixture is read without `encoding="utf-8"` (Windows `charmap` error) (→ unassigned)
-- [ ] Fix the 6 `test_obsidian` failures on Windows: `signal.SIGINT` is unsupported in the watch tests, plus the path checks (→ unassigned)
-- [ ] `test_research`: cold-start `bridges3_hub` took 4.2 s against the 3 s limit on a fresh container; re-measure on a warm machine, and fix the query if it is real (do not raise the limit) (→ unassigned)
+- [ ] **Before submit.** Load `research:philip-morris-lung` on Abdul's machine so `test_memory` passes: `uv run python loader.py --case philip-morris-lung --rebuild` needs `cases/philip-morris-lung/raw/` from Aaryan (the cache is not in git) (→ Abdul + Aaryan). Aaryan, Oct 17: zipped as `data/tietrace-pmi-raw.zip` (21 MB, no key inside); unzip it in the repo root
+- [x] Fix the 6 `test_discover` failures (Aaryan, Oct 17): `encoding="utf-8"` on 43 text-mode reads/writes across the repo; discover saves its case file before printing. **Abdul: re-run on Windows to confirm**
+- [x] Fix the 6 `test_obsidian` failures on Windows (Aaryan, Oct 17): CTRL_BREAK_EVENT + SIGBREAK handler, symlink sub-step skipped only on Windows with a `mklink /J` fallback; found and fixed a junctioned `.trash` / export-folder escape. **Abdul: re-run on Windows to confirm**
+- [x] `test_research`: cold-start `bridges3_hub` (Aaryan, Oct 17): the Tier-A filter scanned a 3,035-id list per path; now a hash join. Biggest hub 1.2 s → 0.21 s cold; output identical (2,340 calls compared by the Reviewer); the order is now total so LIMIT is deterministic; limit unchanged
 - [ ] Choose a licence for our own code and add `LICENSE` (decide together) (→ Abdul + Aaryan)
-- [ ] Decision D9 recorded as decided (case slug is a tool argument, newsroom stays env-only): copy it into `docs/mcp-spec.md` section 3 and the redesign with `(decided by Aaryan)` if not there yet (→ unassigned)
-- [ ] E5 profile hand-check: a person fills the verdict columns in `eval/e5_sample.md` (50 authors), then the error rate goes to `eval/results.md` and the README "limits" (→ unassigned)
-- [ ] Tier meaning follow-up from E11: check a DOI with two evidence items prints both labels correctly in notes (`checkpoints.md` 7 follow-up) (→ unassigned)
+- [x] Decision D9 recorded as decided (case slug is a tool argument, newsroom stays env-only) (Aaryan, Oct 17): marked in `docs/mcp-spec.md` section 4 ("Case", where the rule lives) and redesign section 6, both `(decided by Aaryan, Oct 16)`
+- [ ] E5 profile hand-check: a person fills the verdict columns in `eval/e5_sample.md` (50 authors), then the error rate goes to `eval/results.md` and the README "limits" (→ Aaryan). Aaryan, Oct 17: AI pre-check done (`eval/e5_precheck.py`, column `AI suggestion (not a verdict)`, Reviewer PASS); the human marks are still to do. Should-fix for Abdul: `e5_sample.py` overwrites `e5_sample.md` (and would wipe human marks); add a `--force` guard?
+- [x] Tier meaning follow-up (Aaryan, Oct 17): a DOI with two evidence items now prints them as separate groups split by " | " (DOIs split by "; "); test in `test_notes`
 
 ## P2-1. Hardening (`IMPROVEMENT.md` 5g, D11, D12)
 - [ ] A Claude Code `PreToolUse` hook that denies `loader.py` calls with `--refresh`, or without a valid `--case` (so the model cannot spend the API budget); unit-test the hook (→ unassigned)
 - [ ] Deny rule for reading `.env` in `.claude/settings.json`; check the exact rule syntax in the Claude Code settings docs first (not yet verified) (→ unassigned)
 - [ ] Pre-flight RAM check before a build: `INFO memory` against the Docker limit (`maxmemory` is 0, so it is not a safe guard); refuse to start when the new graph would not fit (→ unassigned)
-- [ ] Confirm `total_graph_sz_mb` is written to every `status.json` after a build (the loader code calls it; check a real file) (→ unassigned)
+- [x] Confirm `total_graph_sz_mb` is written to every `status.json` after a build (the loader code calls it; check a real file): present in all three, obesity-coke 784, obesity-coke-staged 780, philip-morris-lung 726 MB (Aaryan, Oct 17)
 - [ ] Optional: Redis ACL user limited to `research:*` with `+graph.ro_query +graph.list`; test it first, cut it if short on time (→ unassigned)
 - [ ] `requirepass` on FalkorDB, and CI (open items from the hardening round) (→ unassigned)
 - [ ] Idle-graph policy: `GRAPH.DELETE` graphs not in use, keep the raw cache so a rebuild costs 0 API calls; add the commands to `CLAUDE.md` (6-8 graphs fit in Docker's ~7.75 GiB) (→ unassigned)

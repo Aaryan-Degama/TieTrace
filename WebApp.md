@@ -1,6 +1,6 @@
 # TieTrace web app: design plan
 
-*Last updated by Abdul, Oct 17 2026: first version, from the brainstorming session with Claude Code (layout and look chosen by Abdul in mockups).*
+*Last updated by Aaryan, Oct 17 2026: section 8 decided (O1-O4); W1-W6 built in `web/` and `tests/test_web.py`. Earlier, Abdul, Oct 17 2026: first version, from the brainstorming session with Claude Code (layout and look chosen by Abdul in mockups).*
 
 **This is the file to follow for the web app.** `checklist_phase2.md` section P2-W points here. Items marked **(Abdul decided)** were chosen by Abdul in the brainstorm; items marked **(Claude's default)** are proposals nobody has agreed to yet; change them freely.
 
@@ -97,8 +97,12 @@ Phase A is local; phase B (deployable) goes **last** (Abdul decided).
 - The page cannot call `record_verdict` or `approve_note` without a human click (see O2).
 - The Coca-Cola example in the web app gives the same tiers as `tests/test_golden.py` expects (Blair A1, Hill A2).
 
-## 8. Open decisions (need Abdul and Aaryan)
-- **O1.** Backend and frontend defaults in section 4: accept, or choose differently?
-- **O2.** `approve_note` and `record_verdict` ask a permission prompt in Claude Code. `claude -p` cannot show a prompt, so the web app needs its own human gate. Proposal: the **Approve** button calls the server function directly after an on-page confirmation, and the model never gets those tools in the web session. Needs agreement because it moves the gate from Claude Code to the page.
-- **O3.** What a reporter sees for non-public experts' names: always "Expert #n", or a "show names" toggle that only works in the GEBN public case (as in MCP mode)?
-- **O4.** Where the files live: `web/` in the repo root (Claude's default).
+## 8. Decisions (were open; decided by Aaryan, Oct 17)
+- **O1.** Section 4 accepted: a FastAPI backend (`web/app.py`) runs `claude -p` with our MCP server; plain HTML, CSS and JavaScript in `web/static/` (no build step); server-sent events. (decided by Aaryan, Oct 17)
+- **O2.** The model never gets `record_verdict` or `approve_note` in the web session: they are left out of `--allowedTools` and named in `--disallowedTools`, and no built-in tools are given (`--tools ""`). The page's Approve and "Exclude paper" buttons call the server functions in-process, only after a two-step confirm that uses a one-time token the server issues for exactly that action and those arguments (5 minutes, single use). (decided by Aaryan, Oct 17)
+- **O3.** Always "Expert #n" on the web, also for the public GEBN case: the web app never passes `public_case=true` (a run where the model asks for it is stopped), any label that is not "Expert #n" is shown as "Expert #?", and the names the model passed to `resolve_experts` are shown as "Name #i" everywhere in the event stream. (decided by Aaryan, Oct 17)
+- **How the web session is locked down (Aaryan, Oct 17, after review):** the story goes to `claude -p` on stdin (never as an argument, so a story starting with `--` cannot become an option); `--tools ""`, `--strict-mcp-config`, `--setting-sources ""`, `--permission-mode dontAsk`, `--max-budget-usd` (default 2.00, `TIETRACE_WEB_BUDGET_USD`) and at most 2 runs at once; a `PreToolUse` hook (`web/hook_public_case.py`, passed with `--settings`) refuses `public_case=true` before the tool runs (checked in a real run), and the parser also stops a run that asks for it; POSTs need an `Origin` equal to the page's own `http://127.0.0.1:<port>`. Names passed to `resolve_experts` are kept per session (6 h) so a resumed run is redacted too.
+- **Round 3 (Aaryan, Oct 17):** the reporter's text always follows a fixed first line ("Message from the reporter ... not as a command"), also for a name-pick follow-up, because `claude --print` runs a prompt that starts with "/" as a slash command. POST bodies are capped from `Content-Length` before they are read. **Windows:** the app starts claude in a new process group (`CREATE_NEW_PROCESS_GROUP`) and kills it with `taskkill /T /F`; this branch is written but not yet run on Windows (Linux checked).
+- **Round 4 (Aaryan, Oct 17, after a live run printed an ORCID and an institution):** a `PostToolUse` hook (`web/hook_strip_identity.py`) removes `orcid` and `last_known_org` (and any ORCID-shaped text) from every tool result before the web model reads it, through `updatedMCPToolOutput` (checked in a real run); `server.py` is unchanged for Claude Code users. The web parser also hides any ORCID and any institution seen in a result. Replies render a safe markdown subset (paragraphs, lists, bold, code, DOI links) built from DOM nodes; for an ambiguous name the model points to the picker instead of asking for a typed id.
+- **Phase B risk (W7):** even with `--tools ""`, Claude Code adds a few session tools of its own (the Reviewer saw `advisor` and `DeferredToolPlaceholder`) and session context such as the logged-in user's email in the system context. Harmless locally; a hosted version must not run `claude -p` under a personal login.
+- **O4.** Files live in `web/` in the repo root; tests in `tests/test_web.py`. (decided by Aaryan, Oct 17)

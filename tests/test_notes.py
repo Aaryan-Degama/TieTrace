@@ -748,6 +748,31 @@ def test_reviewer4_typed_text_cannot_forge_a_line_of_the_note():
     assert not any(x.startswith("- fake") for x in lines), md
 
 
+# ---------- phase 2 loose end (Aaryan, Oct 17) ----------
+
+def test_one_doi_with_two_evidence_items_prints_two_readable_groups():
+    """10.1155/2016/8236439 is Blair's evidence twice (funded by Coca-Cola and by the Coca-Cola Foundation). Each item is its own
+    group, split by ' | ' (DOIs are split by '; '), so two tiers never run together (checkpoints.md 7 follow-up, E11)."""
+    doi = "10.1155/2016/8236439"
+    want = q(RG, "MATCH (p:Person {oa_id: $id})-[:AUTHORED]->(w:Work {doi: $doi})-[:FUNDED_BY]->(f:Funder {target: true}) "
+                 "RETURN f.name ORDER BY f.name", {"id": BLAIR, "doi": doi})
+    assert len(want) >= 2, f"fixture: {doi} should have 2+ target funders, got {want}"
+    fresh()
+    c = ok(server.open_case("Two labels", "Coca-Cola", "obesity", [BLAIR]))
+    items = [e for e in ok(server.tie_report(BLAIR))["evidence"] if e["doi"] and e["doi"].lower().endswith(doi)]
+    assert len(items) >= 2, items
+    d = ok(server.draft_note(c["case_id"], [{"expert_id": BLAIR, "text": "Expert #1: ties found in the research record.",
+                                             "evidence_refs": [doi]}]))
+    md = ok(server.approve_note(d["note_id"], "Reviewer"))["markdown"]
+    line = next(x for x in md.splitlines() if f"[{doi}]" in x)
+    groups = line.split(f"[{doi}](https://doi.org/{doi}) (", 1)[1].rsplit(")", 1)[0].split(" | ")
+    assert len(groups) == len(items), (groups, items)
+    for e in items:
+        assert f"{e['kind']} {e['via']}, tier {e['tier']}, {e['topic_label']}, {e['year']}" in groups, (e, groups)
+    for g in groups:
+        assert g.count("tier ") == 1 and ";" not in g, g
+
+
 def cleanup():
     for g in DB.list_graphs():
         if g.startswith("newsroom:zz-test-notes"):

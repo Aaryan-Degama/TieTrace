@@ -629,7 +629,7 @@ def note_markdown(note, reviewer, approved_at):
             else:
                 links = "; ".join(
                     f"[{x_['doi']}](https://doi.org/{urllib.parse.quote(x_['doi'], safe='/')}) ("
-                    + ", ".join(f"{e['kind']} {e['via']}, tier {e['tier']}, {e['topic_label']}, {e['year']}"
+                    + " | ".join(f"{e['kind']} {e['via']}, tier {e['tier']}, {e['topic_label']}, {e['year']}"
                                 for e in x_["evidence"]) + ")" for x_ in c["sources"])
                 lines.append(f"- {c['text']}  \n  Sources: {links}")
         if not mine:

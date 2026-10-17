@@ -262,15 +262,18 @@ def main(argv=None):
     result = {"kind": args.kind, "query": args.query,
               "fetched_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
               **found, "api_calls": loader.api_calls - calls_before, "cost_usd": round(cost[0], 5)}
-    print(json.dumps(result, indent=1, ensure_ascii=False) if args.json else table(result))
-    print(f"API calls: {result['api_calls']}, cost ${result['cost_usd']}", file=sys.stderr)
-    if args.case:
+    if args.case:  # save before printing: a console that cannot show a name must not lose the paid-for result
         out = CASES / args.case / f"candidates_{args.kind}_{query_slug(args.query)}.json"
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps(result, indent=1, ensure_ascii=False) + "\n")
+        out.write_text(json.dumps(result, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
         print(f"saved {out}", file=sys.stderr)
+    print(json.dumps(result, indent=1, ensure_ascii=False) if args.json else table(result))
+    print(f"API calls: {result['api_calls']}, cost ${result['cost_usd']}", file=sys.stderr)
     return result
 
 
 if __name__ == "__main__":
+    for stream in (sys.stdout, sys.stderr):  # a Windows console (cp1252) cannot print a name like 张
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
     main()

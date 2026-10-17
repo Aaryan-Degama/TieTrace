@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import re
+import signal
 import sys
 import time
 import urllib.parse
@@ -222,6 +223,9 @@ def export(vault, newsroom):
     finally:
         memory.GRAPH, memory.SESSION_ID = saved  # leave the memory module as it was (it may serve tools)
     folder = vault / "TieTrace" / newsroom
+    for d in (vault / "TieTrace", folder):  # a linked folder would put every note (and removal) outside the vault
+        if d.is_symlink() or d.is_junction():
+            raise SystemExit(f"{d} is a link (symlink or junction); nothing written")
     folder.mkdir(parents=True, exist_ok=True)
     for tmp in folder.glob(".*.tmp"):  # left by an export that was killed mid-write (empty or marked only)
         if tmp.is_file() and not tmp.is_symlink() and (tmp.stat().st_size == 0 or owned(tmp)):
@@ -249,7 +253,7 @@ def export(vault, newsroom):
         warn(f"newsroom:{newsroom} has no cases but {len(stale)} TieTrace notes exist; not removing them")
         return written, removed
     trash = vault / ".trash"  # Obsidian's own trash folder: a removed note can be restored
-    if stale and (trash.is_symlink() or (trash.exists() and not trash.is_dir())):
+    if stale and (trash.is_symlink() or trash.is_junction() or (trash.exists() and not trash.is_dir())):
         warn(f"{trash} is a link or not a folder; old TieTrace notes are not removed")
         return written, removed
     for p in stale:
@@ -257,7 +261,7 @@ def export(vault, newsroom):
         for n in range(1000):
             dest = trash / (p.name if n == 0 else f"{p.stem} {n}.md")
             try:
-                open(dest, "x").close()  # claims the name: fails if any file already has it
+                open(dest, "x", encoding="utf-8").close()  # claims the name: fails if any file already has it
                 break
             except FileExistsError:
                 continue
@@ -280,6 +284,8 @@ def main():
     if not memory.NEWSROOM_RE.fullmatch(a.newsroom):
         raise SystemExit("newsroom id: lower case letters, digits, - or _, 1 to 40 characters")
     folder = Path(a.vault) / "TieTrace" / a.newsroom
+    if hasattr(signal, "SIGBREAK"):  # Windows: Ctrl-Break (and CTRL_BREAK_EVENT) stops the loop like Ctrl-C
+        signal.signal(signal.SIGBREAK, signal.default_int_handler)
     try:
         while True:
             try:

@@ -50,10 +50,10 @@ def fake_get(url, params=None, timeout=None):
         r = real_get(url, params=params, timeout=timeout)
         assert r.status_code == 200, (r.status_code, req["path"])
         FIX.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({"request": req, "response": r.json()}, ensure_ascii=False) + "\n")
+        path.write_text(json.dumps({"request": req, "response": r.json()}, ensure_ascii=False) + "\n", encoding="utf-8")
         return r
     assert path.exists(), f"no recorded fixture for {req}"
-    return Reply(json.loads(path.read_text())["response"])
+    return Reply(json.loads(path.read_text(encoding="utf-8"))["response"])
 
 
 def run(*argv):
@@ -203,9 +203,38 @@ def test_case_file_written():
     slug = "test-discover-tmp"
     try:
         r, _ = run("funders", "philip morris", "--case", slug)
-        saved = json.loads((discover.CASES / slug / "candidates_funders_philip-morris.json").read_text())
+        saved = json.loads((discover.CASES / slug / "candidates_funders_philip-morris.json").read_text(encoding="utf-8"))
         assert saved == r
     finally:
+        shutil.rmtree(discover.CASES / slug, ignore_errors=True)
+
+
+def test_case_file_saved_even_if_the_console_cannot_print_a_name():
+    # Windows cp1252 console: printing a name like 张 raises UnicodeEncodeError; the result must already be saved.
+    class Cp1252Console(io.StringIO):
+        def write(self, text):
+            text.encode("cp1252")  # raises on any character cp1252 lacks, like the real console
+            return super().write(text)
+    slug = "test-discover-tmp-enc"
+    real = discover.table
+    try:
+        discover.table = lambda result: "张 " + real(result)  # a name the console cannot show
+        httpx.get, key = fake_get, loader.api_key
+        if not RECORD:
+            loader.api_key = lambda: FAKE_KEY
+        try:
+            with contextlib.redirect_stdout(Cp1252Console()), contextlib.redirect_stderr(io.StringIO()):
+                discover.main(["funders", "philip morris", "--case", slug])
+            raise AssertionError("the fake console did not refuse the name")
+        except UnicodeEncodeError:
+            pass
+        finally:
+            httpx.get, loader.api_key = real_get, key
+        path = discover.CASES / slug / "candidates_funders_philip-morris.json"
+        assert path.exists(), "nothing saved: the print came before the save"
+        assert json.loads(path.read_text(encoding="utf-8"))["kind"] == "funders"
+    finally:
+        discover.table = real
         shutil.rmtree(discover.CASES / slug, ignore_errors=True)
 
 
@@ -240,7 +269,7 @@ def test_key_never_in_output():
         r, out = run(*argv)
         assert FAKE_KEY not in out and FAKE_KEY not in json.dumps(r)
     for f in FIX.glob("*.json"):  # fixtures were recorded with the real key: it must not be stored
-        assert "api_key" not in f.read_text(), f
+        assert "api_key" not in f.read_text(encoding="utf-8"), f
 
 
 def test_live_smoke():
@@ -312,7 +341,7 @@ def test_case_file_keeps_earlier_searches():
     try:
         run("authors", "Maria Garcia", "--case", slug)
         run("authors", "Yoni Freedhoff", "--case", slug)
-        saved = " ".join(p.read_text() for p in (discover.CASES / slug).rglob("*.json"))
+        saved = " ".join(p.read_text(encoding="utf-8") for p in (discover.CASES / slug).rglob("*.json"))
         assert "A5100654036" in saved and "A5045483115" in saved, "first search overwritten"
     finally:
         shutil.rmtree(discover.CASES / slug, ignore_errors=True)

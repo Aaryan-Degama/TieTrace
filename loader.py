@@ -175,7 +175,7 @@ fetch_dates = set()  # fetched_at of every cache used, for Meta.data_version
 
 
 def api_key():
-    text = (Path(__file__).parent / ".env").read_text()
+    text = (Path(__file__).parent / ".env").read_text(encoding="utf-8")
     return re.search(r"OPENALEX_API_KEY=(\S+)", text).group(1).strip("\"'")
 
 
@@ -257,7 +257,7 @@ def read_cache(name, params, refresh):
     path = RAW / f"{name}.jsonl"
     if refresh or not path.exists():
         return None
-    with path.open() as f:
+    with path.open(encoding="utf-8") as f:
         header = json.loads(f.readline() or "{}")
         if header.get("params") != params:
             return None
@@ -285,7 +285,7 @@ def fetch_pages(name, params, limit, refresh):
             cursor = page["meta"].get("next_cursor") if page["results"] else None
             time.sleep(0.05)  # stay well under 30 requests/second
         tmp = RAW / f"{name}.tmp"
-        tmp.write_text(header_line(key) + "".join(json.dumps(p) + "\n" for p in pages))
+        tmp.write_text(header_line(key) + "".join(json.dumps(p) + "\n" for p in pages), encoding="utf-8")
         tmp.rename(RAW / f"{name}.jsonl")  # only a complete download becomes the cache
     return [w for p in pages for w in p["results"]][:limit]
 
@@ -295,7 +295,7 @@ def fetch_one(name, path, params, refresh):
     got = read_cache(name, {"path": path, **params}, refresh)
     if got is None:
         got = [get(path, params)]
-        (RAW / f"{name}.jsonl").write_text(header_line({"path": path, **params}) + json.dumps(got[0]) + "\n")
+        (RAW / f"{name}.jsonl").write_text(header_line({"path": path, **params}) + json.dumps(got[0]) + "\n", encoding="utf-8")
     return got[0]
 
 
@@ -307,13 +307,13 @@ def fetch_by_id(name, ids, fetch_chunk, params, refresh):
     if lines is None and BORROWED:  # never truncate the other case's cache file
         raise SystemExit(f"case {SLUG}: no matching {name} cache in {CONFIG['cache_from']}; this demo copy never calls the API")
     if lines is None:
-        path.write_text(header_line(params))
+        path.write_text(header_line(params), encoding="utf-8")
     for line in lines or []:
         cache.update(line)
     missing = [i for i in ids if i not in cache]
     chunks = [missing[i:i + 100] for i in range(0, len(missing), 100)]
     print(f"{name}: {len(cache)} cached, {len(missing)} to fetch in {len(chunks)} calls", flush=True)
-    with ThreadPoolExecutor(max_workers=5) as pool, path.open("a") as f:
+    with ThreadPoolExecutor(max_workers=5) as pool, path.open("a", encoding="utf-8") as f:
         for k, got in enumerate(pool.map(fetch_chunk, chunks), 1):
             f.write(json.dumps(got) + "\n")
             f.flush()  # a killed run keeps what it already fetched
@@ -646,13 +646,13 @@ def write_status(status, **fields):
     """cases/<slug>/status.json: building / ready / failed. Fields of the last good build are kept,
     because a failed build leaves that graph in place."""
     path = CASES / SLUG / "status.json"
-    old = json.loads(path.read_text()) if path.exists() else {}
+    old = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
     new = {**old, "status": status, "updated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
            **fields}
     if status != "failed":
         new.pop("error", None)
     tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(new, indent=2) + "\n")
+    tmp.write_text(json.dumps(new, indent=2) + "\n", encoding="utf-8")
     tmp.replace(path)
 
 
@@ -670,7 +670,7 @@ def cached(name, key):
     path = RAW / f"{name}.jsonl"
     if not path.exists():
         return False
-    with path.open() as f:
+    with path.open(encoding="utf-8") as f:
         return json.loads(f.readline() or "{}").get("params") == key
 
 
