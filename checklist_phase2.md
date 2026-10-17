@@ -1,6 +1,6 @@
 # TieTrace checklist, phase 2: improvements after the MVP
 
-*Last updated by Aaryan, Oct 17 2026: ticked P2-3 items 1-5 (Reviewer PASS after 3 rounds; human review time still open). Earlier the same day: ticked P2-2 case-builder skill (Reviewer PASS after 2 rounds). Earlier the same day: ticked Abdul's three P2-0 machine items from his own report. Earlier the same day: ticked P2-1 hardening (Reviewer PASS after 3 rounds). Earlier the same day: ticked the licence (MIT); added the `--force` guard to `e5_sample.py`. Earlier the same day: ticked the `total_graph_sz_mb` check. Earlier: ticked W1-W6 (web app, Reviewer PASS after 3 rounds). Before that, by Abdul, Oct 17 2026: added section P2-W (web app, follow `WebApp.md`) before P2-0. Earlier the same day: first version, built from `IMPROVEMENT.md` and the state of `checkpoints.md` after checkpoint 9 started.*
+*Last updated by Aaryan, Oct 17 2026: ticked 5 of 7 P2-4 items (Reviewer PASS after 2 rounds). Earlier the same day: ticked P2-3 items 1-5 (Reviewer PASS after 3 rounds; human review time still open). Earlier the same day: ticked P2-2 case-builder skill (Reviewer PASS after 2 rounds). Earlier the same day: ticked Abdul's three P2-0 machine items from his own report. Earlier the same day: ticked P2-1 hardening (Reviewer PASS after 3 rounds). Earlier the same day: ticked the licence (MIT); added the `--force` guard to `e5_sample.py`. Earlier the same day: ticked the `total_graph_sz_mb` check. Earlier: ticked W1-W6 (web app, Reviewer PASS after 3 rounds). Before that, by Abdul, Oct 17 2026: added section P2-W (web app, follow `WebApp.md`) before P2-0. Earlier the same day: first version, built from `IMPROVEMENT.md` and the state of `checkpoints.md` after checkpoint 9 started.*
 
 **What this file is.** `checkpoints.md` is the plan to ship by **Oct 18, 6 PM IST**. This file is everything in `IMPROVEMENT.md` that is **not built yet**, plus loose ends found along the way. It is *not* part of the submission: do not start phase 2 work until the submission is confirmed, except the items marked **before submit**.
 
@@ -17,7 +17,7 @@ Status key: ⬜ not started · 🟨 in progress · ✅ done · ✂️ cut
 | P2-1 | Hardening (`IMPROVEMENT.md` 5g) | after submit | ✅ |
 | P2-2 | Case-builder skill and agent (5e polish) | after submit | ✅ |
 | P2-3 | Corporate-family candidate pipeline (5h) | after submit | 🟨 |
-| P2-4 | Data quality and scale | after submit | ⬜ |
+| P2-4 | Data quality and scale | after submit | 🟨 (5 of 7; profile guard waits on E5, COAUTH slimming on a team decision) |
 | P2-5 | Future work, document only (5i) | later | ⬜ |
 
 ---
@@ -70,13 +70,16 @@ Status key: ⬜ not started · 🟨 in progress · ✅ done · ✂️ cut
 - [ ] Measure the real human review time (the "under an hour" estimate is a guess) (→ Aaryan). Needs a person: reviewer checklist in `eval/results.md` P2-3
 
 ## P2-4. Data quality and scale
-- [ ] Measure what the notes only estimated: build time and API calls for a new case, full-graph load time, snapshot time; write them to `eval/results.md` (→ unassigned)
-- [ ] Verify the `RENAME` swap with in-flight queries, and keep the pinned test (undocumented by FalkorDB) (→ unassigned)
+- [x] Measure what the notes only estimated: build time and API calls for a new case, full-graph load time, snapshot time; write them to `eval/results.md`: from records only (PMI new case 915 calls / 13 min; rebuild write+swap 41-45 s; restart load 4.8 s; snapshot 2-3 s); full rebuild wall time still to measure in a human terminal (Aaryan, Oct 17)
+- [x] Verify the `RENAME` swap with in-flight queries, and keep the pinned test (undocumented by FalkorDB): readers in flight finish on the old graph with no errors, the next read sees the new one; `tests/test_rename_swap.py` (scratch keys only) (Aaryan, Oct 17)
 - [ ] Author profile guard: replace the "2000-works anomaly" guess with a measured rule, using the E5 sample (→ unassigned)
-- [ ] Per-expert funder-coverage denominator in every no-tie scope (works with and without `funders.id:!null`): check it is in all no-tie paths, including a second case (→ unassigned)
+  - Not started (Aaryan, Oct 17): needs the E5 human marks in `eval/e5_sample.md`, which are not done yet.
+- [x] Per-expert funder-coverage denominator in every no-tie scope (works with and without `funders.id:!null`): check it is in all no-tie paths, including a second case: fixed `check_case` (per-expert shares were merged into the batch scope), added to empty `bridges` and tier-NONE `tie_report`; tests on both cases (Aaryan, Oct 17)
 - [ ] Slim the COAUTH list properties (about 75% of the graph; a data-model change, so a team decision first) (→ unassigned)
-- [ ] Re-run E1/E2 style checks on the second case so the tier claims are not Coca-Cola-only (→ unassigned)
-- [ ] Persistence: write a `docker` helper note in `CLAUDE.md` for `redis-cli SAVE` before closing Docker Desktop; keep a `GRAPH.COPY` backup of each case (→ unassigned)
+  - Not started (Aaryan, Oct 17): changes the data model, so it waits for a team decision with Abdul.
+- [x] Re-run E1/E2 style checks on the second case so the tier claims are not Coca-Cola-only: `--case` on `eval/e1.py`/`e2.py`; PMI E1 FAIL 0.03x, E2 underpowered (3 positives); Coca-Cola re-run identical; README claims unchanged (Aaryan, Oct 17)
+- [x] Persistence: write a `docker` helper note in `CLAUDE.md` for `redis-cli SAVE` before closing Docker Desktop; keep a `GRAPH.COPY` backup of each case: SAVE note in CLAUDE.md (incl. Abdul's `falkordb-main`); GRAPH.COPY tested on scratch only (see note) (Aaryan, Oct 17)
+  - Aaryan, Oct 17: `GRAPH.COPY` of the real case graphs was deliberately not done (a copy needs 780/726 MB more RAM; about 4 GiB was free). Replacement: the raw cache plus `--rebuild` (0 API calls), and `docker cp` of the volume (CLAUDE.md). `GRAPH.COPY` was tested on a scratch graph only.
 
 ## P2-5. Future work (document only, build later)
 - [ ] `start_build` / `build_status` tools, MCP Tasks, an elicitation gate: only after checking SDK support (`mcp` 2.3.0 has no Tasks server) and keeping the "no model-reachable write" rule (→ n/a)

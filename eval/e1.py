@@ -10,7 +10,7 @@ Method in plain words:
                  (same number of people from each band), drawn 100 times with a fixed seed.
                  Placebo rate = share of U (without the circle itself) with a COAUTH_B link to the circle.
   * Lift = real rate / mean placebo rate.
-Run:  FALKORDB_PORT=6380 uv run python eval/e1.py
+Run:  FALKORDB_PORT=6380 uv run python eval/e1.py   [--case philip-morris-lung]
 """
 import math
 import random
@@ -20,6 +20,7 @@ from collections import defaultdict
 import common as c
 import research
 
+c.use_case_arg()  # --case <slug>; default obesity-coke (P2-4)
 SEED = 20261016
 DRAWS = 100          # redesign section 7
 BOOT = 1000          # bootstrap replicates

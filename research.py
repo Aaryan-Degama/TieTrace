@@ -646,6 +646,8 @@ def _tie_report(log, expert_id, label, public_case):
             "check_id": None}
     scope = {"years": _years(meta), "load_scope": meta["load_scope"], **_coverage(log),
              "caveats": _caveats(log)}
+    if tier == "NONE":  # a no tie always carries this expert's own funder share too (P2-4)
+        scope["expert_works"], _, scope["expert_funder_coverage"] = _expert_funder_coverage(log, expert_id)
     return _ok(data, log, scope, warnings)
 
 
@@ -810,6 +812,10 @@ def _bridges(log, expert_id, depth, limit, label, public_case):
                              "bridge_count and the path order were not recomputed")
     meta = _meta(log)
     scope = {"hops": depth, "years": _years(meta), "load_scope": meta["load_scope"]}
+    if not paths:  # no path found is a no tie at this depth: same funder shares as check_no_tie (P2-4)
+        cov = _coverage(log)
+        scope.update(coverage=cov["coverage"], funder_coverage=cov["funder_coverage"])
+        scope["expert_works"], _, scope["expert_funder_coverage"] = _expert_funder_coverage(log, expert_id)
     # max_flow is cut (checkpoints.md): kept null so the output matches the spec.
     return _ok({"label": label, "paths": paths, "bridge_count": count, "max_flow": None}, log, scope,
                _flag_warnings(person["profile_flag"]) + count_warning)

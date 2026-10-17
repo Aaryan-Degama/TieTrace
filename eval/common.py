@@ -2,6 +2,7 @@
 Reads the graph only through research.ro_query (GRAPH.RO_QUERY), in pages well under the silent
 10,000-row cap. Run from the project root, e.g.:  FALKORDB_PORT=6379 uv run python eval/e1.py
 """
+import argparse
 import os
 import sys
 from pathlib import Path
@@ -13,9 +14,20 @@ import research  # noqa: E402
 from research import GRAPH, JUNK_PARAMS, NOT_JUNK  # noqa: E402
 
 
+def use_case_arg():
+    """--case <slug> for e1.py and e2.py (default obesity-coke, the graph behind the results.md numbers).
+    Every later read in this process, research._tier_a and _staff included, then runs on research:<slug>."""
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--case", default="obesity-coke", help="case slug: reads research:<slug> (read-only)")
+    graph = f"research:{ap.parse_args().case}"
+    research._graph.set(graph)  # the same context variable research.on_graph sets, for the whole script
+    print(f"graph: {graph}")
+    return graph
+
+
 def rq(query, params=None, timeout_ms=120000, row_cap=9000):
-    """One read-only query. Each page must stay below row_cap (< 10,000)."""
-    return research.ro_query(GRAPH, query, params, timeout_ms=timeout_ms, row_cap=row_cap)
+    """One read-only query on the current graph. Each page must stay below row_cap (< 10,000)."""
+    return research.ro_query(research.current_graph(), query, params, timeout_ms=timeout_ms, row_cap=row_cap)
 
 
 def by_ids(query, ids, extra=None, size=1000):

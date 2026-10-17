@@ -1,6 +1,6 @@
 # TieTrace evaluation results (checkpoint 4: E3, E7, E1, E2)
 
-*Last updated by Aaryan, Oct 17 2026: P2-3 round 3 (shareholder mark in its own `flag` field; `apply` refuses shareholder rows with no human source). Before that, Aaryan, Oct 17 2026: P2-3 Reviewer round 2 (shareholder rows now `needs_human_source`; numbers below are from before that change). Before that, Aaryan, Oct 17 2026: added the P2-3 family pipeline section (live Wikidata filter runs, one scratch `propose`). Before that, Aaryan, Oct 17 2026: added the P2-2 case-builder dry run section (two headless `claude -p` runs). Before that, Aaryan, Oct 17 2026: added the E5 AI pre-check section (`eval/e5_precheck.py`). Before that, Abdul, Oct 17 2026: added E4 (max flow vs aggregate, `eval/e4.py`). Before that, Abdul, Oct 16: added E6 (mega-paper ablation, `eval/e6.py`). Before that, Aaryan, Oct 16: 5f funder share now says "topic works" and gives the Meta counts. Before that: added the checkpoint 5f end-to-end run (Philip Morris × lung cancer). Earlier: Abdul, Oct 16: Reviewer fixes (anonymised control, placebo-spread headline interval for E1, paper counts for E3, banned-word cleanup); first full run of `eval/e3_e7.py`, `eval/e1.py`, `eval/e2.py` on `research:obesity-coke` (data version openalex@2026-10-15). The Reviewer has not checked this yet.*
+*Last updated by Aaryan, Oct 17 2026: P2-4 section (build/load/snapshot numbers, RENAME with in-flight readers, GRAPH.COPY, funder shares in every no-tie path, E1/E2 on philip-morris-lung). Before that, Aaryan, Oct 17 2026: P2-3 round 3 (shareholder mark in its own `flag` field; `apply` refuses shareholder rows with no human source). Before that, Aaryan, Oct 17 2026: P2-3 Reviewer round 2 (shareholder rows now `needs_human_source`; numbers below are from before that change). Before that, Aaryan, Oct 17 2026: added the P2-3 family pipeline section (live Wikidata filter runs, one scratch `propose`). Before that, Aaryan, Oct 17 2026: added the P2-2 case-builder dry run section (two headless `claude -p` runs). Before that, Aaryan, Oct 17 2026: added the E5 AI pre-check section (`eval/e5_precheck.py`). Before that, Abdul, Oct 17 2026: added E4 (max flow vs aggregate, `eval/e4.py`). Before that, Abdul, Oct 16: added E6 (mega-paper ablation, `eval/e6.py`). Before that, Aaryan, Oct 16: 5f funder share now says "topic works" and gives the Meta counts. Before that: added the checkpoint 5f end-to-end run (Philip Morris × lung cancer). Earlier: Abdul, Oct 16: Reviewer fixes (anonymised control, placebo-spread headline interval for E1, paper counts for E3, banned-word cleanup); first full run of `eval/e3_e7.py`, `eval/e1.py`, `eval/e2.py` on `research:obesity-coke` (data version openalex@2026-10-15). The Reviewer has not checked this yet.*
 
 Re-run: `FALKORDB_PORT=6380 uv run python eval/e3_e7.py` (7 s), `eval/e1.py` (82 s), `eval/e2.py` (20 s). All seeds are fixed (20261016), so the numbers repeat.
 Pass rules are copied from `tietrace-v2-redesign.md` section 7 and were not changed after seeing results. The score formula is the fixed one (section 4).
@@ -301,6 +301,65 @@ Prompt: "I'm writing about lung cancer screening and Philip Morris. Suggest 5 ex
 6. Unmapped rows cannot reach `case.json`; look an OpenAlex id up with `discover.py institutions` and pass `--openalex-id` only if you are sure it is the same body.
 
 Human review time: not measured yet (needs a person). Aaryan to time one review of the Coca-Cola `candidates.json` and record it here.
+
+## P2-4 data quality and scale
+
+*Aaryan's session (Builder agent), Oct 17 2026, on Aaryan's machine (FalkorDB 4.22.1 in Docker, context `default`, port 6379). Not yet Reviewer-checked. Nothing below needed a build; `loader.py` was not run.*
+
+### Build, load and snapshot numbers (only what was recorded or read)
+
+| Quantity | Number | Source |
+|---|---|---|
+| New case from the API (philip-morris-lung) | **915 API calls, 13 min** | `checkpoints.md` 5f, Aaryan's own build on Oct 16 (the loader prints `API calls this run` and `wall clock`; that print was copied there, it is not stored in `status.json`) |
+| New case from the API (obesity-coke) | **not recorded** (BLOG1 says "about 1,600 API calls", an estimate) | none |
+| Rebuild from cache, graph write phase only | obesity-coke **41 s**, obesity-coke-staged **44 s**, philip-morris-lung **45 s** | `cases/<slug>/status.json`: `updated_at` minus `built_at`. `built_at` is set after the cache is read and rows are built, `updated_at` after writing, self-check, RENAME and the size read. So this leaves out reading the cache and building the rows; it is not the full rebuild time |
+| Rebuild from cache, full wall clock | **to measure** | Aaryan, in his own terminal: `time uv run python loader.py --case philip-morris-lung --rebuild` (0 API calls; needs about 0.73 GB free RAM until the swap). Copy the `API calls this run` and `wall clock` lines here |
+| Full load after a restart (AOF base RDB + incremental AOF) | **4.8 s** for `research:obesity-coke`, `research:philip-morris-lung`, `newsroom:alpha` and the scratch keys (49 keys): base 3.6 s + incr 1.2 s; start to "Ready to accept connections" 4.9 s | `docker logs falkordb`, Oct 17 02:52 UTC restart ("DB loaded from append only file: 4.802 seconds"). `INFO` has no load-time field |
+| Same, Oct 16 restart (81 keys, three research graphs plus leftover staging graphs) | 8.7 s (base 6.8 s + incr 1.9 s) | `docker logs falkordb`, Oct 16 10:01 UTC |
+| Snapshot (background save, `dump.rdb` 125 MB) | **2 s** (`rdb_last_bgsave_time_sec`). Log, from "Background saving started" to "terminated with success": Oct 17 02:53-12:52 UTC, 53 saves, 2.01-3.22 s each; Oct 16 10:06-14:28 UTC, 28 saves, 1.91-2.22 s each. Some of the Oct 17 saves were triggered by test runs (the `100 changes in 300 seconds` rule) | `INFO persistence`, `docker logs falkordb` |
+| Final save on `docker stop` | 1.75 s (16:35:42.055 to 16:35:43.806, Oct 16) | `docker logs falkordb` |
+| AOF rewrite | never ran since the restart (`aof_last_rewrite_time_sec:-1`); AOF now 197 MB (base 126 MB) | `INFO persistence` |
+| Data on the volume | 308 MB (`dump.rdb` + `appendonlydir/`) | `du -sh /var/lib/falkordb/data` in the container |
+
+These are one machine's numbers (16 threads, 15 GiB RAM, about 4.6 GiB available at the time), not a benchmark.
+
+### RENAME swap with in-flight readers (`tests/test_rename_swap.py`)
+
+**FalkorDB does not document this; the test pins what 4.22.1 did here.** Two synthetic scratch graphs (`zz-rename-a` with 1,500 nodes tagged "old", `zz-rename-b` with 1,501 tagged "new"). Four threads start a read-only query that takes about 0.7 s (it reads the tag, counts 2.25 million node pairs, reads the tag again); 0.23 s later the test runs `RENAME zz-rename-b zz-rename-a`, as `loader.write_graph` does.
+
+| What | Seen (3 runs, same each time) |
+|---|---|
+| In-flight readers (4, each spanning the RENAME) | all finished on the **old** graph: first tag "old", 2,250,000 pairs, last tag "old"; no reader switched graphs halfway |
+| Errors | none |
+| RENAME | returned in 0.5 ms, while the readers were still running (it did not wait for them) |
+| A reader after the swap | sees the **new** graph (tag "new", 2,253,001 pairs); `zz-rename-b` is gone; the index is kept |
+
+So a query that is running during a rebuild answers from the old graph, and the next query gets the new one. Not tested: a write query in flight, a graph of real size (the old 780 MB graph is freed only when its last reader ends, which this test does not measure), and other FalkorDB versions. The older pinned test in `tests/test_cases.py` (`test_swap_replaces_the_graph_and_a_failed_build_keeps_the_old_one`) is unchanged.
+
+### GRAPH.COPY (scratch graph only)
+
+`GRAPH.COPY zz-rename-a zz-copy-a` works in 4.22.1: 140 ms for a 51-node graph; the copy keeps its index, does not change when the source changes, and a copy onto an existing key is refused (`destination key already exists`). The copy was deleted. **The research graphs were not copied:** a copy needs as much RAM again (780 MB and 726 MB by `GRAPH.MEMORY`) and this host had about 4 GiB available. Backup advice is in `CLAUDE.md` (raw cache plus `--rebuild` at 0 API calls, and the RDB/AOF files on the volume).
+
+### Funder shares in every no-tie path
+
+Checked on both cases: `check_no_tie`, `check_case` (NONE rows), `tie_report` with tier NONE, `bridges` with no path, `recheck`, and the web cards. Found and fixed: a tier NONE `tie_report` had only the graph's `funder_coverage` (so `recheck`, which reuses its scope, did too); `bridges` with no path had neither; and `check_case` merged each expert's scope into the batch scope, so the batch `scope.expert_funder_coverage` was the **last** NONE expert's share, not anyone's in particular. Now each `check_case` row has its own `expert_funder_coverage` and `expert_works`, and the batch scope has none. Tests: `tests/test_memory.py` (two tier NONE experts per case, with different own shares, recounted by plain Cypher) and `tests/test_web.py` (a `philip-morris-lung` card).
+
+### E1 and E2 on the second case (philip-morris-lung, context only)
+
+Run: `FALKORDB_PORT=6379 uv run python eval/e1.py --case philip-morris-lung` (80 s) and `eval/e2.py --case philip-morris-lung` (11 s). Same code, same seed (20261016), same pass rules, score formula unchanged. Without `--case` both scripts give exactly the Coca-Cola numbers above (re-run Oct 17: every E1 and E2 figure in the sections above came out the same).
+
+| Test | philip-morris-lung | (obesity-coke, for comparison) |
+|---|---|---|
+| E1 Tier B lift | **FAIL: 0.03x (interval 0.02-0.03)**. Real 66 of 63,918 = 0.10%; placebo mean 3.86% (sd 0.16; 3.43-4.37); 100 of 100 circles at or above the real rate | FAIL, 0.96x |
+| E1 Tier C (context only) | 0.72x (0.68-0.76) | 0.76x |
+| E1 sensitivity | topic-paper links only 0.03x; matched on recent activity too 0.04x; half the Tier A people as sources 0.05x | 0.94x, 1.10x, 0.98x |
+| E2 (Y = 2018) | **UNDERPOWERED: 3 positives** (needs 30). AUCs shown only for completeness: volume 0.729, plain count 0.661 / 0.665, weighted 0.665 | FAIL, 119 positives |
+| E2 other years and the A1-only target | 2 positives each (2016, 2017, 2019, A1-only): UNDERPOWERED | |
+| E2 supplementary re-link | 31,815 people, 23 Tier A at 2018, 15 positives: volume 0.904, tier weight 0.900, plain count 0.866, full score 0.933 (too few positives to read anything into) | |
+
+**Why E1 is so low here (a measured fact, the reason is a reading).** Of the 3,649 Tier A people in this graph, only **38** authored a lung-cancer topic paper (obesity-coke: 946 of 3,035). All 3,649 Tier A people together have 429 `COAUTH_B` neighbours, 336 of them Tier A themselves and 93 others (obesity-coke, all 3,035: 1,639, 330 and 1,309). The 38 on a topic paper have 188 `COAUTH_B` neighbours, 121 of them Tier A and 67 others. So Tier A here is a mostly separate group, PMI-funded and PMI-affiliated authors outside the topic sample, and E1's real group and its placebo circles (drawn from topic authors, who sit inside the topic network) are not comparable. This makes the E1 number a statement about how the graph was loaded more than about closeness. The same reason leaves E2 with 3 positives: almost no topic author gets new Tier A evidence later. Counted with `/tmp` scratch Cypher (not kept), read-only.
+
+**What this means.** The tier claims stay as they are: Tier A (direct records with DOIs) is the only finding; Tier B, Tier C and the score are context only, and on the second case they did not pass either (E1 FAIL, E2 UNDERPOWERED). Nothing here supports a Tier B claim for any case. The README must not say Tier B was validated on two cases.
 
 ## Judgement calls for the Reviewer to challenge
 1. E3: only four names could be confirmed publicly; I did not guess a fifth. Hill and Peters are Tier A2 (foundation), so "Tier A" is read as A1 or A2.

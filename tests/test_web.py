@@ -1030,6 +1030,26 @@ def test_live_coca_cola_example_gives_blair_a1_and_hill_a2():
     assert not BANNED.search(dumped)
 
 
+def test_p24_no_tie_cards_on_the_second_case_carry_both_funder_shares():
+    """P2-4 (Aaryan, Oct 17): a tier NONE card from a philip-morris-lung check_case gets that graph's scope."""
+    slug, g = "philip-morris-lung", "research:philip-morris-lung"
+    rows = DB.select_graph(g).ro_query("MATCH (p:Person)-[:AUTHORED]->(w:Work) WHERE NOT w.junk AND NOT ("
+                                       "(p)-[:COAUTH_B]->()) WITH p, count(w) AS k WHERE k >= 3 RETURN p.oa_id "
+                                       "ORDER BY p.oa_id LIMIT 30", timeout=60000).result_set
+    with research.on_graph(g):
+        pid = next(r[0] for r in rows if research.tie_report(r[0])["data"]["tier"] == "NONE")
+    env = server.check_case(expert_ids=[pid], case=slug)
+    evs, _ = feed_all([call("t1", "check_case", {"expert_ids": [pid], "case": slug}), result("t1", env)])
+    cards = [d for e, d in evs if e == "expert"]
+    assert len(cards) == 1 and cards[0]["tier"] == "NONE", cards
+    t = cards[0]["no_tie"]
+    assert t["result"] == "NO_TIE_FOUND" and t["graph"] == g, t
+    fresh = server.check_no_tie(pid, 3, 5, case=slug)["scope"]
+    assert (t["funder_coverage"], t["expert_funder_coverage"], t["expert_works"]) == \
+        (fresh["funder_coverage"], fresh["expert_funder_coverage"], fresh["expert_works"]), (t, fresh)
+    assert 0 < t["funder_coverage"] < 1 and t["funder_coverage"] != 0.563  # this graph's own share, not Coca-Cola's
+
+
 # ---------- runner ----------
 
 if __name__ == "__main__":

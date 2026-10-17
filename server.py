@@ -729,6 +729,7 @@ TIER_ORDER = {"A1": 0, "A2": 1, "B": 2, "C": 3, "NONE": 4}  # the keys of data.c
 # Decided by Aaryan, Oct 16 (E1 and E2 failed): rows are NOT ranked by score or by Tier B/C. Tier A (direct
 # evidence) comes first, then every other checked expert, then failed rows; input order inside each group.
 RANK = {"A1": 0, "A2": 1, "B": 2, "C": 2, "NONE": 2}
+PER_EXPERT = ("expert_funder_coverage", "expert_works")  # one expert's scope keys, on its check_case row
 ORDER_NOTE = ("Tier A1, then A2, then every other checked expert (B, C, NONE mixed), then failed rows; "
               "input order inside each group. Not ranked by score: Tier B/C and the score are context only (E1/E2).")
 
@@ -760,7 +761,8 @@ def _check_case(expert_ids, public_case, kase=None, agent=None):
         for w in env.get("warnings", []):
             if w not in warnings:
                 warnings.append(w)
-        scope.update(env.get("scope", {}))
+        # per-expert funder shares go on that expert's row, never into the batch scope (P2-4)
+        scope.update({k: v for k, v in env.get("scope", {}).items() if k not in PER_EXPERT})
 
     for i, eid in enumerate(expert_ids, 1):
         if time.time() - start > BATCH_BUDGET_S:
@@ -771,7 +773,7 @@ def _check_case(expert_ids, public_case, kase=None, agent=None):
         merge(rep)
         if not rep["ok"]:
             results.append({"label": label, "expert_id": eid, "tier": None, "tier_basis": None, "score": None,
-                            "check_id": None, "no_tie": None, "error": rep["error"]})
+                            "check_id": None, "no_tie": None, "error": rep["error"], **dict.fromkeys(PER_EXPERT)})
             continue
         d = rep["data"]
         no_tie, nt = None, None
@@ -787,7 +789,8 @@ def _check_case(expert_ids, public_case, kase=None, agent=None):
             check_id = _save(saved, kase["id"], rep, nt, agent=agent)
             merge(saved)
         results.append({"label": d["label"], "expert_id": eid, "tier": d["tier"], "tier_basis": d["tier_basis"],
-                        "score": d["score"], "check_id": check_id, "no_tie": no_tie, "error": None})
+                        "score": d["score"], "check_id": check_id, "no_tie": no_tie, "error": None,
+                        **{k: rep["scope"].get(k) for k in PER_EXPERT}})  # None unless tier NONE
 
     codes = {r["error"]["code"] if r["error"] else None for r in results}
     if len(codes) == 1 and codes <= {"DB_ERROR", "NO_GRAPH"}:  # every row failed the same way: the graph is the problem

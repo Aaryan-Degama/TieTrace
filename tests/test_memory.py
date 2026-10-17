@@ -488,6 +488,86 @@ def test_reviewer_h_check_case_by_case_id_orders_and_saves_funder_scope():
     assert snap["no_tie"]["expert_funder_coverage"] == fresh["scope"]["expert_funder_coverage"]
 
 
+# ---------- P2-4 (Aaryan, Oct 17): both funder shares in every no-tie path, on both cases ----------
+SHARE_KEYS = ("funder_coverage", "expert_funder_coverage", "expert_works")
+
+
+def rq(graph, query, params=None):
+    """A read-only research-graph read with its own 60 s timeout (the server default is 1 s)."""
+    return DB.select_graph(graph).ro_query(query, params or {}, timeout=60000).result_set
+
+
+def none_experts(slug, n=2):
+    """n tier NONE experts of research:<slug> with DIFFERENT own funder shares, found by query: people with
+    3+ non-junk works and no COAUTH_B link (so neither B nor C), then confirmed NONE by tie_report."""
+    rows = rq(f"research:{slug}", "MATCH (p:Person)-[:AUTHORED]->(w:Work) WHERE NOT w.junk "
+             "AND NOT (p)-[:COAUTH_B]->() WITH p, count(w) AS k WHERE k >= 3 "
+             "RETURN p.oa_id ORDER BY p.oa_id LIMIT 60")
+    picked, shares = [], set()
+    with research.on_graph(f"research:{slug}"):
+        for (pid,) in rows:
+            rep = research.tie_report(pid)
+            share = rep["scope"].get("expert_funder_coverage")
+            if rep["ok"] and rep["data"]["tier"] == "NONE" and share not in shares:
+                picked.append(pid)
+                shares.add(share)
+                if len(picked) == n:
+                    return picked
+    raise AssertionError(f"{slug}: found only {picked} as tier NONE with different shares")
+
+
+def recount_share(slug, pid):
+    """(works, share) recounted here with plain Cypher, not through research.py."""
+    g = f"research:{slug}"
+    works = {r[0] for r in rq(g, "MATCH (p:Person)-[:AUTHORED]->(w:Work) WHERE p.oa_id = $id AND NOT w.junk "
+                                "RETURN DISTINCT w.oa_id", {"id": pid})}
+    funded = {r[0] for r in rq(g, "MATCH (p:Person)-[:AUTHORED]->(w:Work)-[:FUNDED_BY]->(:Funder) WHERE p.oa_id = $id "
+                                 "AND NOT w.junk RETURN DISTINCT w.oa_id", {"id": pid})}
+    return len(works), (round(len(funded) / len(works), 3) if works else None)
+
+
+def test_p24_every_no_tie_path_carries_both_funder_shares_on_both_cases():
+    for slug, company, topic in (("obesity-coke", "Coca-Cola", "obesity"),
+                                 ("philip-morris-lung", "Philip Morris International", "lung cancer")):
+        pids = none_experts(slug)
+        with research.on_graph(f"research:{slug}"):
+            span = server._span()
+        want = {}
+        for pid in pids:
+            nt = server.check_no_tie(pid, 3, span, case=slug)
+            assert ok(nt)["result"] == "NO_TIE_FOUND", (slug, pid)
+            s = nt["scope"]
+            assert (s["expert_works"], s["expert_funder_coverage"]) == recount_share(slug, pid), (slug, pid, s)
+            assert 0 < s["funder_coverage"] < 1 and s["graph"] == f"research:{slug}"
+            want[pid] = {k: s[k] for k in SHARE_KEYS}
+            tr = server.tie_report(pid, case=slug)
+            assert ok(tr)["tier"] == "NONE" and {k: tr["scope"].get(k) for k in SHARE_KEYS} == want[pid], (slug, tr["scope"])
+            for depth in (2, 3):
+                br = server.bridges(pid, depth, case=slug)
+                assert ok(br)["paths"] == [] and {k: br["scope"].get(k) for k in SHARE_KEYS} == want[pid], (slug, depth)
+        assert len({w["expert_funder_coverage"] for w in want.values()}) == 2  # the two experts differ
+        # check_case: each row keeps its own share; the batch scope never carries one expert's share
+        for res in (server.check_case(expert_ids=pids, case=slug),
+                    server.check_case(case_id=ok(server.open_case("P2-4 scope", company, topic, pids, case=slug))["case_id"])):
+            rows = {r["expert_id"]: r for r in ok(res)["results"]}
+            for pid in pids:
+                r = rows[pid]
+                assert r["no_tie"] == "NO_TIE_FOUND" and (r["expert_funder_coverage"], r["expert_works"]) == \
+                    (want[pid]["expert_funder_coverage"], want[pid]["expert_works"]), (slug, r)
+            assert "expert_funder_coverage" not in res["scope"] and "expert_works" not in res["scope"], res["scope"]
+            assert res["scope"]["funder_coverage"] == want[pids[0]]["funder_coverage"]
+        rc = server.recheck(rows[pids[1]]["check_id"])
+        assert ok(rc)["after"]["no_tie"] == "NO_TIE_FOUND"
+        assert {k: rc["scope"].get(k) for k in SHARE_KEYS} == want[pids[1]], (slug, rc["scope"])
+
+
+def test_p24_check_case_rows_with_a_tie_carry_null_shares():
+    res = ok(server.check_case(expert_ids=[BLAIR, "A0"]))
+    rows = {r["expert_id"]: r for r in res["results"]}
+    for pid in (BLAIR, "A0"):  # Tier A1 and an unknown id: no no-tie, so no expert share
+        assert (rows[pid]["expert_funder_coverage"], rows[pid]["expert_works"]) == (None, None), rows[pid]
+
+
 def cleanup():
     for g in (NR, NR2):
         if g in DB.list_graphs():
