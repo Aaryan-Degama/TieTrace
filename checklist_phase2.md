@@ -1,6 +1,6 @@
 # TieTrace checklist, phase 2: improvements after the MVP
 
-*Last updated by Aaryan, Oct 17 2026: ticked W1-W6 (web app, Reviewer PASS after 3 rounds). Before that, by Abdul, Oct 17 2026: added section P2-W (web app, follow `WebApp.md`) before P2-0. Earlier the same day: first version, built from `IMPROVEMENT.md` and the state of `checkpoints.md` after checkpoint 9 started.*
+*Last updated by Aaryan, Oct 17 2026: ticked the `total_graph_sz_mb` check. Earlier the same day: ticked W1-W6 (web app, Reviewer PASS after 3 rounds). Before that, by Abdul, Oct 17 2026: added section P2-W (web app, follow `WebApp.md`) before P2-0. Earlier the same day: first version, built from `IMPROVEMENT.md` and the state of `checkpoints.md` after checkpoint 9 started.*
 
 **What this file is.** `checkpoints.md` is the plan to ship by **Oct 18, 6 PM IST**. This file is everything in `IMPROVEMENT.md` that is **not built yet**, plus loose ends found along the way. It is *not* part of the submission: do not start phase 2 work until the submission is confirmed, except the items marked **before submit**.
 
@@ -49,7 +49,7 @@ Status key: ⬜ not started · 🟨 in progress · ✅ done · ✂️ cut
 - [ ] A Claude Code `PreToolUse` hook that denies `loader.py` calls with `--refresh`, or without a valid `--case` (so the model cannot spend the API budget); unit-test the hook (→ unassigned)
 - [ ] Deny rule for reading `.env` in `.claude/settings.json`; check the exact rule syntax in the Claude Code settings docs first (not yet verified) (→ unassigned)
 - [ ] Pre-flight RAM check before a build: `INFO memory` against the Docker limit (`maxmemory` is 0, so it is not a safe guard); refuse to start when the new graph would not fit (→ unassigned)
-- [ ] Confirm `total_graph_sz_mb` is written to every `status.json` after a build (the loader code calls it; check a real file) (→ unassigned)
+- [x] Confirm `total_graph_sz_mb` is written to every `status.json` after a build (the loader code calls it; check a real file): present in all three, obesity-coke 784, obesity-coke-staged 780, philip-morris-lung 726 MB (Aaryan, Oct 17)
 - [ ] Optional: Redis ACL user limited to `research:*` with `+graph.ro_query +graph.list`; test it first, cut it if short on time (→ unassigned)
 - [ ] `requirepass` on FalkorDB, and CI (open items from the hardening round) (→ unassigned)
 - [ ] Idle-graph policy: `GRAPH.DELETE` graphs not in use, keep the raw cache so a rebuild costs 0 API calls; add the commands to `CLAUDE.md` (6-8 graphs fit in Docker's ~7.75 GiB) (→ unassigned)
