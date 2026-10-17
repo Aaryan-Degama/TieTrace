@@ -135,7 +135,7 @@ em.ok { background: var(--ok-bg); color: var(--ok-fg); } em.warn { background: #
 .shell { background: linear-gradient(90deg, #0f131d, #12161f); }
 .side .kicker, .evidence .kicker, .protocol .kicker, .bounds .kicker { font: 400 11px var(--mono); letter-spacing: .12em; color: var(--accent); }
 .navtile { font-size: 14px; border: 1px solid transparent; }
-.navtile[aria-current="page"] { border-left: 3px solid var(--accent); background: var(--panel); }
+.navtile[aria-current="page"] { border-color: var(--line); background: var(--panel); color: var(--text); }
 .side .example { font: 400 12px var(--mono); border-radius: 6px; }
 .side .example:hover { border-color: var(--accent); }
 .chat { background: radial-gradient(60% 40% at 50% 0%, rgba(230,181,102,.07), transparent 70%); }
