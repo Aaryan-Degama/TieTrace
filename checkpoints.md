@@ -18,7 +18,7 @@ Deadline: **submit by Oct 18, 6 PM IST.** Specs: `tietrace-v2-redesign.md`, `doc
 | 8 | Remaining evaluation + golden tests | Oct 17 afternoon | ✅ |
 | 9 | README, video, submit | Oct 18, by 6 PM | 🟨 |
 
-**Team: Abdul and Aaryan.** Tag each checkbox with who did it: `- [x] item (Abdul)` or `(Aaryan)`; use `(Abdul + Aaryan)` for pairing. Unticked items carry `(→ Aaryan)` to claim them. Add the date when you tick, e.g. `(Abdul, Oct 16)`. Checkpoints 0-2 were built in Abdul's sessions, so they are attributed to Abdul; Aaryan can correct that.
+**Team: Aaryan, Abdul and Kavyan.** 
 
 Status key: ⬜ not started · 🟨 in progress · ✅ done · ✂️ cut
 
