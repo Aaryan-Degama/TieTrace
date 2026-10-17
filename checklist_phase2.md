@@ -1,6 +1,6 @@
 # TieTrace checklist, phase 2: improvements after the MVP
 
-*Last updated by Abdul, Oct 17 2026: added section P2-W (web app, follow `WebApp.md`) before P2-0. Earlier the same day: first version, built from `IMPROVEMENT.md` and the state of `checkpoints.md` after checkpoint 9 started.*
+*Last updated by Aaryan, Oct 17 2026: ticked W1-W6 (web app, Reviewer PASS after 3 rounds). Before that, by Abdul, Oct 17 2026: added section P2-W (web app, follow `WebApp.md`) before P2-0. Earlier the same day: first version, built from `IMPROVEMENT.md` and the state of `checkpoints.md` after checkpoint 9 started.*
 
 **What this file is.** `checkpoints.md` is the plan to ship by **Oct 18, 6 PM IST**. This file is everything in `IMPROVEMENT.md` that is **not built yet**, plus loose ends found along the way. It is *not* part of the submission: do not start phase 2 work until the submission is confirmed, except the items marked **before submit**.
 
@@ -25,12 +25,12 @@ Status key: ⬜ not started · 🟨 in progress · ✅ done · ✂️ cut
 ## P2-W. Web app (**follow `WebApp.md`**)
 **All design decisions (layout, look, pages, build order, tests, open questions) are in [`WebApp.md`](WebApp.md). Read it first; if this list and `WebApp.md` disagree, `WebApp.md` wins.** Abdul chose: chat layout B (chat + live evidence panel), dark graph-motif look, a separate "How It Works" page, local first, the deployable free-tier version last.
 - [x] Decide the open questions in `WebApp.md` section 8 (Aaryan, Oct 17): O1 FastAPI + `claude -p` + plain HTML/JS + SSE; O2 the model never gets `record_verdict`/`approve_note` on the web, an on-page Approve button with a confirm step calls them directly; O3 always "Expert #n" on the web; O4 `web/`
-- [ ] W1 static shell: chat page and "How It Works" page, dark theme, hero with the node-and-edge drawing, "Try an example" buttons (→ Aaryan)
-- [ ] W2 "How It Works" content with real numbers copied from `README.md` / `eval/results.md`; no banned words (→ Aaryan)
-- [ ] W3 backend: `POST /api/ask` runs `claude -p` with the MCP server and streams steps; clear message for an expired login or FalkorDB down (→ Aaryan)
-- [ ] W4 chat UI: expert cards, tier chips, scope on every no-tie, evidence panel showing the Cypher, ambiguous-name picker, "Expert #n" only (→ Aaryan)
-- [ ] W5 human gates: Approve buttons for `record_verdict` / `approve_note`; the model cannot trigger them (→ Aaryan)
-- [ ] W6 tests and Builder/Reviewer pass (tests listed in `WebApp.md` section 7); the Coca-Cola example matches `tests/test_golden.py` (Blair A1, Hill A2) (→ Aaryan)
+- [x] W1 static shell: chat page and "How It Works" page, dark theme, hero with the node-and-edge drawing, "Try an example" buttons (Aaryan, Oct 17)
+- [x] W2 "How It Works" content with real numbers copied from `README.md` / `eval/results.md`; no banned words (Aaryan, Oct 17)
+- [x] W3 backend: `POST /api/ask` runs `claude -p` with the MCP server and streams steps; clear message for an expired login or FalkorDB down (Aaryan, Oct 17)
+- [x] W4 chat UI: expert cards, tier chips, scope on every no-tie, evidence panel showing the Cypher, ambiguous-name picker, "Expert #n" only (Aaryan, Oct 17)
+- [x] W5 human gates: Approve buttons for `record_verdict` / `approve_note`; the model cannot trigger them (Aaryan, Oct 17)
+- [x] W6 tests and Builder/Reviewer pass (tests listed in `WebApp.md` section 7); the Coca-Cola example matches `tests/test_golden.py` (Blair A1, Hill A2) (Aaryan, Oct 17)
 - [ ] W7 deployable version with a free-tier hosted model, request limits, no write tools exposed: **built last**, cut first if short (→ unassigned)
 
 ## P2-0. Loose ends (from checkpoints 5b-9)

@@ -1,6 +1,6 @@
 # TieTrace
 
-*Last updated by Abdul, Oct 17: checkpoint 8 results (E4, E6, E8, E9, E10), architecture diagram, licence note, test status. Earlier, Aaryan, Oct 16: checkpoint 7 (verdicts, sourcing notes, the Writer subagent; 13 tools); PMI funder share now read from the graph's Meta node. Earlier the same day: rewritten to match the code after checkpoint 6 and the hardening round (both tracks, 10 tools, setup, test and evaluation results, limits).*
+*Last updated by Aaryan, Oct 17: web app section (`web/`). Earlier, Abdul, Oct 17: checkpoint 8 results (E4, E6, E8, E9, E10), architecture diagram, licence note, test status. Earlier, Aaryan, Oct 16: checkpoint 7 (verdicts, sourcing notes, the Writer subagent; 13 tools); PMI funder share now read from the graph's Meta node. Earlier the same day: rewritten to match the code after checkpoint 6 and the hardening round (both tracks, 10 tools, setup, test and evaluation results, limits).*
 
 TieTrace helps a journalist check how connected an expert is to the company in a story. It looks the expert up in a research graph built from [OpenAlex](https://openalex.org) and stored in [FalkorDB](https://www.falkordb.com), and it answers with evidence, not opinions:
 
@@ -106,6 +106,16 @@ You need Docker, Python 3.13 or newer, and [uv](https://docs.astral.sh/uv/).
    Add `-e FALKORDB_PORT=...` if FalkorDB is not on 6379. The server exits at once if `TIETRACE_NEWSROOM` is unset or `TIETRACE_CASE` names no valid case. `claude mcp list` should show it Connected.
 
 6. **Optional:** `uv run python obsidian_export.py --watch 5` writes the newsroom memory as linked notes into an Obsidian vault (read-only on FalkorDB).
+
+## Web app
+
+A local page for people without Claude Code (`WebApp.md`): paste a story on the left, watch each tool and its read-only Cypher on the right, and read one card per expert ("Expert #n" only) with DOIs and, for every "no tie found", its scope. A "How it works" page explains the project. It runs `claude -p` with this MCP server, so it needs a logged-in `claude` and FalkorDB running:
+
+```bash
+uv run uvicorn web.app:app --host 127.0.0.1 --port 8000   # then open http://127.0.0.1:8000
+```
+
+`TIETRACE_NEWSROOM` (default `alpha`) and `FALKORDB_PORT` work as for the server. The model gets no built-in tools and never `record_verdict` or `approve_note`; those run only from a button on the page with a second confirm. Tests: `uv run python tests/test_web.py`.
 
 ## Tests
 

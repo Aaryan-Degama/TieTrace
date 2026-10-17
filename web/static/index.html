@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TieTrace</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<a class="skip" href="#story">Skip to the story box</a>
+<header class="top">
+  <a class="brand" href="index.html" aria-label="TieTrace home">
+    <svg viewBox="0 0 34 24" aria-hidden="true"><line x1="5" y1="18" x2="17" y2="6" stroke="#2f5f58" stroke-width="2"/><line x1="17" y1="6" x2="29" y2="16" stroke="#2f5f58" stroke-width="2"/><circle cx="5" cy="18" r="4" fill="#6fd3c1"/><circle cx="17" cy="6" r="4" fill="#9aa7b4"/><circle cx="29" cy="16" r="4" fill="#f6c08c"/></svg>
+    TieTrace
+  </a>
+  <nav aria-label="Main"><a href="index.html" aria-current="page">Check a story</a><a href="how.html">How it works</a></nav>
+</header>
+
+<main class="layout">
+  <section class="chat" aria-labelledby="chat-title">
+    <div class="pane-head">
+      <h1 id="chat-title">Check the experts in a story</h1>
+      <p>Paste the story. TieTrace looks each quoted expert up in the research record and shows what it finds.</p>
+    </div>
+    <div class="scroll" id="messages" aria-live="polite">
+      <div class="hero-mini">
+        <svg viewBox="0 0 120 72" role="img" aria-label="A small graph: an expert linked to a company through papers">
+          <g stroke="#2f5f58" stroke-width="1.5"><line x1="14" y1="52" x2="46" y2="22"/><line x1="46" y1="22" x2="80" y2="40"/><line x1="80" y1="40" x2="106" y2="16"/><line x1="46" y1="22" x2="62" y2="62"/><line x1="80" y1="40" x2="62" y2="62"/></g>
+          <circle cx="14" cy="52" r="6" fill="#6fd3c1"/><circle cx="46" cy="22" r="5" fill="#9aa7b4"/><circle cx="80" cy="40" r="5" fill="#9aa7b4"/><circle cx="62" cy="62" r="4" fill="#26313d" stroke="#9aa7b4"/><circle cx="106" cy="16" r="6" fill="#f6c08c"/>
+        </svg>
+        <p>Every tie has a DOI. Every "no tie" has a scope.</p>
+      </div>
+      <div class="examples" role="group" aria-label="Try an example">
+        <span>Try an example:</span>
+        <button type="button" class="example" data-story="Story: Coca-Cola and obesity. The article quotes Steven Blair and James O. Hill on exercise, diet and weight. Check how connected each of them is to Coca-Cola in the research record.">Coca-Cola × obesity</button>
+        <button type="button" class="example" data-story="I'm writing about lung cancer and Philip Morris. Suggest 5 experts on lung cancer with no ties found in the research record to Philip Morris.">Philip Morris × lung cancer</button>
+      </div>
+    </div>
+    <form class="composer" id="ask-form">
+      <label for="story">Story text (or a question about it)</label>
+      <textarea id="story" name="story" required maxlength="20000" placeholder="Paste the story here"></textarea>
+      <div class="row">
+        <span class="status" id="status" role="status"></span>
+        <button type="submit" class="primary" id="send">Check</button>
+      </div>
+    </form>
+  </section>
+
+  <aside class="evidence" aria-labelledby="ev-title">
+    <div class="pane-head">
+      <h2 id="ev-title">Live evidence</h2>
+      <p>Each tool as it runs, with the exact read-only Cypher it returned.</p>
+    </div>
+    <div class="scroll">
+      <p class="empty" id="ev-empty">Nothing has run yet.</p>
+      <ol class="steps" id="steps"></ol>
+    </div>
+  </aside>
+</main>
+
+<footer class="foot">Ties found in the research record. A missing tie is not proof.</footer>
+<script src="app.js"></script>
+</body>
+</html>
