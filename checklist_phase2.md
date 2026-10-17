@@ -42,7 +42,7 @@ Status key: ⬜ not started · 🟨 in progress · ✅ done · ✂️ cut
 - [x] `test_research`: cold-start `bridges3_hub` (Aaryan, Oct 17): the Tier-A filter scanned a 3,035-id list per path; now a hash join. Biggest hub 1.2 s → 0.21 s cold; output identical (2,340 calls compared by the Reviewer); the order is now total so LIMIT is deterministic; limit unchanged
 - [ ] Choose a licence for our own code and add `LICENSE` (decide together) (→ Abdul + Aaryan)
 - [x] Decision D9 recorded as decided (case slug is a tool argument, newsroom stays env-only) (Aaryan, Oct 17): marked in `docs/mcp-spec.md` section 4 ("Case", where the rule lives) and redesign section 6, both `(decided by Aaryan, Oct 16)`
-- [ ] E5 profile hand-check: a person fills the verdict columns in `eval/e5_sample.md` (50 authors), then the error rate goes to `eval/results.md` and the README "limits" (→ unassigned)
+- [ ] E5 profile hand-check: a person fills the verdict columns in `eval/e5_sample.md` (50 authors), then the error rate goes to `eval/results.md` and the README "limits" (→ Aaryan). Aaryan, Oct 17: AI pre-check done (`eval/e5_precheck.py`, column `AI suggestion (not a verdict)`, Reviewer PASS); the human marks are still to do. Should-fix for Abdul: `e5_sample.py` overwrites `e5_sample.md` (and would wipe human marks); add a `--force` guard?
 - [x] Tier meaning follow-up (Aaryan, Oct 17): a DOI with two evidence items now prints them as separate groups split by " | " (DOIs split by "; "); test in `test_notes`
 
 ## P2-1. Hardening (`IMPROVEMENT.md` 5g, D11, D12)
