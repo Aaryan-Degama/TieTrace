@@ -86,11 +86,32 @@ function handle(reply, event, d) {
 
 function showError(reply, message) { reply.box.append(el("div", { class: "msg error", role: "alert", text: message })); }
 
+// A small, safe markdown subset: paragraphs, "- " / "1. " lists, **bold**, `code`, "#" headings shown bold, and DOI
+// links. Built from DOM nodes with textContent only: no HTML is ever parsed, so nothing in the text can inject markup.
+function inline(parent, text) {
+  for (const part of text.split(/(`[^`\n]+`|\*\*[^*\n]+\*\*)/)) {
+    if (/^`[^`]+`$/.test(part)) parent.append(el("code", { text: part.slice(1, -1) }));
+    else if (/^\*\*[^*]+\*\*$/.test(part)) { const b = el("strong"); inline(b, part.slice(2, -2)); parent.append(b); }
+    else for (const bit of part.split(/(10\.\d{4,9}\/[^\s,;)\]`*]*[^\s,;)\]`*.:])/)) parent.append(/^10\.\d{4,9}\//.test(bit) ? doiLink(bit) : bit);
+  }
+}
+
 function replyText(reply, text) {
-  for (const para of text.split(/\n{2,}/)) {
+  let list = null;
+  for (const raw of text.split("\n")) {
+    const line = raw.trimEnd();
+    const item = /^\s*(?:[-*•]|(\d+)\.)\s+(.*)$/.exec(line);
+    if (item) {
+      const kind = item[1] ? "OL" : "UL";
+      if (!list || list.tagName !== kind) { list = el(kind.toLowerCase()); reply.box.append(list); }
+      const li = el("li"); inline(li, item[2]); list.append(li);
+      continue;
+    }
+    list = null;
+    if (!line.trim()) continue;
+    const head = /^#{1,6}\s+(.*)$/.exec(line);
     const p = el("p");
-    // DOIs become links; everything else stays plain text
-    for (const part of para.split(/(10\.\d{4,9}\/[^\s,;)\]]+)/)) p.append(/^10\.\d{4,9}\//.test(part) ? doiLink(part) : part);
+    if (head) { const b = el("strong"); inline(b, head[1]); p.append(b); } else inline(p, line);
     reply.box.append(p);
   }
 }

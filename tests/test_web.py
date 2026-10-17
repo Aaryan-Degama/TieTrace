@@ -721,6 +721,217 @@ def test_reviewer_round3_the_sweep_leaves_a_live_runs_config_alone():
     assert Path(str(f) + ".seen").read_text() == "True"
 
 
+ORCID = re.compile(r"\d{4}-\d{4}-\d{4}-\d{3}[\dX]")
+
+
+def test_round4_the_model_never_receives_an_orcid_or_an_institution():
+    # Builder round 4 (Oct 17): the live reply printed an ORCID and "last known organisation ...". The PostToolUse
+    # hook strips them from every real tool result before the model reads it; server.py is unchanged.
+    import subprocess
+    hook = json.loads(w.claude_cmd("c")[w.claude_cmd("c").index("--settings") + 1])["hooks"]["PostToolUse"][0]
+    assert hook["matcher"] == w.P + ".*" and "hook_strip_identity.py" in hook["hooks"][0]["command"]
+    strip = [sys.executable, str(ROOT / "web" / "hook_strip_identity.py")]
+    envs = [server.resolve_experts(["James O. Hill", "Steven Blair"], "obesity"), server.tie_report(HILL, expert_number=1)]
+    raw = json.dumps(envs)
+    assert "orcid" in raw and "last_known_org" in raw and ORCID.search(raw)  # the real envelopes do carry them
+    for env in envs:
+        for response in (json.dumps(env), [{"type": "text", "text": json.dumps(env)}]):
+            p = subprocess.run(strip, input=json.dumps({"tool_name": w.P + "x", "tool_response": response}),
+                               capture_output=True, text=True)
+            out = json.loads(p.stdout)["hookSpecificOutput"]
+            assert out["hookEventName"] == "PostToolUse", out
+            new = out["updatedMCPToolOutput"]
+            text = new if isinstance(new, str) else new[0]["text"]
+            assert '"orcid"' not in text and "last_known_org" not in text and not ORCID.search(text), text[:300]
+            assert json.loads(text)["ok"] is True and json.loads(text)["data"]  # the rest of the envelope is kept
+    bad = subprocess.run(strip, input="not json", capture_output=True, text=True)
+    assert json.loads(json.loads(bad.stdout)["hookSpecificOutput"]["updatedMCPToolOutput"])["ok"] is False  # fails closed
+    assert server.resolve_experts(["James O. Hill"], "obesity")["data"]["matches"][0]["candidates"][0]["orcid"]  # unchanged
+
+
+def test_round4_orcid_and_institution_are_redacted_from_the_reply_too():
+    env = server.resolve_experts(["James O. Hill", "Steven Blair"], "obesity")  # unstripped: as if the hook failed
+    cands = [c for m in env["data"]["matches"] for c in m["candidates"]]
+    orcid, org = next(c["orcid"] for c in cands if c["orcid"]), next(c["last_known_org"] for c in cands if c["last_known_org"])
+    p = w.Parser(no_tie_lookup=lambda *a: {})
+    p.feed(call("r", "resolve_experts", {"names": ["James O. Hill", "Steven Blair"], "topic": "obesity"}))
+    evs = p.feed(result("r", env))
+    p.feed({"type": "assistant", "message": {"content": [{"type": "text", "text":
+        f"Name #2 has ORCID {orcid} and was last at {org}. Another ORCID: 0000-0002-1825-009X."}]}})
+    evs += p.finish()
+    dumped = json.dumps(evs, ensure_ascii=False)
+    assert orcid not in dumped and org not in dumped and not ORCID.search(dumped), dumped[:400]
+    assert "[ORCID hidden]" in dumped and "[institution hidden]" in dumped
+
+
+def test_round4_ambiguous_names_point_to_the_picker_not_to_typing_an_id():
+    assert "picker" in w.SYSTEM and "do not ask the reporter to type an id" in w.SYSTEM
+    assert "pick a candidate by OpenAlex id" not in w.SYSTEM and "ORCID" in w.SYSTEM
+
+
+def test_round4_reply_markdown_is_rendered_as_safe_nodes():
+    chrome = next((c for c in ("google-chrome", "chromium", "chromium-browser") if shutil.which(c)), None)
+    if not chrome:
+        print("      (skipped: no Chrome)")
+        return "SKIP"
+    d = Path(tempfile.mkdtemp(prefix="zz-test-web-"))
+    for n in ("index.html", "app.js", "style.css"):
+        (d / n).write_text((ROOT / "web" / "static" / n).read_text(encoding="utf-8"), encoding="utf-8")
+    harness = r"""
+const reply = { box: document.createElement("div"), cards: document.createElement("div"), byId: {} };
+messages.append(reply.box);
+handle(reply, "text", { text: "**Expert #1** is `A1`, see 10.1016/j.pmedr.2018.07.013.\n\n- **bold <img src=x onerror=alert(1)>** item\n- `<script>x</script>`\n1. first\n### Head" });
+const out = document.createElement("pre"); out.id = "RESULT";
+out.textContent = JSON.stringify({ strong: reply.box.querySelectorAll("strong").length, code: reply.box.querySelectorAll("code").length,
+  ul: reply.box.querySelectorAll("ul > li").length, ol: reply.box.querySelectorAll("ol > li").length,
+  bad: reply.box.querySelectorAll("img, script").length, stars: reply.box.textContent.includes("**") || reply.box.textContent.includes("`"),
+  links: [...reply.box.querySelectorAll("a")].map((a) => a.href) });
+document.body.append(out);
+"""
+    (d / "harness.js").write_text(harness, encoding="utf-8")
+    page = (d / "index.html").read_text(encoding="utf-8").replace('<script src="app.js"></script>',
+                                                                 '<script src="app.js"></script><script src="harness.js"></script>')
+    (d / "test.html").write_text(page, encoding="utf-8")
+    dom = os.popen(f"timeout 60 {chrome} --headless=new --disable-gpu --no-sandbox --user-data-dir={d / 'profile'} "
+                   f"--virtual-time-budget=3000 --dump-dom file://{d / 'test.html'} 2>/dev/null").read()
+    m = re.search(r'<pre id="RESULT">(.*?)</pre>', dom, re.S)
+    assert m, dom[-500:]
+    got = json.loads(html.unescape(m.group(1)))
+    assert got == {"strong": 3, "code": 2, "ul": 2, "ol": 1, "bad": 0, "stars": False,
+                   "links": ["https://doi.org/10.1016/j.pmedr.2018.07.013"]}, got
+
+
+def test_reviewer_round4_the_strip_hook_fails_closed_on_any_crash():
+    # Review round 4, live probe: when the PostToolUse hook exits non-zero, Claude Code passes the ORIGINAL result
+    # (ORCID and institution included) to the model. So the hook must never crash: any input gives exit 0 and a
+    # withheld-result envelope.
+    import subprocess
+    strip = [sys.executable, str(ROOT / "web" / "hook_strip_identity.py")]
+    deep = "[" * 200000 + "]" * 200000  # json.loads raises RecursionError
+    for response in (deep, [{"type": "text", "text": deep}], {"a": [1, {"b": deep}]}):
+        p = subprocess.run(strip, input=json.dumps({"tool_name": w.P + "x", "tool_response": response}),
+                           capture_output=True, text=True)
+        assert p.returncode == 0, ("the hook crashed, so claude shows the model the unstripped result", p.stderr[-200:])
+        new = json.loads(p.stdout)["hookSpecificOutput"]["updatedMCPToolOutput"]
+        assert not ORCID.search(json.dumps(new))
+
+
+def test_reviewer_round4_the_strip_hook_also_blanks_orcids_inside_text():
+    import subprocess
+    strip = [sys.executable, str(ROOT / "web" / "hook_strip_identity.py")]
+    env = {"ok": True, "data": {"note": "profile 0000-0002-1825-009X merged"}, "warnings": ["see 0000-0003-4690-2264"]}
+    for response in (json.dumps(env), "plain text 0000-0002-1825-009X"):
+        p = subprocess.run(strip, input=json.dumps({"tool_response": response}), capture_output=True, text=True)
+        new = json.loads(p.stdout)["hookSpecificOutput"]["updatedMCPToolOutput"]
+        assert not ORCID.search(new) and "[ORCID hidden]" in new, new
+
+
+def test_reviewer_round4_the_fallback_never_hides_company_evidence():
+    # If the hook failed, the parser learns institutions from candidates. 346 people in research:obesity-coke have
+    # "Coca Cola (United States)" as their last organisation: that string is also Tier A affiliation EVIDENCE and
+    # must stay visible on the cards.
+    p = w.Parser(no_tie_lookup=lambda *a: {})
+    amb = {"ok": True, "data": {"matches": [{"name_in_input": "R A", "status": "AMBIGUOUS", "candidates": [
+        {"expert_id": "A1", "works_on_topic": 3, "orcid": None, "last_known_org": "Coca Cola (United States)"}]}]},
+        "cypher": [], "scope": {}, "warnings": [], "verdicts_applied": []}
+    p.feed(call("r", "resolve_experts", {"names": ["R A"], "topic": "obesity"}))
+    p.feed(result("r", amb))
+    env = server.tie_report(BLAIR, expert_number=1)
+    p.feed(call("t", "tie_report", {"expert_id": BLAIR, "expert_number": 1}))
+    card = next(d for e, d in p.feed(result("t", env)) if e == "expert")
+    assert sorted({e["via"] for e in card["evidence"]}) == sorted({e["via"] for e in env["data"]["evidence"]}), \
+        sorted({e["via"] for e in card["evidence"]})
+
+
+def test_reviewer_round4_markdown_survives_hostile_and_broken_markers():
+    chrome = next((c for c in ("google-chrome", "chromium", "chromium-browser") if shutil.which(c)), None)
+    if not chrome:
+        print("      (skipped: no Chrome)")
+        return "SKIP"
+    d = Path(tempfile.mkdtemp(prefix="zz-test-web-"))
+    for n in ("index.html", "app.js", "style.css"):
+        (d / n).write_text((ROOT / "web" / "static" / n).read_text(encoding="utf-8"), encoding="utf-8")
+    harness = r"""
+window.__p = 0;
+const reply = { box: document.createElement("div"), cards: document.createElement("div"), byId: {} };
+messages.append(reply.box);
+const t0 = performance.now();
+handle(reply, "text", { text: [
+  "[click](javascript:window.__p=1) and <a href=javascript:window.__p=2>x</a>",
+  "**unclosed bold `code** inside` and ``** **`` and ****",
+  "- **nested **bold** <img src=x onerror=window.__p=3>**",
+  "### <svg onload=window.__p=4>",
+  "10.1234/javascript:window.__p=5 and 10.1234/\"onmouseover=\"window.__p=6",
+  "1. `<script>window.__p=7</script>`",
+  "*".repeat(20000) + "`".repeat(20000) + "10.1234/" + "a".repeat(20000) + "!" ].join("\n") });
+const ms = performance.now() - t0;
+const out = document.createElement("pre"); out.id = "RESULT";
+out.textContent = JSON.stringify({ p: window.__p, ms,
+  bad: reply.box.querySelectorAll("img, script, svg, iframe").length,
+  on: [...reply.box.querySelectorAll("*")].filter((e) => [...e.attributes].some((a) => a.name.startsWith("on"))).length,
+  hrefs: [...reply.box.querySelectorAll("a")].map((a) => a.getAttribute("href")) });
+document.body.append(out);
+"""
+    (d / "harness.js").write_text(harness, encoding="utf-8")
+    page = (d / "index.html").read_text(encoding="utf-8").replace('<script src="app.js"></script>',
+                                                                 '<script src="app.js"></script><script src="harness.js"></script>')
+    (d / "test.html").write_text(page, encoding="utf-8")
+    dom = os.popen(f"timeout 60 {chrome} --headless=new --disable-gpu --no-sandbox --user-data-dir={d / 'profile'} "
+                   f"--virtual-time-budget=3000 --dump-dom file://{d / 'test.html'} 2>/dev/null").read()
+    m = re.search(r'<pre id="RESULT">(.*?)</pre>', dom, re.S)
+    assert m, dom[-500:]
+    got = json.loads(html.unescape(m.group(1)))
+    assert got["p"] == 0 and got["bad"] == 0 and got["on"] == 0, got
+    assert got["hrefs"] and all(h.startswith("https://doi.org/10.") for h in got["hrefs"]), got
+    assert got["ms"] < 2000, got  # no catastrophic backtracking on long marker runs
+
+
+def test_round5_sweep_never_removes_another_live_apps_config():
+    # Builder round 5: a test run with TIMEOUT_S=1 must not delete the configs of the app running on port 8000.
+    import subprocess
+    w.RUN_DIR.mkdir(exist_ok=True)
+    other = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])  # stands in for another live app
+    try:
+        live = w.RUN_DIR / f"mcp-{other.pid}-zztestlive.json"
+        mine = w.RUN_DIR / f"mcp-{os.getpid()}-zztestmine.json"
+        dead_pid = subprocess.run([sys.executable, "-c", "import os; print(os.getpid())"], capture_output=True,
+                                  text=True).stdout.strip()
+        dead = w.RUN_DIR / f"mcp-{dead_pid}-zztestdead.json"
+        for f in (live, mine, dead):
+            f.write_text("{}")
+            os.utime(f, (time.time() - 3600, time.time() - 3600))
+        w.sweep_configs(1)
+        assert live.exists(), "the sweep removed a config of another live process"
+        assert not mine.exists() and not dead.exists()
+    finally:
+        other.kill()
+        for f in w.RUN_DIR.glob("mcp-*-zztest*.json"):
+            f.unlink()
+
+
+def test_reviewer_round5_a_doi_that_looks_like_an_orcid_is_never_touched():
+    # Review round 5: SciELO-style DOIs (ISSN-year-number) match the ORCID pattern. 10 real DOIs in the two graphs do,
+    # and bridges(A5030050325) in research:obesity-coke returns 10.47626/2237-6089-2021-0237 as link evidence.
+    # Neither the hook nor the parser may turn a DOI into "10.47626/[ORCID hidden]".
+    import subprocess
+    doi = "10.47626/2237-6089-2021-0237"
+    env = server.bridges("A5030050325", depth=2, limit=5, expert_number=1)
+    assert doi in json.dumps(env), "fixture: the real bridges result carries the DOI"
+    p = subprocess.run([sys.executable, str(ROOT / "web" / "hook_strip_identity.py")],
+                       input=json.dumps({"tool_response": json.dumps(env)}), capture_output=True, text=True)
+    out = json.loads(p.stdout)["hookSpecificOutput"]["updatedMCPToolOutput"]
+    assert doi in out, "the hook changed or withheld a DOI"
+    tie = server.tie_report(HILL, expert_number=1)
+    tie["data"]["evidence"][0]["doi"] = "10.1590/1516-4446-2012-0895"  # same shape as a real SciELO DOI
+    pr = w.Parser(no_tie_lookup=lambda *a: {})
+    pr.feed(call("t", "tie_report", {"expert_id": HILL, "expert_number": 1}))
+    card = next(d for e, d in pr.feed(result("t", tie)) if e == "expert")
+    assert card["evidence"][0]["doi"] == "10.1590/1516-4446-2012-0895", card["evidence"][0]
+    pr.feed({"type": "assistant", "message": {"content": [{"type": "text", "text": f"See {doi}; ORCID 0000-0002-1825-009X."}]}})
+    text = pr.finish()[0][1]["text"]
+    assert doi in text and "0000-0002-1825-009X" not in text, text
+
+
 # ---------- live (WEB_LIVE=1): the Coca-Cola example through real claude -p ----------
 
 def test_live_coca_cola_example_gives_blair_a1_and_hill_a2():

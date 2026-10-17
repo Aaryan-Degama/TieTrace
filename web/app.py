@@ -64,8 +64,9 @@ Steps:
 1. list_cases: pick the research case for the story's company and topic. If none fits, say plainly that no graph is \
 loaded for that company or topic, point to the How It Works page, and stop. Never guess.
 2. If the story names experts: resolve_experts(names, topic, case). If any name is AMBIGUOUS or NOT_FOUND, stop and \
-ask the reporter to pick a candidate by OpenAlex id, calling the names "Name #1", "Name #2" in the order you passed \
-them. Never guess. If the story names no one (or asks for suggestions), use find_experts (n up to 25) and then \
+tell the reporter to choose the right author in the picker shown below your reply (the page lists the candidates; \
+do not list them, and do not ask the reporter to type an id). Call the names "Name #1", "Name #2" in the order you \
+passed them. Never guess. If the story names no one (or asks for suggestions), use find_experts (n up to 25) and then \
 ONE check_case(expert_ids=...) with all of them: check_case labels experts "Expert #1".."#n" in the order given, so \
 a second batch would reuse the same labels. Never renumber: use exactly the labels the tools return.
 3. With resolved ids: open_case(story title, company, topic, expert_ids, case), then check_case(case_id).
@@ -75,7 +76,8 @@ expert: check_no_tie(expert_id, case_id=...).
 funder share of topic works and the expert's own funder share, and "absence is not proof".
 6. Only if the reporter asks for a sourcing note: draft_note(case_id, claims) with DOIs from tie_report evidence or \
 q3_bfs_v1 for a no tie. The reporter approves notes and records verdicts with buttons on the page; you cannot.
-Rules: call experts only "Expert #n" and never write the names from the story or from any tool; never pass \
+Rules: never mention an ORCID or an institution or organisation an expert works at (they identify the person); \
+call experts only "Expert #n" and never write the names from the story or from any tool; never pass \
 public_case=true; say "ties found in the research record"; never use the words independent, conflicted, unbiased \
 or "clean source"; Tier B and C and the score are network context only, not findings, never rank by them; every tie \
 needs its DOI; every "no tie found" needs its scope and "absence is not proof"."""
@@ -110,8 +112,18 @@ def claude_cmd(config_path, session_id=None):
 
 # A PreToolUse hook: exit code 2 blocks the call before the MCP server sees it (Claude Code hooks contract).
 _HOOK = [sys.executable, str(Path(__file__).resolve().parent / "hook_public_case.py")]
-HOOK_SETTINGS = {"hooks": {"PreToolUse": [{"matcher": f"{P}.*", "hooks": [  # paths quoted: spaces are fine
-    {"type": "command", "command": subprocess.list2cmdline(_HOOK) if os.name == "nt" else shlex.join(_HOOK)}]}]}}
+_STRIP = [sys.executable, str(Path(__file__).resolve().parent / "hook_strip_identity.py")]
+
+
+def _shell(argv):  # paths quoted: spaces are fine
+    return subprocess.list2cmdline(argv) if os.name == "nt" else shlex.join(argv)
+
+
+# PreToolUse refuses public_case=true; PostToolUse takes ORCIDs and institutions out of every result before the model
+# reads it (hookSpecificOutput.updatedMCPToolOutput; checked in a real run, Oct 17). server.py is unchanged.
+HOOK_SETTINGS = {"hooks": {
+    "PreToolUse": [{"matcher": f"{P}.*", "hooks": [{"type": "command", "command": _shell(_HOOK)}]}],
+    "PostToolUse": [{"matcher": f"{P}.*", "hooks": [{"type": "command", "command": _shell(_STRIP)}]}]}}
 
 
 def falkordb_up():
@@ -154,6 +166,8 @@ class Parser:
     def __init__(self, no_tie_lookup=None, names=None):
         self.calls = {}         # tool_use id -> (tool, input)
         self.names = list(names or [])  # names passed to resolve_experts in this session, in order (no repeats)
+        self.orgs = set()       # institutions seen in tool results (the hook removes them; this is the second line)
+        self.keep = set(COMPANY_NAMES)  # never hidden: the company's own names are the Tier A evidence (round 5)
         self.text = []
         self.session_id = None
         self.result = None
@@ -175,6 +189,11 @@ class Parser:
             return type(obj)(self.redact(v, key) for v in obj)
         if not isinstance(obj, str):
             return obj
+        if key not in ("doi", "dois"):  # a DOI is never touched
+            obj = ORCID_RE.sub("[ORCID hidden]", obj)
+        if key not in NOT_FREE_TEXT and key not in EVIDENCE_KEYS:
+            for org in sorted(self.orgs - self.keep, key=len, reverse=True):
+                obj = re.sub(rf"(?i)(?<!\w){re.escape(org)}(?!\w)", "[institution hidden]", obj)
         shortest = 3 if key in NOT_FREE_TEXT else 2
         for i, name in enumerate(self.names, 1):
             forms = {name, verifier.fold(name)}  # fold: the accent-free form the queries' params use
@@ -224,6 +243,8 @@ class Parser:
         return [(e, self.redact(d)) for e, d in out]
 
     def tool_events(self, tool, inp, env):
+        self.orgs |= _identity_values(env, "last_known_org")
+        self.keep |= _identity_values(env, "via") | _identity_values(env, "family_path")
         if env is None:
             return [("step", {"tool": tool, "ok": False, "error": "the tool returned no envelope"})]
         step = {"tool": tool, "ok": env.get("ok"), "cypher": [_short(c) for c in env.get("cypher", [])],
@@ -302,6 +323,39 @@ class Parser:
         return [(e, self.redact(d)) for e, d in out]
 
 
+EVIDENCE_KEYS = {"via", "family_path"}
+
+
+def _company_names():
+    """Every case's company, funder and institution names (cases/*/case.json): evidence, not an expert's identity."""
+    names = set()
+    for slug in server.research.known_cases():
+        try:
+            cfg = server.loader.load_config(slug)
+        except Exception:
+            continue
+        names |= {cfg.get("company")} | {x.get("name") for k in ("funders", "institutions") for x in cfg.get(k, [])}
+    return {n for n in names if isinstance(n, str) and n}
+
+
+COMPANY_NAMES = _company_names()
+# An ORCID standing alone or after "orcid.org/", but never inside a DOI: SciELO-style DOIs such as
+# 10.47626/2237-6089-2021-0237 have the same digit shape (review round 5), so a match after "/", ".", "-" or a
+# letter or digit is skipped, unless the text before it is "orcid.org/".
+ORCID_RE = re.compile(r"(?:(?<=(?i:orcid\.org/))|(?<![\w/.-]))\d{4}-\d{4}-\d{4}-\d{3}[\dX](?![\w-])")  # same pattern as web/hook_strip_identity.py
+
+
+def _identity_values(x, key):
+    """Every non-empty string under `key` anywhere in x."""
+    if isinstance(x, dict):
+        v = x.get(key)
+        found = {v} if isinstance(v, str) and v.strip() else {s for s in v if isinstance(s, str)} if isinstance(v, list) else set()
+        return found.union(*(_identity_values(v, key) for v in x.values()))
+    if isinstance(x, list):
+        return set().union(*(_identity_values(v, key) for v in x))
+    return set()
+
+
 def _label(label):
     """Only "Expert #n" ever leaves this app (O3); anything else becomes "Expert #?"."""
     return label if isinstance(label, str) and LABEL_RE.match(label) else "Expert #?"
@@ -371,7 +425,7 @@ async def ask_events(prompt, session_id=None):
         return
     RUN_DIR.mkdir(exist_ok=True)
     sweep_configs(TIMEOUT_S + 60)
-    cfg = RUN_DIR / f"mcp-{uuid.uuid4().hex}.json"
+    cfg = RUN_DIR / f"mcp-{os.getpid()}-{uuid.uuid4().hex}.json"
     cfg.write_text(json.dumps(mcp_config()))
     cmd = claude_cmd(cfg, session_id)
     if not shutil.which(cmd[0]):
@@ -450,13 +504,29 @@ def kill_group(pid):
 
 
 def sweep_configs(older_than_s):
-    """Remove generated MCP configs left by a run that died with the app (each holds only env names, no secret)."""
-    for f in RUN_DIR.glob("mcp-*.json"):
+    """Remove generated MCP configs this process left (older than older_than_s), and every config of a process that
+    no longer runs (an app that was killed). Never a config of another live app: it may still be in use (round 5)."""
+    for f in RUN_DIR.glob("mcp-*-*.json"):
         try:
-            if time.time() - f.stat().st_mtime > older_than_s:
+            pid = int(f.name.split("-")[1])
+            if (pid == os.getpid() and time.time() - f.stat().st_mtime > older_than_s) or not _alive(pid):
                 f.unlink()
-        except OSError:
+        except (OSError, ValueError):
             pass
+
+
+def _alive(pid):
+    if pid == os.getpid():
+        return True
+    if os.name == "nt":
+        return True  # ponytail: no cheap check on Windows; leftovers of dead apps there stay until removed by hand
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
 
 
 # Names stay redacted across --resume: the names a session's runs passed to resolve_experts, per session_id.

@@ -83,6 +83,8 @@ textarea { min-height: 76px; resize: vertical; }
 .msg { margin: 0 0 14px; }
 .msg.user { background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; white-space: pre-wrap; }
 .msg.reply p { margin: 0 0 8px; white-space: pre-wrap; }
+.msg.reply ul, .msg.reply ol { margin: 0 0 8px; padding-left: 20px; }
+.msg.reply li { margin: 2px 0; }
 .msg.error { background: var(--err-bg); color: var(--err-fg); border-radius: 10px; padding: 10px 12px; }
 
 .cards { display: grid; gap: 10px; margin: 8px 0; }
