@@ -6,7 +6,7 @@
 
 **Already built (do not redo; Aaryan, Oct 16):** `IMPROVEMENT.md` checkpoints 5b (AOF persistence), 5c (`cases/<slug>/case.json`, `loader.py --case`, staging swap, `--dry-run`), 5d (`case` argument, `list_cases`, `NO_GRAPH`, per-graph caches, graph-name guard `GRAPH_RE`), 5e (`discover.py`), 5f (Philip Morris × lung cancer case, run end to end). The "second topic" cut item is therefore already done.
 
-**Rules (same as `CLAUDE.md`):** tick a box only when done and verified, with `(Abdul)` or `(Aaryan)` and the date; claim an item with `(→ name)`; the Builder/Reviewer loop applies to every code item; tests are never weakened; the Coca-Cola case stays the default and the existing suites stay green.
+**Rules (same as `CLAUDE.md`):** tick a box only when done and verified, with the date; claim an item with `(→ name)`; the Builder/Reviewer loop applies to every code item; tests are never weakened; the Coca-Cola case stays the default and the existing suites stay green.
 
 Status key: ⬜ not started · 🟨 in progress · ✅ done · ✂️ cut
 
