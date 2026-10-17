@@ -6,7 +6,7 @@ or {"ok": False, "error": {"code", "message"}, "cypher": [...]}.
 
 Rules kept here: reads only through GRAPH.RO_QUERY (timeout + row cap); every value goes in as a
 query parameter, never into the query text; COAUTH is always matched with `->`.
-Port: env FALKORDB_PORT (default 6379).
+Port: env FALKORDB_PORT (default 6379); optional FALKORDB_PASSWORD (loader.connect).
 
 Which graph: `on_graph(graph)` sets it for the calls inside the `with` block (a contextvar);
 the default is GRAPH (research:obesity-coke). Cached facts are kept per graph.
@@ -17,7 +17,6 @@ import json
 import os
 import re
 
-from falkordb import FalkorDB
 from redis.exceptions import RedisError, ResponseError
 
 import loader  # the one shared junk rule and name folding live in the loader
@@ -159,7 +158,7 @@ def ro_query(graph, query, params=None, timeout_ms=3000, row_cap=500, log=None):
 def _conn():
     global _db
     if _db is None:
-        _db = FalkorDB(port=int(os.environ.get("FALKORDB_PORT", 6379)))
+        _db = loader.connect()  # FALKORDB_PORT and the optional FALKORDB_PASSWORD
     return _db
 
 
@@ -647,6 +646,8 @@ def _tie_report(log, expert_id, label, public_case):
             "check_id": None}
     scope = {"years": _years(meta), "load_scope": meta["load_scope"], **_coverage(log),
              "caveats": _caveats(log)}
+    if tier == "NONE":  # a no tie always carries this expert's own funder share too (P2-4)
+        scope["expert_works"], _, scope["expert_funder_coverage"] = _expert_funder_coverage(log, expert_id)
     return _ok(data, log, scope, warnings)
 
 
@@ -811,6 +812,10 @@ def _bridges(log, expert_id, depth, limit, label, public_case):
                              "bridge_count and the path order were not recomputed")
     meta = _meta(log)
     scope = {"hops": depth, "years": _years(meta), "load_scope": meta["load_scope"]}
+    if not paths:  # no path found is a no tie at this depth: same funder shares as check_no_tie (P2-4)
+        cov = _coverage(log)
+        scope.update(coverage=cov["coverage"], funder_coverage=cov["funder_coverage"])
+        scope["expert_works"], _, scope["expert_funder_coverage"] = _expert_funder_coverage(log, expert_id)
     # max_flow is cut (checkpoints.md): kept null so the output matches the spec.
     return _ok({"label": label, "paths": paths, "bridge_count": count, "max_flow": None}, log, scope,
                _flag_warnings(person["profile_flag"]) + count_warning)

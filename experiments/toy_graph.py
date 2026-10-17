@@ -2,9 +2,12 @@
 
 Run: uv run python experiments/toy_graph.py
 """
+import os
+
 from falkordb import FalkorDB
 
-db = FalkorDB()
+db = FalkorDB(port=int(os.environ.get("FALKORDB_PORT", 6379)),
+              password=os.environ.get("FALKORDB_PASSWORD") or None)  # same env as loader.connect()
 g = db.select_graph("toy")
 try:
     g.delete()

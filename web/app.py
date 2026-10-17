@@ -7,7 +7,7 @@ only after a two-step confirm on the page with a one-time token the server issue
 
 Run:  uv run uvicorn web.app:app --host 127.0.0.1 --port 8000
 Env:  TIETRACE_NEWSROOM (default alpha), FALKORDB_HOST/FALKORDB_PORT (default 127.0.0.1:6379),
-      TIETRACE_CLAUDE (default claude), TIETRACE_WEB_TIMEOUT (seconds, default 420).
+      FALKORDB_PASSWORD (optional, passed on to the MCP server), TIETRACE_CLAUDE (default claude), TIETRACE_WEB_TIMEOUT (seconds, default 420).
 """
 import asyncio
 import hashlib
@@ -87,7 +87,7 @@ needs its DOI; every "no tie found" needs its scope and "absence is not proof"."
 
 def mcp_config():
     env = {"TIETRACE_NEWSROOM": NEWSROOM, "FALKORDB_PORT": os.environ.get("FALKORDB_PORT", "6379")}
-    for k in ("FALKORDB_HOST", "TIETRACE_CASE"):
+    for k in ("FALKORDB_HOST", "TIETRACE_CASE", "FALKORDB_PASSWORD"):  # password only when set; file is 0600
         if os.environ.get(k):
             env[k] = os.environ[k]
     return {"mcpServers": {SERVER_NAME: {"command": "uv", "args": ["run", "--directory", str(ROOT), "python",
@@ -426,6 +426,7 @@ async def ask_events(prompt, session_id=None):
     RUN_DIR.mkdir(exist_ok=True)
     sweep_configs(TIMEOUT_S + 60)
     cfg = RUN_DIR / f"mcp-{os.getpid()}-{uuid.uuid4().hex}.json"
+    cfg.touch(mode=0o600)  # owner-only: it may hold FALKORDB_PASSWORD
     cfg.write_text(json.dumps(mcp_config()))
     cmd = claude_cmd(cfg, session_id)
     if not shutil.which(cmd[0]):

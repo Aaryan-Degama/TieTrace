@@ -16,7 +16,7 @@ Method in plain words (nothing after year Y is used to build the predictors):
       weighted = the fixed score: sum of 1/(n_authors-1) over papers with 2..25 authors in the window
                  Y-4..Y, once per Tier-A-at-Y co-author on the paper (= sum of COAUTH.w to Tier A people)
   * AUC by the rank-sum (Mann-Whitney) method; bootstrap = resample positives and negatives with replacement.
-Run:  FALKORDB_PORT=6380 uv run python eval/e2.py
+Run:  FALKORDB_PORT=6380 uv run python eval/e2.py   [--case philip-morris-lung]
 """
 import random
 import time
@@ -25,6 +25,7 @@ from collections import defaultdict
 import common as c
 import research
 
+c.use_case_arg()  # --case <slug>; default obesity-coke (P2-4)
 SEED = 20261016
 BOOT = 500
 SMALL = 25

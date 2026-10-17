@@ -6,7 +6,8 @@ from collections import defaultdict
 from falkordb import FalkorDB
 
 GRAPH = "research:obesity-coke"
-G = FalkorDB(port=int(os.environ.get("FALKORDB_PORT", "6379"))).select_graph(GRAPH)
+G = FalkorDB(port=int(os.environ.get("FALKORDB_PORT", "6379")),
+             password=os.environ.get("FALKORDB_PASSWORD") or None).select_graph(GRAPH)  # same env as loader.connect
 JUNK_TITLES = ("peer review report", "correction:", "corrigendum", "erratum", "notice of retraction")
 
 

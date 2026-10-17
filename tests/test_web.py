@@ -364,6 +364,30 @@ def test_falkordb_down_gives_a_readable_error_before_claude_starts():
         os.environ.pop("TIETRACE_CLAUDE")
 
 
+def test_mcp_config_is_owner_only_and_carries_password_only_when_set():
+    """Reviewer (P2-1): the generated MCP config may hold FALKORDB_PASSWORD, so it is 0600 when claude reads it,
+    holds the password only when the env var is set, and is gone afterwards. A stand-in claude records what it saw."""
+    d = Path(tempfile.mkdtemp(prefix="zz-test-web-"))
+    seen, f = d / "seen.txt", d / "claude-cfg"
+    f.write_text("#!/bin/sh\nwhile [ $# -gt 0 ]; do\n  if [ \"$1\" = --mcp-config ]; then\n"
+                 f"    stat -c %a \"$2\" >> {seen}; grep -c zz-test-pw \"$2\" >> {seen}; echo \"$2\" >> {seen}\n"
+                 "  fi\n  shift\ndone\nexit 1\n")
+    f.chmod(f.stat().st_mode | stat.S_IEXEC)
+    old_pw = os.environ.get("FALKORDB_PASSWORD")
+    os.environ["TIETRACE_CLAUDE"] = str(f)
+    try:
+        for pw, want in (("zz-test-pw", "1"), (None, "0")):
+            os.environ.pop("FALKORDB_PASSWORD", None) if pw is None else os.environ.__setitem__("FALKORDB_PASSWORD", pw)
+            seen.write_text("")
+            run_events(w.ask_events("a story"))
+            mode, hits, path = seen.read_text().split()
+            assert mode == "600" and hits == want, (pw, mode, hits)
+            assert not Path(path).exists(), "the config is removed after the run"
+    finally:
+        os.environ.pop("TIETRACE_CLAUDE")
+        os.environ.pop("FALKORDB_PASSWORD", None) if old_pw is None else os.environ.__setitem__("FALKORDB_PASSWORD", old_pw)
+
+
 def test_timeout_kills_claude_and_gives_a_readable_error():
     d = Path(tempfile.mkdtemp(prefix="zz-test-web-"))
     f = d / "claude-slow"
@@ -1004,6 +1028,26 @@ def test_live_coca_cola_example_gives_blair_a1_and_hill_a2():
     dumped = json.dumps(evs, ensure_ascii=False)
     assert not any(has_name(dumped, n) for n in ("Steven Blair", "James O. Hill"))
     assert not BANNED.search(dumped)
+
+
+def test_p24_no_tie_cards_on_the_second_case_carry_both_funder_shares():
+    """P2-4 (Aaryan, Oct 17): a tier NONE card from a philip-morris-lung check_case gets that graph's scope."""
+    slug, g = "philip-morris-lung", "research:philip-morris-lung"
+    rows = DB.select_graph(g).ro_query("MATCH (p:Person)-[:AUTHORED]->(w:Work) WHERE NOT w.junk AND NOT ("
+                                       "(p)-[:COAUTH_B]->()) WITH p, count(w) AS k WHERE k >= 3 RETURN p.oa_id "
+                                       "ORDER BY p.oa_id LIMIT 30", timeout=60000).result_set
+    with research.on_graph(g):
+        pid = next(r[0] for r in rows if research.tie_report(r[0])["data"]["tier"] == "NONE")
+    env = server.check_case(expert_ids=[pid], case=slug)
+    evs, _ = feed_all([call("t1", "check_case", {"expert_ids": [pid], "case": slug}), result("t1", env)])
+    cards = [d for e, d in evs if e == "expert"]
+    assert len(cards) == 1 and cards[0]["tier"] == "NONE", cards
+    t = cards[0]["no_tie"]
+    assert t["result"] == "NO_TIE_FOUND" and t["graph"] == g, t
+    fresh = server.check_no_tie(pid, 3, 5, case=slug)["scope"]
+    assert (t["funder_coverage"], t["expert_funder_coverage"], t["expert_works"]) == \
+        (fresh["funder_coverage"], fresh["expert_funder_coverage"], fresh["expert_works"]), (t, fresh)
+    assert 0 < t["funder_coverage"] < 1 and t["funder_coverage"] != 0.563  # this graph's own share, not Coca-Cola's
 
 
 # ---------- runner ----------

@@ -1,6 +1,6 @@
 # TieTrace checklist, phase 2: improvements after the MVP
 
-*Last updated by Aaryan, Oct 17 2026: ticked the `total_graph_sz_mb` check. Earlier the same day: ticked W1-W6 (web app, Reviewer PASS after 3 rounds). Before that, by Abdul, Oct 17 2026: added section P2-W (web app, follow `WebApp.md`) before P2-0. Earlier the same day: first version, built from `IMPROVEMENT.md` and the state of `checkpoints.md` after checkpoint 9 started.*
+*Last updated by Aaryan, Oct 17 2026: ticked 5 of 7 P2-4 items (Reviewer PASS after 2 rounds). Earlier the same day: ticked P2-3 items 1-5 (Reviewer PASS after 3 rounds; human review time still open). Earlier the same day: ticked P2-2 case-builder skill (Reviewer PASS after 2 rounds). Earlier the same day: ticked Abdul's three P2-0 machine items from his own report. Earlier the same day: ticked P2-1 hardening (Reviewer PASS after 3 rounds). Earlier the same day: ticked the licence (MIT); added the `--force` guard to `e5_sample.py`. Earlier the same day: ticked the `total_graph_sz_mb` check. Earlier: ticked W1-W6 (web app, Reviewer PASS after 3 rounds). Before that, by Abdul, Oct 17 2026: added section P2-W (web app, follow `WebApp.md`) before P2-0. Earlier the same day: first version, built from `IMPROVEMENT.md` and the state of `checkpoints.md` after checkpoint 9 started.*
 
 **What this file is.** `checkpoints.md` is the plan to ship by **Oct 18, 6 PM IST**. This file is everything in `IMPROVEMENT.md` that is **not built yet**, plus loose ends found along the way. It is *not* part of the submission: do not start phase 2 work until the submission is confirmed, except the items marked **before submit**.
 
@@ -12,12 +12,12 @@ Status key: ⬜ not started · 🟨 in progress · ✅ done · ✂️ cut
 
 | Phase | What | When | Status |
 |---|---|---|---|
-| P2-W | **Web app** (follow `WebApp.md`) | before P2-0, after submit | ⬜ |
-| P2-0 | Loose ends (some **before submit**) | Oct 17-18 | ⬜ |
-| P2-1 | Hardening (`IMPROVEMENT.md` 5g) | after submit | ⬜ |
-| P2-2 | Case-builder skill and agent (5e polish) | after submit | ⬜ |
-| P2-3 | Corporate-family candidate pipeline (5h) | after submit | ⬜ |
-| P2-4 | Data quality and scale | after submit | ⬜ |
+| P2-W | **Web app** (follow `WebApp.md`) | before P2-0, after submit | 🟨 (W1-W6 done, W7 open) |
+| P2-0 | Loose ends (some **before submit**) | Oct 17-18 | 🟨 (only the E5 hand marks left) |
+| P2-1 | Hardening (`IMPROVEMENT.md` 5g) | after submit | ✅ |
+| P2-2 | Case-builder skill and agent (5e polish) | after submit | ✅ |
+| P2-3 | Corporate-family candidate pipeline (5h) | after submit | 🟨 |
+| P2-4 | Data quality and scale | after submit | 🟨 (5 of 7; profile guard waits on E5, COAUTH slimming on a team decision) |
 | P2-5 | Future work, document only (5i) | later | ⬜ |
 
 ---
@@ -35,48 +35,51 @@ Status key: ⬜ not started · 🟨 in progress · ✅ done · ✂️ cut
 - [ ] W7 deployable version with a free-tier hosted model, request limits, no write tools exposed: **built last**, cut first if short (→ unassigned)
 
 ## P2-0. Loose ends (from checkpoints 5b-9)
-- [ ] **Before submit.** Migrate Abdul's container the same way as Aaryan's (`checkpoints.md` 5b): done as a **side container** `falkordb-v4` (v4.22.1, AOF on, port 6381); still to do: stop using the old `falkordb` (`:latest`, AOF off) and move to one container on 6380/3001 (→ Abdul)
-- [ ] **Before submit.** Re-register the MCP server for the new port: `claude mcp add tietrace-alpha -e TIETRACE_NEWSROOM=alpha -e FALKORDB_PORT=6381 -- uv run --directory <path> python server.py` (→ Abdul)
-- [ ] **Before submit.** Load `research:philip-morris-lung` on Abdul's machine so `test_memory` passes: `uv run python loader.py --case philip-morris-lung --rebuild` needs `cases/philip-morris-lung/raw/` from Aaryan (the cache is not in git) (→ Abdul + Aaryan). Aaryan, Oct 17: zipped as `data/tietrace-pmi-raw.zip` (21 MB, no key inside); unzip it in the repo root
+- [x] **Before submit.** Migrate Abdul's container the same way as Aaryan's (`checkpoints.md` 5b): done as a **side container** `falkordb-v4` (v4.22.1, AOF on, port 6381); still to do: stop using the old `falkordb` (`:latest`, AOF off) and move to one container on 6380/3001 (→ Abdul). Done (Abdul, Oct 17): one container `falkordb-main` (v4.22.1, AOF yes) on port 6500, since Windows now reserves 6380-6481; old containers stopped and kept
+- [x] **Before submit.** Re-register the MCP server for the new port: `claude mcp add tietrace-alpha -e TIETRACE_NEWSROOM=alpha -e FALKORDB_PORT=6381 -- uv run --directory <path> python server.py` (→ Abdul). Done (Abdul, Oct 17): re-registered on 6500, Connected
+- [x] **Before submit.** Load `research:philip-morris-lung` on Abdul's machine so `test_memory` passes: `uv run python loader.py --case philip-morris-lung --rebuild` needs `cases/philip-morris-lung/raw/` from Aaryan (the cache is not in git) (→ Abdul + Aaryan). Aaryan, Oct 17: zipped as `data/tietrace-pmi-raw.zip` (21 MB, no key inside); unzip it in the repo root. Done (Abdul, Oct 17): loaded from the zip, 21,756 works, 68,723 people, 0 API calls; `test_memory` 32/32
 - [x] Fix the 6 `test_discover` failures (Aaryan, Oct 17): `encoding="utf-8"` on 43 text-mode reads/writes across the repo; discover saves its case file before printing. **Abdul: re-run on Windows to confirm**
 - [x] Fix the 6 `test_obsidian` failures on Windows (Aaryan, Oct 17): CTRL_BREAK_EVENT + SIGBREAK handler, symlink sub-step skipped only on Windows with a `mklink /J` fallback; found and fixed a junctioned `.trash` / export-folder escape. **Abdul: re-run on Windows to confirm**
 - [x] `test_research`: cold-start `bridges3_hub` (Aaryan, Oct 17): the Tier-A filter scanned a 3,035-id list per path; now a hash join. Biggest hub 1.2 s → 0.21 s cold; output identical (2,340 calls compared by the Reviewer); the order is now total so LIMIT is deterministic; limit unchanged
-- [ ] Choose a licence for our own code and add `LICENSE` (decide together) (→ Abdul + Aaryan)
+- [x] Choose a licence for our own code and add `LICENSE` (Aaryan, Oct 17): MIT; README "Data and licences" updated. **Abdul: confirm you agree**
 - [x] Decision D9 recorded as decided (case slug is a tool argument, newsroom stays env-only) (Aaryan, Oct 17): marked in `docs/mcp-spec.md` section 4 ("Case", where the rule lives) and redesign section 6, both `(decided by Aaryan, Oct 16)`
-- [ ] E5 profile hand-check: a person fills the verdict columns in `eval/e5_sample.md` (50 authors), then the error rate goes to `eval/results.md` and the README "limits" (→ Aaryan). Aaryan, Oct 17: AI pre-check done (`eval/e5_precheck.py`, column `AI suggestion (not a verdict)`, Reviewer PASS); the human marks are still to do. Should-fix for Abdul: `e5_sample.py` overwrites `e5_sample.md` (and would wipe human marks); add a `--force` guard?
+- [ ] E5 profile hand-check: a person fills the verdict columns in `eval/e5_sample.md` (50 authors), then the error rate goes to `eval/results.md` and the README "limits" (→ Aaryan). Aaryan, Oct 17: AI pre-check done (`eval/e5_precheck.py`, column `AI suggestion (not a verdict)`, Reviewer PASS); the human marks are still to do. `e5_sample.py` now refuses to overwrite `e5_sample.md` without `--force` (Aaryan, Oct 17; checked: exits 1, file unchanged).
 - [x] Tier meaning follow-up (Aaryan, Oct 17): a DOI with two evidence items now prints them as separate groups split by " | " (DOIs split by "; "); test in `test_notes`
 
 ## P2-1. Hardening (`IMPROVEMENT.md` 5g, D11, D12)
-- [ ] A Claude Code `PreToolUse` hook that denies `loader.py` calls with `--refresh`, or without a valid `--case` (so the model cannot spend the API budget); unit-test the hook (→ unassigned)
-- [ ] Deny rule for reading `.env` in `.claude/settings.json`; check the exact rule syntax in the Claude Code settings docs first (not yet verified) (→ unassigned)
-- [ ] Pre-flight RAM check before a build: `INFO memory` against the Docker limit (`maxmemory` is 0, so it is not a safe guard); refuse to start when the new graph would not fit (→ unassigned)
+- [x] A Claude Code `PreToolUse` hook that denies `loader.py` calls with `--refresh`, or without a valid `--case` (so the model cannot spend the API budget); unit-test the hook: `.claude/hooks/guard_loader.py`, fails closed, whole-text rules plus per-part checks; a seatbelt, not a sandbox (known gaps in CLAUDE.md); proven live in `claude -p`; `tests/test_hooks.py` 16/16 (Aaryan, Oct 17)
+- [x] Deny rule for reading `.env` in `.claude/settings.json`: `Read(/.env)`, `Edit(/.env)` (syntax from the permissions docs); the hook also blocks Bash commands naming `.env`; not fired live, since we did not try to read the key (Aaryan, Oct 17)
+- [x] Pre-flight RAM check before a build: refuses when used + estimate > 90% of `maxmemory` (or `total_system_memory`) or the estimate > MemAvailable; `--skip-ram-check`; what it cannot see is stated in CLAUDE.md (Aaryan, Oct 17)
 - [x] Confirm `total_graph_sz_mb` is written to every `status.json` after a build (the loader code calls it; check a real file): present in all three, obesity-coke 784, obesity-coke-staged 780, philip-morris-lung 726 MB (Aaryan, Oct 17)
-- [ ] Optional: Redis ACL user limited to `research:*` with `+graph.ro_query +graph.list`; test it first, cut it if short on time (→ unassigned)
-- [ ] `requirepass` on FalkorDB, and CI (open items from the hardening round) (→ unassigned)
-- [ ] Idle-graph policy: `GRAPH.DELETE` graphs not in use, keep the raw cache so a rebuild costs 0 API calls; add the commands to `CLAUDE.md` (6-8 graphs fit in Docker's ~7.75 GiB) (→ unassigned)
+- [x] Optional: Redis ACL user limited to `research:*` with `+graph.ro_query +graph.list`: tested on a throwaway container only (commands and results in CLAUDE.md); not wired into the code, because the server must write `newsroom:*` (Aaryan, Oct 17)
+- [x] `requirepass` on FalkorDB, and CI: optional `FALKORDB_PASSWORD` through one `loader.connect()`, tested on a throwaway container, **not turned on** for the live container; `.github/workflows/ci.yml` runs hooks, e5_precheck, discover and a compile check (the other suites need the gitignored graphs) (Aaryan, Oct 17)
+- [x] Idle-graph policy (docs only, in CLAUDE.md): list sizes, delete an idle `research:<slug>`, rebuild from cache with 0 API calls; never delete `newsroom:*` (Aaryan, Oct 17)
 
 ## P2-2. Case-builder skill and agent (`IMPROVEMENT.md` 5e polish)
-- [ ] Check the current Claude Code format for skills / slash commands and sub-agents before writing anything (→ unassigned)
-- [ ] A `case-builder` skill or command that runs the target workflow: extract company / topic / names, call `list_cases`, run `discover.py`, write `cases/<slug>/case.json`, stop at the human gates (→ unassigned)
-- [ ] Gates written into the skill text: Gate 0 (approve family, topic, expert profiles), Gate 1 (confirm the `--dry-run` estimate), Gate 2 (permission prompt on the exact `--build` command; never allowlisted) (→ unassigned)
-- [ ] A dry run with the Philip Morris prompt in a fresh Claude Code session; record the result honestly in `eval/results.md` (→ unassigned)
+- [x] Check the current Claude Code format for skills / slash commands and sub-agents before writing anything: skills, sub-agents and permissions docs read; URLs in `AI_USE.md` Learned (Aaryan, Oct 17)
+- [x] A `case-builder` skill or command that runs the target workflow: extract company / topic / names, call `list_cases`, run `discover.py`, write `cases/<slug>/case.json`, stop at the human gates: `.claude/skills/case-builder/SKILL.md`, run as `/case-builder <story>` (Aaryan, Oct 17). Skill only, no sub-agent: sub-agents cannot wait for a human answer at a gate (decided by Aaryan, Oct 17)
+- [x] Gates written into the skill text: Gate 0 (approve family, topic, expert profiles), Gate 1 (confirm the `--dry-run` estimate), Gate 2 (the exact `--rebuild` command; the loader has no `--build` flag). The human runs the build; `permissions.ask` rules (`Bash(*loader.py *)` and 3 more) make the usual spellings prompt in every mode, proven in bypass mode with a stub loader; never allowlisted; `tests/test_case_builder.py` 20/20 (Aaryan, Oct 17)
+- [x] A dry run with the Philip Morris prompt in a fresh Claude Code session; record the result honestly in `eval/results.md`: two headless `claude -p` runs (haiku). Philip Morris stopped at "case exists"; a sugar / dental caries story stopped at GATE 0 with no invented IDs. GATE 1/2 and an interactive session were not run (Aaryan, Oct 17)
 
 ## P2-3. Corporate-family candidate pipeline (`IMPROVEMENT.md` 5h, D3, D4)
-- [ ] New `family.py` that writes `cases/<slug>/candidates.json` rows with `status: proposed` from ROR relationships, Wikidata (class-filtered), GLEIF children and SEC Exhibit 21; resolve the seed by ROR or Wikidata ID, not by name (→ unassigned)
-- [ ] Name normalisation (casefold, strip accents and legal suffixes, "(Country)") and show the match type; handle the GLEIF same-name collision (a different "Coca-Cola Company") (→ unassigned)
-- [ ] A human sets `approved` / `rejected` and `rel`; the loader reads only `approved` rows (→ unassigned)
-- [ ] Foundations and funding vehicles keep their own `rel`; labels like "front organization" appear only as a quoted source phrase with its URL; trade groups with no formal link are `needs_human_source` (→ unassigned)
-- [ ] Fixture tests only; no live calls in the suite. The Wikidata SPARQL class filter was written but never run: run it once and record the result (→ unassigned)
-- [ ] Measure the real human review time (the "under an hour" estimate is a guess) (→ unassigned)
+- [x] New `family.py` that writes `cases/<slug>/candidates.json` rows with `status: proposed` from ROR relationships, Wikidata (class-filtered), GLEIF children and SEC Exhibit 21; resolve the seed by ROR or Wikidata ID, not by name: `family.py propose|review|set|add|apply`; SEC only with env `SEC_USER_AGENT` (never run live, synthetic fixture only) (Aaryan, Oct 17)
+- [x] Name normalisation (casefold, strip accents and legal suffixes, "(Country)") and show the match type; handle the GLEIF same-name collision (a different "Coca-Cola Company"): `match_type` id/exact_norm/fuzzy/none; same-name hits are `same_name_collision` or `needs_human_source`, never suggested (Aaryan, Oct 17)
+- [x] A human sets `approved` / `rejected` and `rel`; the loader reads only `approved` rows: `apply --by <name>` copies only approved rows with an OpenAlex id into `case.json` (`loader.py` unchanged, reads only `case.json`); shareholders (Wikidata P127 owners such as BlackRock) carry `flag: shareholder` and need a human `--source` (Aaryan, Oct 17)
+- [x] Foundations and funding vehicles keep their own `rel`; labels like "front organization" appear only as a quoted source phrase with its URL; trade groups with no formal link are `needs_human_source`: foundations keep `kind`; no banned words (checked with an explicit raise) (Aaryan, Oct 17)
+- [x] Fixture tests only; no live calls in the suite. The Wikidata SPARQL class filter was written but never run: run it once and record the result: `tests/test_family.py` 24/24, no live calls; live Wikidata run: Coca-Cola 116 raw, 49 kept (41 patents, brands, places dropped), PMI 29 raw, 21 kept; per-status counts after the shareholder fix not yet re-measured (Wikidata 429) (Aaryan, Oct 17)
+- [ ] Measure the real human review time (the "under an hour" estimate is a guess) (→ Aaryan). Needs a person: reviewer checklist in `eval/results.md` P2-3
 
 ## P2-4. Data quality and scale
-- [ ] Measure what the notes only estimated: build time and API calls for a new case, full-graph load time, snapshot time; write them to `eval/results.md` (→ unassigned)
-- [ ] Verify the `RENAME` swap with in-flight queries, and keep the pinned test (undocumented by FalkorDB) (→ unassigned)
+- [x] Measure what the notes only estimated: build time and API calls for a new case, full-graph load time, snapshot time; write them to `eval/results.md`: from records only (PMI new case 915 calls / 13 min; rebuild write+swap 41-45 s; restart load 4.8 s; snapshot 2-3 s); full rebuild wall time still to measure in a human terminal (Aaryan, Oct 17)
+- [x] Verify the `RENAME` swap with in-flight queries, and keep the pinned test (undocumented by FalkorDB): readers in flight finish on the old graph with no errors, the next read sees the new one; `tests/test_rename_swap.py` (scratch keys only) (Aaryan, Oct 17)
 - [ ] Author profile guard: replace the "2000-works anomaly" guess with a measured rule, using the E5 sample (→ unassigned)
-- [ ] Per-expert funder-coverage denominator in every no-tie scope (works with and without `funders.id:!null`): check it is in all no-tie paths, including a second case (→ unassigned)
+  - Not started (Aaryan, Oct 17): needs the E5 human marks in `eval/e5_sample.md`, which are not done yet.
+- [x] Per-expert funder-coverage denominator in every no-tie scope (works with and without `funders.id:!null`): check it is in all no-tie paths, including a second case: fixed `check_case` (per-expert shares were merged into the batch scope), added to empty `bridges` and tier-NONE `tie_report`; tests on both cases (Aaryan, Oct 17)
 - [ ] Slim the COAUTH list properties (about 75% of the graph; a data-model change, so a team decision first) (→ unassigned)
-- [ ] Re-run E1/E2 style checks on the second case so the tier claims are not Coca-Cola-only (→ unassigned)
-- [ ] Persistence: write a `docker` helper note in `CLAUDE.md` for `redis-cli SAVE` before closing Docker Desktop; keep a `GRAPH.COPY` backup of each case (→ unassigned)
+  - Not started (Aaryan, Oct 17): changes the data model, so it waits for a team decision with Abdul.
+- [x] Re-run E1/E2 style checks on the second case so the tier claims are not Coca-Cola-only: `--case` on `eval/e1.py`/`e2.py`; PMI E1 FAIL 0.03x, E2 underpowered (3 positives); Coca-Cola re-run identical; README claims unchanged (Aaryan, Oct 17)
+- [x] Persistence: write a `docker` helper note in `CLAUDE.md` for `redis-cli SAVE` before closing Docker Desktop; keep a `GRAPH.COPY` backup of each case: SAVE note in CLAUDE.md (incl. Abdul's `falkordb-main`); GRAPH.COPY tested on scratch only (see note) (Aaryan, Oct 17)
+  - Aaryan, Oct 17: `GRAPH.COPY` of the real case graphs was deliberately not done (a copy needs 780/726 MB more RAM; about 4 GiB was free). Replacement: the raw cache plus `--rebuild` (0 API calls), and `docker cp` of the volume (CLAUDE.md). `GRAPH.COPY` was tested on a scratch graph only.
 
 ## P2-5. Future work (document only, build later)
 - [ ] `start_build` / `build_status` tools, MCP Tasks, an elicitation gate: only after checking SDK support (`mcp` 2.3.0 has no Tasks server) and keeping the "no model-reachable write" rule (→ n/a)

@@ -18,9 +18,7 @@ os.environ["TIETRACE_NEWSROOM"] = "zz-test-cases"  # server.py exits without it;
 import loader  # noqa: E402
 import research  # noqa: E402
 import server  # noqa: E402
-from falkordb import FalkorDB  # noqa: E402
-
-DB = FalkorDB(port=int(os.environ.get("FALKORDB_PORT", 6379)))
+DB = loader.connect()
 A, B = "research:zz-test-a", "research:zz-test-b"
 GEBN = {"A5031318756", "A5105003630", "A5046953968", "A5045252457"}
 
