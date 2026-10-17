@@ -383,6 +383,19 @@ def test_propose_keeps_human_decisions():
     assert family.read(SLUG)["rows"][0]["status"] == "proposed"
 
 
+def test_skip_wikidata_makes_no_sparql_call_and_warns():
+    shutil.rmtree(DIR, ignore_errors=True)
+    real, calls = family.http_json, []
+    family.http_json = lambda url, params=None: (calls.append(url), real(url, params))[1]
+    try:
+        out = family.propose(SLUG, ror="00yc8qw13", skip_wikidata=True)
+    finally:
+        family.http_json = real
+    assert not any(u == family.WD_SPARQL for u in calls)
+    assert out["counts"]["wikidata"] == 0 and any("--skip-wikidata" in w for w in out["warnings"])
+    assert not any(r["id_source"] == "wikidata" for r in out["rows"])
+
+
 def test_apply_two_parents_leaves_case_json_unchanged():
     out = fresh()
     base_case()

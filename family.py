@@ -305,7 +305,7 @@ def check_text(r):
         raise SystemExit(f"row {r['name']!r}: {own_text_problems(r)}")
 
 
-def propose(slug, ror=None, qid=None, force=False):
+def propose(slug, ror=None, qid=None, force=False, skip_wikidata=False):
     path = CASES / slug / "candidates.json"
     if path.exists() and not force:  # it may hold human decisions
         raise SystemExit(f"{path} exists (it may hold approved/rejected rows); add --force to replace it")
@@ -320,7 +320,9 @@ def propose(slug, ror=None, qid=None, force=False):
     me["rel_suggested"] = "parent"
     rows, counts = [me], {}
     rows += (r := from_ror(seed)); counts["ror"] = len(r)
-    items = wikidata_items(seed["qid"]) if seed["qid"] else {}
+    if skip_wikidata:  # query.wikidata.org rate-limits hard; the other sources still run
+        warnings.append("Wikidata subsidiaries/owners skipped (--skip-wikidata): no shareholder rows; re-run later without it")
+    items = wikidata_items(seed["qid"]) if seed["qid"] and not skip_wikidata else {}
     rows += (r := from_wikidata(seed, items)); counts["wikidata_raw_items"], counts["wikidata"] = len(items), len(r)
     rows += (r := from_gleif(seed, warnings)); counts["gleif"] = len(r)
     rows += (r := from_sec(seed, warnings)); counts["sec"] = len(r)
@@ -425,6 +427,8 @@ def main(argv=None):
     sub.choices["propose"].add_argument("--seed-ror")
     sub.choices["propose"].add_argument("--seed-wikidata")
     sub.choices["propose"].add_argument("--force", action="store_true", help="replace an existing candidates.json")
+    sub.choices["propose"].add_argument("--skip-wikidata", action="store_true",
+                                        help="skip the Wikidata SPARQL query (when it answers 429)")
     s = sub.choices["set"]
     s.add_argument("--row", type=int, required=True)
     s.add_argument("--status", required=True, choices=["approved", "rejected"])
@@ -443,7 +447,7 @@ def main(argv=None):
         if a.seed_wikidata and not re.fullmatch(r"Q\d+", a.seed_wikidata) or a.seed_ror and not re.fullmatch(r"0[a-z0-9]{8}", a.seed_ror):
             p.error("bad seed id (ROR like 00yc8qw13, Wikidata like Q3295867)")
         loader.KEY = loader.api_key()
-        out = propose(a.case, a.seed_ror, a.seed_wikidata, a.force)
+        out = propose(a.case, a.seed_ror, a.seed_wikidata, a.force, a.skip_wikidata)
         print(json.dumps({k: out[k] for k in ("seed", "counts", "mapped", "warnings")}, indent=1, ensure_ascii=False))
         print(f"collisions: {sum(r['status'] == 'same_name_collision' for r in out['rows'])}, rows: {len(out['rows'])}")
     elif a.cmd == "review":
