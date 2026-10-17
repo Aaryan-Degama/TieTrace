@@ -32,7 +32,7 @@ Status key: ⬜ not started · 🟨 in progress · ✅ done (Reviewer passed) ·
 | Task | What | Status |
 |---|---|---|
 | A0 | Decisions and docs read | ✅ |
-| A1 | Provider adapters (Gemini first, then Claude, OpenAI) with official SDKs | ⬜ |
+| A1 | Provider adapters (Gemini first, then Claude, OpenAI) with official SDKs | ✅ (live Claude/OpenAI not run) |
 | A2 | Neutral agent loop (safety rules live here) | ⬜ |
 | A3 | Run budgets and refusals | ⬜ |
 | A4 | Web endpoints and key handling | ⬜ |
@@ -54,10 +54,12 @@ Status key: ⬜ not started · 🟨 in progress · ✅ done (Reviewer passed) ·
 - **Reviewer checked:** confirm the docs pages cited exist and say what the Builder claims; confirm no key is in any changed file.
 
 ## A1. Provider adapters (plan Task 1)
-- [ ] Neutral types `ToolSpec`, `ToolCall`, `Turn`, `ProviderError` and `get_provider(name)` in `web/agent/providers.py`; model ids in `web/agent/models.json`
-- [ ] **Gemini adapter** (free-tier model), then **Claude** and **OpenAI** adapters, each using its official SDK the way its docs show
-- [ ] Offline contract tests from the plan's Task 1 (tool-call reply, text reply, 401 becomes `BAD_KEY` without echoing the key, malformed arguments `BAD_REPLY`, key only in the auth path, unknown provider refused), with recorded or mocked SDK replies
-- [ ] **Live test on the real Gemini free tier:** a one-turn call that asks for a tool call and gets a parsed `ToolCall` back; the Reviewer records the model id and result
+- [x] Neutral types `ToolSpec`, `ToolCall`, `Turn`, `ProviderError` and `get_provider(name)` in `web/agent/providers.py`; model ids in `web/agent/models.json`
+- [x] **Gemini adapter** (free-tier model), then **Claude** and **OpenAI** adapters, each using its official SDK the way its docs show
+- [x] Offline contract tests from the plan's Task 1 (tool-call reply, text reply, 401 becomes `BAD_KEY` without echoing the key, malformed arguments `BAD_REPLY`, key only in the auth path, unknown provider refused), with recorded or mocked SDK replies
+- [x] **Live test on the real Gemini free tier:** a one-turn call that asks for a tool call and gets a parsed `ToolCall` back; the Reviewer records the model id and result
+- **Builder note (Abdul, Oct 17):** `web/agent/providers.py`, `models.json`, `tests/test_agent_providers.py` (12/12 offline, fake SDK clients) and `tests/test_agent_live.py` (AGENT_LIVE=1) written. Live Gemini free tier, model `gemini-3.8-flash` via the Interactions API: turn 1 returned a parsed `ToolCall(lookup, {name: Ada})`, turn 2 (tool result sent back) returned text; a wrong key gives BAD_KEY (HTTP 400 + reason API_KEY_INVALID); no 429 seen, so no free-tier limit was revealed (still unknown); no key printed. Claude and OpenAI live: not run: no key (adapters checked against docs and fakes only). Added `Turn.raw` (not in the plan): A2 must copy it into the assistant message as `raw`; Gemini refused a rebuilt tool history without it (HTTP 400, cause unconfirmed). `token_cap` 50000 and `turn_max_tokens` 2048 in models.json are my choices, not from docs. Boxes not ticked (Reviewer decides).
+- **Reviewer (Oct 17): PASS after one fix round** (Gemini client close, 3 nits; offline 19/19, live Gemini `gemini-3.8-flash` tool call + answer + wrong-key `BAD_KEY`, golden 15/15, server 26/26). Live Claude and OpenAI: **not run: no key** (not ticked). Boxes (Abdul, Oct 17). Note for A2: copy `Turn.raw` into the assistant message and keep it server-side; A3 must turn an empty reply with stop 'length' into a readable error.
 - **Reviewer passes when:** all offline tests pass, the Gemini live call works, Claude/OpenAI adapters pass their offline tests (live marked "not run" without a key), and the canary key never appears in any error or log.
 
 ## A2. Neutral agent loop (plan Task 2)
