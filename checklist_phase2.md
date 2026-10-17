@@ -41,7 +41,7 @@ Status key: ⬜ not started · 🟨 in progress · ✅ done · ✂️ cut
 - [x] Fix the 6 `test_obsidian` failures on Windows (Aaryan, Oct 17): CTRL_BREAK_EVENT + SIGBREAK handler, symlink sub-step skipped only on Windows with a `mklink /J` fallback; found and fixed a junctioned `.trash` / export-folder escape. **Abdul: re-run on Windows to confirm**
 - [x] `test_research`: cold-start `bridges3_hub` (Aaryan, Oct 17): the Tier-A filter scanned a 3,035-id list per path; now a hash join. Biggest hub 1.2 s → 0.21 s cold; output identical (2,340 calls compared by the Reviewer); the order is now total so LIMIT is deterministic; limit unchanged
 - [ ] Choose a licence for our own code and add `LICENSE` (decide together) (→ Abdul + Aaryan)
-- [ ] Decision D9 recorded as decided (case slug is a tool argument, newsroom stays env-only): copy it into `docs/mcp-spec.md` section 3 and the redesign with `(decided by Aaryan)` if not there yet (→ unassigned)
+- [x] Decision D9 recorded as decided (case slug is a tool argument, newsroom stays env-only) (Aaryan, Oct 17): marked in `docs/mcp-spec.md` section 4 ("Case", where the rule lives) and redesign section 6, both `(decided by Aaryan, Oct 16)`
 - [ ] E5 profile hand-check: a person fills the verdict columns in `eval/e5_sample.md` (50 authors), then the error rate goes to `eval/results.md` and the README "limits" (→ unassigned)
 - [x] Tier meaning follow-up (Aaryan, Oct 17): a DOI with two evidence items now prints them as separate groups split by " | " (DOIs split by "; "); test in `test_notes`
 
