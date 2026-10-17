@@ -144,8 +144,8 @@ def _err(code, message):
 ERROR_TEXT = {
     "CLAUDE_NOT_FOUND": "Claude Code (the `claude` command) is not installed or not on PATH. Install it and log in, "
                         "then try again.",
-    "AUTH": "Claude Code is not logged in, or its login expired. Run `claude` in a terminal, log in (/login), then "
-            "try again.",
+    "AUTH": "Claude Code is not logged in, or its login expired. Use the Log in button below (or run "
+            "`claude auth login` in a terminal), then try again.",
     "FALKORDB_DOWN": "FalkorDB is not reachable. Start it (`docker start falkordb`) and check FALKORDB_PORT, then "
                      "try again.",
     "TIMEOUT": "The check took too long and was stopped. Try a shorter story or fewer experts.",
@@ -632,6 +632,55 @@ def index():
 @app.get("/how")
 def how():
     return FileResponse(STATIC / "how.html")
+
+
+def claude_logged_in():
+    """True or False from `claude auth status` (it prints JSON), or None when claude cannot be asked."""
+    exe = shutil.which(os.environ.get("TIETRACE_CLAUDE", "claude"))
+    if not exe:
+        return None
+    try:
+        out = subprocess.run([exe, "auth", "status"], capture_output=True, text=True, timeout=15).stdout
+        return bool(json.loads(out).get("loggedIn"))
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None
+
+
+@app.get("/api/auth")
+def auth_status():
+    """Only a yes/no: no email or account detail is passed on to the page."""
+    return {"ok": True, "logged_in": claude_logged_in()}
+
+
+_login = {"proc": None}  # the one `claude auth login` we started (it ends when the browser step is done)
+
+
+@app.post("/api/login")
+def start_login(request: Request):
+    """Start `claude auth login`: it opens the sign-in page in this machine's browser (the person signs in there).
+    Returns the sign-in link too, in case the browser did not open. Local page only (Origin check)."""
+    if not _local_origin(request):
+        return _refuse(403, "only this page may call the API")
+    exe = shutil.which(os.environ.get("TIETRACE_CLAUDE", "claude"))
+    if not exe:
+        return JSONResponse({"ok": False, "error": {"code": "CLAUDE_NOT_FOUND", "message": ERROR_TEXT["CLAUDE_NOT_FOUND"]}})
+    old = _login["proc"]
+    if old is not None and old.poll() is None:
+        old.kill()  # a stale, unfinished attempt: start a fresh one
+    group = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt" else {"start_new_session": True}
+    proc = subprocess.Popen([exe, "auth", "login"], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, text=True, **group)
+    _login["proc"] = proc
+    lines = []
+    reader = threading.Thread(target=lambda: [lines.append(x) for x in proc.stdout], daemon=True)
+    reader.start()
+    deadline = time.time() + 4
+    link = None
+    while link is None and time.time() < deadline and (proc.poll() is None or reader.is_alive()):
+        time.sleep(0.2)
+        m = re.search(r"https://\S+", "".join(lines))
+        link = m.group(0) if m else None
+    return {"ok": True, "started": True, "url": link}
 
 
 class Ask(BaseModel):

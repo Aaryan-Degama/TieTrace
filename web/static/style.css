@@ -164,3 +164,8 @@ code { font: 13px var(--mono); background: var(--panel-2); padding: 1px 5px; bor
 @media (prefers-reduced-motion: no-preference) {
   .step.running .name::after { content: " …"; }
 }
+
+.msg.auth { background: var(--panel, #1a222b); border: 1px solid #2f5f58; border-radius: 10px; padding: 12px 14px; margin-top: 8px; }
+.msg.auth ol { margin: 8px 0 8px 18px; padding: 0; }
+.msg.auth .row { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 6px; }
+.msg.auth a[hidden] { display: none; }

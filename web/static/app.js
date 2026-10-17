@@ -78,10 +78,43 @@ function handle(reply, event, d) {
   else if (event === "ambiguous") picker(reply, d);
   else if (event === "note") note(reply, d);
   else if (event === "text") replyText(reply, d.text);
-  else if (event === "error") showError(reply, d.message);
+  else if (event === "error") { showError(reply, d.message); if (d.code === "AUTH") authHelp(reply.box); }
   else if (event === "warning") reply.box.append(el("div", { class: "msg error", role: "status", text: d.message }));
   else if (event === "done") sessionId = d.session_id || sessionId;
   scrollDown();
+}
+
+// Shown whenever Claude Code is not logged in: steps, a Log in button (opens the sign-in page on this machine) and a
+// "check again" button. The sign-in itself always happens in the person's own browser; nothing is typed here.
+function authHelp(parent) {
+  const note = el("p", { class: "status", role: "status" });
+  const link = el("a", { href: "#", hidden: "", target: "_blank", rel: "noopener", text: "Open the sign-in page" });
+  const login = el("button", { type: "button", class: "primary", text: "Log in with Claude" });
+  const again = el("button", { type: "button", text: "I have logged in: check again" });
+  login.addEventListener("click", async () => {
+    note.textContent = "Starting the sign-in… a browser tab should open. Finish signing in there.";
+    try {
+      const res = await fetch("/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      const j = await res.json();
+      if (!j.ok) { note.textContent = (j.error && j.error.message) || "Could not start the sign-in. Use the terminal steps below."; return; }
+      if (j.url) { link.href = j.url; link.hidden = false; note.textContent += " If no tab opened, use the link."; }
+    } catch (e) { note.textContent = "Could not reach the TieTrace web server."; }
+  });
+  again.addEventListener("click", async () => {
+    try {
+      const j = await (await fetch("/api/auth")).json();
+      note.textContent = j.logged_in === true ? "Logged in. Send your story again."
+        : j.logged_in === false ? "Still not logged in. Finish the sign-in, then check again."
+        : "Could not check (is the `claude` command installed?).";
+    } catch (e) { note.textContent = "Could not reach the TieTrace web server."; }
+  });
+  parent.append(el("div", { class: "msg auth" },
+    el("strong", { text: "Sign in to Claude Code to continue" }),
+    el("ol", {}, el("li", { text: "Press Log in with Claude. A browser tab opens; sign in there." }),
+      el("li", { text: "Come back here and press check again." }),
+      el("li", { text: "Send your story again." })),
+    el("p", { text: "Or, in a terminal in this folder, run:" }), el("code", { text: "claude auth login" }),
+    el("div", { class: "row" }, login, again), link, note));
 }
 
 function showError(reply, message) { reply.box.append(el("div", { class: "msg error", role: "alert", text: message })); }

@@ -63,7 +63,7 @@ TieTrace checks how connected an expert is to the company in a story, using an O
 
 ## Commands
 - **FalkorDB:** start with the AOF `docker run` command under *FalkorDB data persistence* below (Browser at http://127.0.0.1:3001)
-- **Ports on Abdul's machine (Oct 15):** 6379 and 3000 are taken by other containers, so FalkorDB runs on host ports 6380 and 3001 (`-p 127.0.0.1:6380:6379 -p 127.0.0.1:3001:3000`). Set `FALKORDB_PORT=6380` for `loader.py`, tests and the server (default 6379). Browser: http://localhost:3001.
+- **Ports on Abdul's machine (Oct 17):** 6379/3000 are taken by other containers, and after a Windows restart 6380-6479 became reserved (`netsh interface ipv4 show excludedportrange protocol=tcp`), so FalkorDB runs as container `falkordb-main` on host ports **6500** (DB) and 3001 (Browser), volume `falkordb-data-v4`. Set `FALKORDB_PORT=6500` for the loader, tests, the web app and the server. Old containers `falkordb` (`:latest`) and `falkordb-v4` are stopped and kept; never start them against that volume at the same time.
 - **Bind to localhost only** (Aaryan, Oct 16): every `-p` is `127.0.0.1:...`, so FalkorDB (no password) is not reachable from the network.
 - **FalkorDB data persistence:** the container is named `falkordb` and uses the named volume `falkordb-data`. The volume alone is not enough: FalkorDB keeps the graph in RAM and only snapshots it now and then, so a hard stop lost data once (Oct 16). AOF fixes that (at most about 1 s lost on a crash). Start it with `docker start falkordb`.
   - **New container:** `docker run -d --name falkordb -p 127.0.0.1:6379:6379 -p 127.0.0.1:3001:3000 -v falkordb-data:/var/lib/falkordb/data -e REDIS_ARGS="--appendonly yes --appendfsync everysec" --stop-timeout 120 falkordb/falkordb:v4.22.1`
