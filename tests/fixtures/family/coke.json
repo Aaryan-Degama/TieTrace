@@ -1,0 +1,1086 @@
+{
+ "_note": "Trimmed from real replies recorded live on 2026-10-17 (ROR v2, Wikidata, GLEIF, OpenAlex) for The Coca-Cola Company; FSFW funder from OpenAlex F4320318650. Test fixture only.",
+ "http": {
+  "https://api.ror.org/v2/organizations/00yc8qw13": {
+   "id": "https://ror.org/00yc8qw13",
+   "names": [
+    {
+     "value": "Coca Cola (United States)",
+     "types": [
+      "ror_display",
+      "label"
+     ]
+    }
+   ],
+   "relationships": [],
+   "external_ids": [
+    {
+     "type": "wikidata",
+     "all": [
+      "Q3295867"
+     ],
+     "preferred": null
+    }
+   ]
+  },
+  "https://www.wikidata.org/wiki/Special:EntityData/Q3295867.json": {
+   "entities": {
+    "Q3295867": {
+     "labels": {
+      "en": {
+       "value": "The Coca-Cola Company"
+      }
+     },
+     "claims": {
+      "P1278": [
+       {
+        "mainsnak": {
+         "datavalue": {
+          "value": "UWJKFUJFZ02DKWI3RY53"
+         }
+        }
+       }
+      ],
+      "P6782": [
+       {
+        "mainsnak": {
+         "datavalue": {
+          "value": "00yc8qw13"
+         }
+        }
+       }
+      ]
+     }
+    }
+   }
+  },
+  "https://query.wikidata.org/sparql": {
+   "results": {
+    "bindings": [
+     {
+      "item": {
+       "type": "uri",
+       "value": "http://www.wikidata.org/entity/Q219635"
+      },
+      "dir": {
+       "type": "literal",
+       "value": "parent"
+      },
+      "prop": {
+       "type": "literal",
+       "value": "P127"
+      },
+      "class": {
+       "type": "uri",
+       "value": "http://www.wikidata.org/entity/Q783794"
+      },
+      "ror": {
+       "type": "literal",
+       "value": "031dc4703"
+      },
+      "lei": {
+       "type": "literal",
+       "value": "549300LRIF3NWCU26A80"
+      },
+      "itemLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "BlackRock"
+      },
+      "classLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "company"
+      },
+      "isOrg": {
+       "datatype": "http://www.w3.org/2001/XMLSchema#boolean",
+       "type": "literal",
+       "value": "true"
+      }
+     },
+     {
+      "item": {
+       "type": "uri",
+       "value": "http://www.wikidata.org/entity/Q219635"
+      },
+      "dir": {
+       "type": "literal",
+       "value": "parent"
+      },
+      "prop": {
+       "type": "literal",
+       "value": "P127"
+      },
+      "class": {
+       "type": "uri",
+       "value": "http://www.wikidata.org/entity/Q891723"
+      },
+      "ror": {
+       "type": "literal",
+       "value": "031dc4703"
+      },
+      "lei": {
+       "type": "literal",
+       "value": "549300LRIF3NWCU26A80"
+      },
+      "itemLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "BlackRock"
+      },
+      "classLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "public company"
+      },
+      "isOrg": {
+       "datatype": "http://www.w3.org/2001/XMLSchema#boolean",
+       "type": "literal",
+       "value": "true"
+      }
+     },
+     {
+      "item": {
+       "type": "uri",
+       "value": "http://www.wikidata.org/entity/Q219635"
+      },
+      "dir": {
+       "type": "literal",
+       "value": "parent"
+      },
+      "prop": {
+       "type": "literal",
+       "value": "P127"
+      },
+      "class": {
+       "type": "uri",
+       "value": "http://www.wikidata.org/entity/Q4830453"
+      },
+      "ror": {
+       "type": "literal",
+       "value": "031dc4703"
+      },
+      "lei": {
+       "type": "literal",
+       "value": "549300LRIF3NWCU26A80"
+      },
+      "itemLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "BlackRock"
+      },
+      "classLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "business"
+      },
+      "isOrg": {
+       "datatype": "http://www.w3.org/2001/XMLSchema#boolean",
+       "type": "literal",
+       "value": "true"
+      }
+     },
+     {
+      "item": {
+       "type": "uri",
+       "value": "http://www.wikidata.org/entity/Q1104910"
+      },
+      "dir": {
+       "type": "literal",
+       "value": "child"
+      },
+      "prop": {
+       "type": "literal",
+       "value": "P749"
+      },
+      "class": {
+       "type": "uri",
+       "value": "http://www.wikidata.org/entity/Q891723"
+      },
+      "lei": {
+       "type": "literal",
+       "value": "549300EFP3TNG7JGVE49"
+      },
+      "itemLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "Coca-Cola HBC"
+      },
+      "classLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "public company"
+      },
+      "isOrg": {
+       "datatype": "http://www.w3.org/2001/XMLSchema#boolean",
+       "type": "literal",
+       "value": "true"
+      }
+     },
+     {
+      "item": {
+       "type": "uri",
+       "value": "http://www.wikidata.org/entity/Q1104910"
+      },
+      "dir": {
+       "type": "literal",
+       "value": "child"
+      },
+      "prop": {
+       "type": "literal",
+       "value": "P355"
+      },
+      "class": {
+       "type": "uri",
+       "value": "http://www.wikidata.org/entity/Q891723"
+      },
+      "lei": {
+       "type": "literal",
+       "value": "549300EFP3TNG7JGVE49"
+      },
+      "itemLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "Coca-Cola HBC"
+      },
+      "classLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "public company"
+      },
+      "isOrg": {
+       "datatype": "http://www.w3.org/2001/XMLSchema#boolean",
+       "type": "literal",
+       "value": "true"
+      }
+     },
+     {
+      "item": {
+       "type": "uri",
+       "value": "http://www.wikidata.org/entity/Q1104910"
+      },
+      "dir": {
+       "type": "literal",
+       "value": "child"
+      },
+      "prop": {
+       "type": "literal",
+       "value": "P127"
+      },
+      "class": {
+       "type": "uri",
+       "value": "http://www.wikidata.org/entity/Q891723"
+      },
+      "lei": {
+       "type": "literal",
+       "value": "549300EFP3TNG7JGVE49"
+      },
+      "itemLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "Coca-Cola HBC"
+      },
+      "classLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "public company"
+      },
+      "isOrg": {
+       "datatype": "http://www.w3.org/2001/XMLSchema#boolean",
+       "type": "literal",
+       "value": "true"
+      }
+     },
+     {
+      "item": {
+       "type": "uri",
+       "value": "http://www.wikidata.org/entity/Q1104910"
+      },
+      "dir": {
+       "type": "literal",
+       "value": "child"
+      },
+      "prop": {
+       "type": "literal",
+       "value": "P749"
+      },
+      "class": {
+       "type": "uri",
+       "value": "http://www.wikidata.org/entity/Q4830453"
+      },
+      "lei": {
+       "type": "literal",
+       "value": "549300EFP3TNG7JGVE49"
+      },
+      "itemLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "Coca-Cola HBC"
+      },
+      "classLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "business"
+      },
+      "isOrg": {
+       "datatype": "http://www.w3.org/2001/XMLSchema#boolean",
+       "type": "literal",
+       "value": "true"
+      }
+     },
+     {
+      "item": {
+       "type": "uri",
+       "value": "http://www.wikidata.org/entity/Q1104910"
+      },
+      "dir": {
+       "type": "literal",
+       "value": "child"
+      },
+      "prop": {
+       "type": "literal",
+       "value": "P355"
+      },
+      "class": {
+       "type": "uri",
+       "value": "http://www.wikidata.org/entity/Q4830453"
+      },
+      "lei": {
+       "type": "literal",
+       "value": "549300EFP3TNG7JGVE49"
+      },
+      "itemLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "Coca-Cola HBC"
+      },
+      "classLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "business"
+      },
+      "isOrg": {
+       "datatype": "http://www.w3.org/2001/XMLSchema#boolean",
+       "type": "literal",
+       "value": "true"
+      }
+     },
+     {
+      "item": {
+       "type": "uri",
+       "value": "http://www.wikidata.org/entity/Q1104910"
+      },
+      "dir": {
+       "type": "literal",
+       "value": "child"
+      },
+      "prop": {
+       "type": "literal",
+       "value": "P127"
+      },
+      "class": {
+       "type": "uri",
+       "value": "http://www.wikidata.org/entity/Q4830453"
+      },
+      "lei": {
+       "type": "literal",
+       "value": "549300EFP3TNG7JGVE49"
+      },
+      "itemLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "Coca-Cola HBC"
+      },
+      "classLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "business"
+      },
+      "isOrg": {
+       "datatype": "http://www.w3.org/2001/XMLSchema#boolean",
+       "type": "literal",
+       "value": "true"
+      }
+     },
+     {
+      "item": {
+       "type": "uri",
+       "value": "http://www.wikidata.org/entity/Q1171787"
+      },
+      "dir": {
+       "type": "literal",
+       "value": "child"
+      },
+      "prop": {
+       "type": "literal",
+       "value": "P127"
+      },
+      "class": {
+       "type": "uri",
+       "value": "http://www.wikidata.org/entity/Q40050"
+      },
+      "itemLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "Dasani"
+      },
+      "classLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "drink"
+      },
+      "isOrg": {
+       "datatype": "http://www.w3.org/2001/XMLSchema#boolean",
+       "type": "literal",
+       "value": "false"
+      }
+     },
+     {
+      "item": {
+       "type": "uri",
+       "value": "http://www.wikidata.org/entity/Q1171787"
+      },
+      "dir": {
+       "type": "literal",
+       "value": "child"
+      },
+      "prop": {
+       "type": "literal",
+       "value": "P127"
+      },
+      "class": {
+       "type": "uri",
+       "value": "http://www.wikidata.org/entity/Q167270"
+      },
+      "itemLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "Dasani"
+      },
+      "classLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "trademark"
+      },
+      "isOrg": {
+       "datatype": "http://www.w3.org/2001/XMLSchema#boolean",
+       "type": "literal",
+       "value": "false"
+      }
+     },
+     {
+      "item": {
+       "type": "uri",
+       "value": "http://www.wikidata.org/entity/Q1171787"
+      },
+      "dir": {
+       "type": "literal",
+       "value": "child"
+      },
+      "prop": {
+       "type": "literal",
+       "value": "P127"
+      },
+      "class": {
+       "type": "uri",
+       "value": "http://www.wikidata.org/entity/Q431289"
+      },
+      "itemLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "Dasani"
+      },
+      "classLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "brand"
+      },
+      "isOrg": {
+       "datatype": "http://www.w3.org/2001/XMLSchema#boolean",
+       "type": "literal",
+       "value": "false"
+      }
+     },
+     {
+      "item": {
+       "type": "uri",
+       "value": "http://www.wikidata.org/entity/Q5139057"
+      },
+      "dir": {
+       "type": "literal",
+       "value": "child"
+      },
+      "prop": {
+       "type": "literal",
+       "value": "P127"
+      },
+      "class": {
+       "type": "uri",
+       "value": "http://www.wikidata.org/entity/Q811430"
+      },
+      "itemLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "Coca-Cola Baltimore Branch Factory"
+      },
+      "classLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "fixed construction"
+      },
+      "isOrg": {
+       "datatype": "http://www.w3.org/2001/XMLSchema#boolean",
+       "type": "literal",
+       "value": "false"
+      }
+     },
+     {
+      "item": {
+       "type": "uri",
+       "value": "http://www.wikidata.org/entity/Q5139058"
+      },
+      "dir": {
+       "type": "literal",
+       "value": "child"
+      },
+      "prop": {
+       "type": "literal",
+       "value": "P127"
+      },
+      "class": {
+       "type": "uri",
+       "value": "http://www.wikidata.org/entity/Q891723"
+      },
+      "lei": {
+       "type": "literal",
+       "value": "57VG5X0E00X0QJU7CQ58"
+      },
+      "itemLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "Coca-Cola Consolidated, Inc."
+      },
+      "classLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "public company"
+      },
+      "isOrg": {
+       "datatype": "http://www.w3.org/2001/XMLSchema#boolean",
+       "type": "literal",
+       "value": "true"
+      }
+     },
+     {
+      "item": {
+       "type": "uri",
+       "value": "http://www.wikidata.org/entity/Q5139058"
+      },
+      "dir": {
+       "type": "literal",
+       "value": "child"
+      },
+      "prop": {
+       "type": "literal",
+       "value": "P355"
+      },
+      "class": {
+       "type": "uri",
+       "value": "http://www.wikidata.org/entity/Q891723"
+      },
+      "lei": {
+       "type": "literal",
+       "value": "57VG5X0E00X0QJU7CQ58"
+      },
+      "itemLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "Coca-Cola Consolidated, Inc."
+      },
+      "classLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "public company"
+      },
+      "isOrg": {
+       "datatype": "http://www.w3.org/2001/XMLSchema#boolean",
+       "type": "literal",
+       "value": "true"
+      }
+     },
+     {
+      "item": {
+       "type": "uri",
+       "value": "http://www.wikidata.org/entity/Q5139058"
+      },
+      "dir": {
+       "type": "literal",
+       "value": "child"
+      },
+      "prop": {
+       "type": "literal",
+       "value": "P127"
+      },
+      "class": {
+       "type": "uri",
+       "value": "http://www.wikidata.org/entity/Q4830453"
+      },
+      "lei": {
+       "type": "literal",
+       "value": "57VG5X0E00X0QJU7CQ58"
+      },
+      "itemLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "Coca-Cola Consolidated, Inc."
+      },
+      "classLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "business"
+      },
+      "isOrg": {
+       "datatype": "http://www.w3.org/2001/XMLSchema#boolean",
+       "type": "literal",
+       "value": "true"
+      }
+     },
+     {
+      "item": {
+       "type": "uri",
+       "value": "http://www.wikidata.org/entity/Q5139058"
+      },
+      "dir": {
+       "type": "literal",
+       "value": "child"
+      },
+      "prop": {
+       "type": "literal",
+       "value": "P355"
+      },
+      "class": {
+       "type": "uri",
+       "value": "http://www.wikidata.org/entity/Q4830453"
+      },
+      "lei": {
+       "type": "literal",
+       "value": "57VG5X0E00X0QJU7CQ58"
+      },
+      "itemLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "Coca-Cola Consolidated, Inc."
+      },
+      "classLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "business"
+      },
+      "isOrg": {
+       "datatype": "http://www.w3.org/2001/XMLSchema#boolean",
+       "type": "literal",
+       "value": "true"
+      }
+     }
+    ]
+   }
+  },
+  "https://api.gleif.org/api/v1/lei-records/UWJKFUJFZ02DKWI3RY53/direct-children": {
+   "meta": {
+    "goldenCopy": {
+     "publishDate": "2026-10-17T00:00:00Z"
+    },
+    "pagination": {
+     "currentPage": 1,
+     "perPage": 100,
+     "from": 1,
+     "to": 10,
+     "total": 2,
+     "lastPage": 1
+    }
+   },
+   "links": {
+    "first": "https://api.gleif.org/api/v1/lei-records/UWJKFUJFZ02DKWI3RY53/direct-children?page%5Bnumber%5D=1&page%5Bsize%5D=100",
+    "last": "https://api.gleif.org/api/v1/lei-records/UWJKFUJFZ02DKWI3RY53/direct-children?page%5Bnumber%5D=1&page%5Bsize%5D=100"
+   },
+   "data": [
+    {
+     "type": "lei-records",
+     "id": "254900MQX4JO5VHDG624",
+     "attributes": {
+      "lei": "254900MQX4JO5VHDG624",
+      "entity": {
+       "legalName": {
+        "name": "THE COCA-COLA EXPORT CORPORATION",
+        "language": "en"
+       },
+       "otherNames": [],
+       "transliteratedOtherNames": [],
+       "legalAddress": {
+        "language": "en",
+        "addressLines": [
+         "C/O THE CORPORATION TRUST COMPANY",
+         "CORPORATION TRUST CENTER",
+         "1209 ORANGE ST"
+        ],
+        "addressNumber": null,
+        "addressNumberWithinBuilding": null,
+        "mailRouting": null,
+        "city": "WILMINGTON",
+        "region": "US-DE",
+        "country": "US",
+        "postalCode": "19801"
+       },
+       "headquartersAddress": {
+        "language": "en",
+        "addressLines": [
+         "1 COCA-COLA PLAZA"
+        ],
+        "addressNumber": null,
+        "addressNumberWithinBuilding": null,
+        "mailRouting": null,
+        "city": "ATLANTA",
+        "region": "US-GA",
+        "country": "US",
+        "postalCode": "30313"
+       },
+       "registeredAt": {
+        "id": "RA000602",
+        "other": null
+       },
+       "registeredAs": "278530",
+       "jurisdiction": "US-DE",
+       "category": "GENERAL",
+       "legalForm": {
+        "id": "XTIQ",
+        "other": null
+       },
+       "associatedEntity": {
+        "lei": null,
+        "name": null
+       },
+       "status": "ACTIVE",
+       "expiration": {
+        "date": null,
+        "reason": null
+       },
+       "successorEntity": {
+        "lei": null,
+        "name": null
+       },
+       "successorEntities": [],
+       "creationDate": "1930-03-13T00:00:00Z",
+       "subCategory": null,
+       "otherAddresses": [],
+       "eventGroups": []
+      },
+      "registration": {
+       "initialRegistrationDate": "2025-09-29T15:32:25Z",
+       "lastUpdateDate": "2026-08-18T20:00:19Z",
+       "status": "ISSUED",
+       "nextRenewalDate": "2027-08-29T15:32:25Z",
+       "managingLou": "5493001KJTIIGC8Y1R12",
+       "corroborationLevel": "FULLY_CORROBORATED",
+       "validatedAt": {
+        "id": "RA000602",
+        "other": null
+       },
+       "validatedAs": "278530",
+       "otherValidationAuthorities": []
+      },
+      "bic": null,
+      "mic": null,
+      "ocid": null,
+      "qcc": null,
+      "gem": null,
+      "spglobal": [
+       "4339571"
+      ],
+      "conformityFlag": "CONFORMING"
+     },
+     "relationships": {
+      "managing-lou": {
+       "links": {
+        "related": "https://api.gleif.org/api/v1/lei-records/254900MQX4JO5VHDG624/managing-lou"
+       }
+      },
+      "lei-issuer": {
+       "links": {
+        "related": "https://api.gleif.org/api/v1/lei-records/254900MQX4JO5VHDG624/lei-issuer"
+       }
+      },
+      "field-modifications": {
+       "links": {
+        "related": "https://api.gleif.org/api/v1/lei-records/254900MQX4JO5VHDG624/field-modifications"
+       }
+      },
+      "direct-parent": {
+       "links": {
+        "relationship-record": "https://api.gleif.org/api/v1/lei-records/254900MQX4JO5VHDG624/direct-parent-relationship",
+        "lei-record": "https://api.gleif.org/api/v1/lei-records/254900MQX4JO5VHDG624/direct-parent"
+       }
+      },
+      "ultimate-parent": {
+       "links": {
+        "relationship-record": "https://api.gleif.org/api/v1/lei-records/254900MQX4JO5VHDG624/ultimate-parent-relationship",
+        "lei-record": "https://api.gleif.org/api/v1/lei-records/254900MQX4JO5VHDG624/ultimate-parent"
+       }
+      }
+     },
+     "links": {
+      "self": "https://api.gleif.org/api/v1/lei-records/254900MQX4JO5VHDG624"
+     }
+    },
+    {
+     "type": "lei-records",
+     "id": "213800U2NC79HDGLZN36",
+     "attributes": {
+      "lei": "213800U2NC79HDGLZN36",
+      "entity": {
+       "legalName": {
+        "name": "COSTA LIMITED",
+        "language": "en"
+       },
+       "otherNames": [],
+       "transliteratedOtherNames": [],
+       "legalAddress": {
+        "language": "en",
+        "addressLines": [
+         "3 KNAVES BEECH BUSINESS CENTRE",
+         "DAVIES WAY",
+         "LOUDWATER"
+        ],
+        "addressNumber": null,
+        "addressNumberWithinBuilding": null,
+        "mailRouting": null,
+        "city": "HIGH WYCOMBE",
+        "region": "GB-BKM",
+        "country": "GB",
+        "postalCode": "HP10 9QR"
+       },
+       "headquartersAddress": {
+        "language": "en",
+        "addressLines": [
+         "3 KNAVES BEECH BUSINESS CENTRE",
+         "DAVIES WAY",
+         "LOUDWATER"
+        ],
+        "addressNumber": null,
+        "addressNumberWithinBuilding": null,
+        "mailRouting": null,
+        "city": "HIGH WYCOMBE",
+        "region": "GB-BKM",
+        "country": "GB",
+        "postalCode": "HP10 9QR"
+       },
+       "registeredAt": {
+        "id": "RA000585",
+        "other": null
+       },
+       "registeredAs": "01270695",
+       "jurisdiction": "GB",
+       "category": "GENERAL",
+       "legalForm": {
+        "id": "H0PO",
+        "other": null
+       },
+       "associatedEntity": {
+        "lei": null,
+        "name": null
+       },
+       "status": "ACTIVE",
+       "expiration": {
+        "date": null,
+        "reason": null
+       },
+       "successorEntity": {
+        "lei": null,
+        "name": null
+       },
+       "successorEntities": [],
+       "creationDate": "1976-07-28T00:00:00Z",
+       "subCategory": null,
+       "otherAddresses": [],
+       "eventGroups": [
+        {
+         "groupType": "STANDALONE",
+         "events": [
+          {
+           "validationDocuments": "ACCOUNTS_FILING",
+           "effectiveDate": "2023-01-06T00:00:00Z",
+           "recordedDate": "2023-01-20T09:14:23Z",
+           "type": "CHANGE_LEGAL_ADDRESS",
+           "status": "COMPLETED"
+          }
+         ]
+        },
+        {
+         "groupType": "STANDALONE",
+         "events": [
+          {
+           "validationDocuments": "ACCOUNTS_FILING",
+           "effectiveDate": "2023-01-06T00:00:00Z",
+           "recordedDate": "2023-01-20T09:13:45Z",
+           "type": "CHANGE_HQ_ADDRESS",
+           "status": "COMPLETED"
+          }
+         ]
+        }
+       ]
+      },
+      "registration": {
+       "initialRegistrationDate": "2014-01-13T00:00:00Z",
+       "lastUpdateDate": "2026-02-11T11:03:13Z",
+       "status": "ISSUED",
+       "nextRenewalDate": "2027-02-11T00:00:00Z",
+       "managingLou": "213800WAVVOPS85N2205",
+       "corroborationLevel": "FULLY_CORROBORATED",
+       "validatedAt": {
+        "id": "RA000585",
+        "other": null
+       },
+       "validatedAs": "01270695",
+       "otherValidationAuthorities": []
+      },
+      "bic": null,
+      "mic": null,
+      "ocid": "gb/01270695",
+      "qcc": "QGB1WXU2VB",
+      "gem": null,
+      "spglobal": [
+       "5632994"
+      ],
+      "conformityFlag": "CONFORMING"
+     },
+     "relationships": {
+      "managing-lou": {
+       "links": {
+        "related": "https://api.gleif.org/api/v1/lei-records/213800U2NC79HDGLZN36/managing-lou"
+       }
+      },
+      "lei-issuer": {
+       "links": {
+        "related": "https://api.gleif.org/api/v1/lei-records/213800U2NC79HDGLZN36/lei-issuer"
+       }
+      },
+      "field-modifications": {
+       "links": {
+        "related": "https://api.gleif.org/api/v1/lei-records/213800U2NC79HDGLZN36/field-modifications"
+       }
+      },
+      "direct-parent": {
+       "links": {
+        "relationship-record": "https://api.gleif.org/api/v1/lei-records/213800U2NC79HDGLZN36/direct-parent-relationship",
+        "lei-record": "https://api.gleif.org/api/v1/lei-records/213800U2NC79HDGLZN36/direct-parent"
+       }
+      },
+      "ultimate-parent": {
+       "links": {
+        "relationship-record": "https://api.gleif.org/api/v1/lei-records/213800U2NC79HDGLZN36/ultimate-parent-relationship",
+        "lei-record": "https://api.gleif.org/api/v1/lei-records/213800U2NC79HDGLZN36/ultimate-parent"
+       }
+      }
+     },
+     "links": {
+      "self": "https://api.gleif.org/api/v1/lei-records/213800U2NC79HDGLZN36"
+     }
+    }
+   ]
+  },
+  "https://api.gleif.org/api/v1/lei-records": {
+   "data": [
+    {
+     "id": "8945007BLGJ517U74C54",
+     "attributes": {
+      "entity": {
+       "legalName": {
+        "name": "The Coca-Cola Company"
+       },
+       "legalAddress": {
+        "country": "AU"
+       }
+      }
+     }
+    },
+    {
+     "id": "UWJKFUJFZ02DKWI3RY53",
+     "attributes": {
+      "entity": {
+       "legalName": {
+        "name": "THE COCA-COLA COMPANY"
+       },
+       "legalAddress": {
+        "country": "US"
+       }
+      }
+     }
+    },
+    {
+     "id": "549300Z7BL7FW8J5BL73",
+     "attributes": {
+      "entity": {
+       "legalName": {
+        "name": "The Coca-Cola Company Master Retirement Trust"
+       },
+       "legalAddress": {
+        "country": "US"
+       }
+      }
+     }
+    }
+   ]
+  }
+ },
+ "openalex": {
+  "institutions?ror:00yc8qw13": {
+   "results": [
+    {
+     "id": "https://openalex.org/I1312732213",
+     "display_name": "Coca Cola (United States)"
+    }
+   ]
+  },
+  "institutions?ror:031dc4703": {
+   "results": [
+    {
+     "id": "https://openalex.org/I55884533",
+     "display_name": "BlackRock (United States)"
+    }
+   ]
+  },
+  "funders?ror:00yc8qw13": {
+   "results": [
+    {
+     "id": "https://openalex.org/F4320308599",
+     "display_name": "Coca-Cola Foundation",
+     "description": "American multinational beverage corporation"
+    },
+    {
+     "id": "https://openalex.org/F4320307807",
+     "display_name": "Coca-Cola",
+     "description": "American multinational beverage corporation"
+    },
+    {
+     "id": "https://openalex.org/F4320311326",
+     "display_name": "Beverage Institute for Health and Wellness",
+     "description": "American multinational beverage corporation"
+    }
+   ]
+  },
+  "funders?ror:031dc4703": {
+   "results": []
+  },
+  "institutions?ror:03p2hmv20": {
+   "results": []
+  },
+  "funders?ror:03p2hmv20": {
+   "results": [
+    {
+     "id": "https://openalex.org/F4320318650",
+     "display_name": "Foundation for a Smoke-Free World",
+     "description": "front organization of tobacco corporation Philip Morris"
+    }
+   ]
+  }
+ }
+}

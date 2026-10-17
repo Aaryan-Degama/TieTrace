@@ -1,6 +1,6 @@
 # TieTrace checklist, phase 2: improvements after the MVP
 
-*Last updated by Aaryan, Oct 17 2026: ticked P2-2 case-builder skill (Reviewer PASS after 2 rounds). Earlier the same day: ticked Abdul's three P2-0 machine items from his own report. Earlier the same day: ticked P2-1 hardening (Reviewer PASS after 3 rounds). Earlier the same day: ticked the licence (MIT); added the `--force` guard to `e5_sample.py`. Earlier the same day: ticked the `total_graph_sz_mb` check. Earlier: ticked W1-W6 (web app, Reviewer PASS after 3 rounds). Before that, by Abdul, Oct 17 2026: added section P2-W (web app, follow `WebApp.md`) before P2-0. Earlier the same day: first version, built from `IMPROVEMENT.md` and the state of `checkpoints.md` after checkpoint 9 started.*
+*Last updated by Aaryan, Oct 17 2026: ticked P2-3 items 1-5 (Reviewer PASS after 3 rounds; human review time still open). Earlier the same day: ticked P2-2 case-builder skill (Reviewer PASS after 2 rounds). Earlier the same day: ticked Abdul's three P2-0 machine items from his own report. Earlier the same day: ticked P2-1 hardening (Reviewer PASS after 3 rounds). Earlier the same day: ticked the licence (MIT); added the `--force` guard to `e5_sample.py`. Earlier the same day: ticked the `total_graph_sz_mb` check. Earlier: ticked W1-W6 (web app, Reviewer PASS after 3 rounds). Before that, by Abdul, Oct 17 2026: added section P2-W (web app, follow `WebApp.md`) before P2-0. Earlier the same day: first version, built from `IMPROVEMENT.md` and the state of `checkpoints.md` after checkpoint 9 started.*
 
 **What this file is.** `checkpoints.md` is the plan to ship by **Oct 18, 6 PM IST**. This file is everything in `IMPROVEMENT.md` that is **not built yet**, plus loose ends found along the way. It is *not* part of the submission: do not start phase 2 work until the submission is confirmed, except the items marked **before submit**.
 
@@ -12,11 +12,11 @@ Status key: ⬜ not started · 🟨 in progress · ✅ done · ✂️ cut
 
 | Phase | What | When | Status |
 |---|---|---|---|
-| P2-W | **Web app** (follow `WebApp.md`) | before P2-0, after submit | ⬜ |
-| P2-0 | Loose ends (some **before submit**) | Oct 17-18 | ⬜ |
+| P2-W | **Web app** (follow `WebApp.md`) | before P2-0, after submit | 🟨 (W1-W6 done, W7 open) |
+| P2-0 | Loose ends (some **before submit**) | Oct 17-18 | 🟨 (only the E5 hand marks left) |
 | P2-1 | Hardening (`IMPROVEMENT.md` 5g) | after submit | ✅ |
 | P2-2 | Case-builder skill and agent (5e polish) | after submit | ✅ |
-| P2-3 | Corporate-family candidate pipeline (5h) | after submit | ⬜ |
+| P2-3 | Corporate-family candidate pipeline (5h) | after submit | 🟨 |
 | P2-4 | Data quality and scale | after submit | ⬜ |
 | P2-5 | Future work, document only (5i) | later | ⬜ |
 
@@ -62,12 +62,12 @@ Status key: ⬜ not started · 🟨 in progress · ✅ done · ✂️ cut
 - [x] A dry run with the Philip Morris prompt in a fresh Claude Code session; record the result honestly in `eval/results.md`: two headless `claude -p` runs (haiku). Philip Morris stopped at "case exists"; a sugar / dental caries story stopped at GATE 0 with no invented IDs. GATE 1/2 and an interactive session were not run (Aaryan, Oct 17)
 
 ## P2-3. Corporate-family candidate pipeline (`IMPROVEMENT.md` 5h, D3, D4)
-- [ ] New `family.py` that writes `cases/<slug>/candidates.json` rows with `status: proposed` from ROR relationships, Wikidata (class-filtered), GLEIF children and SEC Exhibit 21; resolve the seed by ROR or Wikidata ID, not by name (→ unassigned)
-- [ ] Name normalisation (casefold, strip accents and legal suffixes, "(Country)") and show the match type; handle the GLEIF same-name collision (a different "Coca-Cola Company") (→ unassigned)
-- [ ] A human sets `approved` / `rejected` and `rel`; the loader reads only `approved` rows (→ unassigned)
-- [ ] Foundations and funding vehicles keep their own `rel`; labels like "front organization" appear only as a quoted source phrase with its URL; trade groups with no formal link are `needs_human_source` (→ unassigned)
-- [ ] Fixture tests only; no live calls in the suite. The Wikidata SPARQL class filter was written but never run: run it once and record the result (→ unassigned)
-- [ ] Measure the real human review time (the "under an hour" estimate is a guess) (→ unassigned)
+- [x] New `family.py` that writes `cases/<slug>/candidates.json` rows with `status: proposed` from ROR relationships, Wikidata (class-filtered), GLEIF children and SEC Exhibit 21; resolve the seed by ROR or Wikidata ID, not by name: `family.py propose|review|set|add|apply`; SEC only with env `SEC_USER_AGENT` (never run live, synthetic fixture only) (Aaryan, Oct 17)
+- [x] Name normalisation (casefold, strip accents and legal suffixes, "(Country)") and show the match type; handle the GLEIF same-name collision (a different "Coca-Cola Company"): `match_type` id/exact_norm/fuzzy/none; same-name hits are `same_name_collision` or `needs_human_source`, never suggested (Aaryan, Oct 17)
+- [x] A human sets `approved` / `rejected` and `rel`; the loader reads only `approved` rows: `apply --by <name>` copies only approved rows with an OpenAlex id into `case.json` (`loader.py` unchanged, reads only `case.json`); shareholders (Wikidata P127 owners such as BlackRock) carry `flag: shareholder` and need a human `--source` (Aaryan, Oct 17)
+- [x] Foundations and funding vehicles keep their own `rel`; labels like "front organization" appear only as a quoted source phrase with its URL; trade groups with no formal link are `needs_human_source`: foundations keep `kind`; no banned words (checked with an explicit raise) (Aaryan, Oct 17)
+- [x] Fixture tests only; no live calls in the suite. The Wikidata SPARQL class filter was written but never run: run it once and record the result: `tests/test_family.py` 24/24, no live calls; live Wikidata run: Coca-Cola 116 raw, 49 kept (41 patents, brands, places dropped), PMI 29 raw, 21 kept; per-status counts after the shareholder fix not yet re-measured (Wikidata 429) (Aaryan, Oct 17)
+- [ ] Measure the real human review time (the "under an hour" estimate is a guess) (→ Aaryan). Needs a person: reviewer checklist in `eval/results.md` P2-3
 
 ## P2-4. Data quality and scale
 - [ ] Measure what the notes only estimated: build time and API calls for a new case, full-graph load time, snapshot time; write them to `eval/results.md` (→ unassigned)

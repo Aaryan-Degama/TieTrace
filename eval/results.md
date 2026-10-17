@@ -1,6 +1,6 @@
 # TieTrace evaluation results (checkpoint 4: E3, E7, E1, E2)
 
-*Last updated by Aaryan, Oct 17 2026: added the P2-2 case-builder dry run section (two headless `claude -p` runs). Before that, Aaryan, Oct 17 2026: added the E5 AI pre-check section (`eval/e5_precheck.py`). Before that, Abdul, Oct 17 2026: added E4 (max flow vs aggregate, `eval/e4.py`). Before that, Abdul, Oct 16: added E6 (mega-paper ablation, `eval/e6.py`). Before that, Aaryan, Oct 16: 5f funder share now says "topic works" and gives the Meta counts. Before that: added the checkpoint 5f end-to-end run (Philip Morris × lung cancer). Earlier: Abdul, Oct 16: Reviewer fixes (anonymised control, placebo-spread headline interval for E1, paper counts for E3, banned-word cleanup); first full run of `eval/e3_e7.py`, `eval/e1.py`, `eval/e2.py` on `research:obesity-coke` (data version openalex@2026-10-15). The Reviewer has not checked this yet.*
+*Last updated by Aaryan, Oct 17 2026: P2-3 round 3 (shareholder mark in its own `flag` field; `apply` refuses shareholder rows with no human source). Before that, Aaryan, Oct 17 2026: P2-3 Reviewer round 2 (shareholder rows now `needs_human_source`; numbers below are from before that change). Before that, Aaryan, Oct 17 2026: added the P2-3 family pipeline section (live Wikidata filter runs, one scratch `propose`). Before that, Aaryan, Oct 17 2026: added the P2-2 case-builder dry run section (two headless `claude -p` runs). Before that, Aaryan, Oct 17 2026: added the E5 AI pre-check section (`eval/e5_precheck.py`). Before that, Abdul, Oct 17 2026: added E4 (max flow vs aggregate, `eval/e4.py`). Before that, Abdul, Oct 16: added E6 (mega-paper ablation, `eval/e6.py`). Before that, Aaryan, Oct 16: 5f funder share now says "topic works" and gives the Meta counts. Before that: added the checkpoint 5f end-to-end run (Philip Morris × lung cancer). Earlier: Abdul, Oct 16: Reviewer fixes (anonymised control, placebo-spread headline interval for E1, paper counts for E3, banned-word cleanup); first full run of `eval/e3_e7.py`, `eval/e1.py`, `eval/e2.py` on `research:obesity-coke` (data version openalex@2026-10-15). The Reviewer has not checked this yet.*
 
 Re-run: `FALKORDB_PORT=6380 uv run python eval/e3_e7.py` (7 s), `eval/e1.py` (82 s), `eval/e2.py` (20 s). All seeds are fixed (20261016), so the numbers repeat.
 Pass rules are copied from `tietrace-v2-redesign.md` section 7 and were not changed after seeing results. The score formula is the fixed one (section 4).
@@ -256,6 +256,51 @@ Prompt: "I'm writing about lung cancer screening and Philip Morris. Suggest 5 ex
 - Both runs had one Bash call denied, because only `discover.py` was pre-approved; in an interactive session these would be a permission prompt instead.
 - The skill names `mcp__tietrace-alpha__list_cases` as its example; the model found `tietrace-zz` itself.
 - **Not run:** GATE 1 and GATE 2 (no `case.json` was approved, so no `--dry-run`), an interactive session, the default model, and the case where a story quotes expert names (author search with `--topic`).
+
+## P2-3 family pipeline
+
+*Run by Aaryan's session (Builder agents), Oct 17 2026, live against Wikidata, ROR v2, GLEIF and OpenAlex. A second Builder re-ran the filter for both seeds and `propose` once more (seeded by ROR this time, from a scratch script not kept in the repo): every number below came out the same. Not yet Reviewer-checked.*
+
+**Wikidata class filter (the `family.SPARQL` query, run for real).** Items linked to the seed by P355 (subsidiary), P749 (parent org) or P127 (owned by), in either direction; an item is kept only if it is an instance of (a subclass of) organization Q43229. QIDs checked: The Coca-Cola Company is Q3295867 (Wikidata entity and OpenAlex `I1312732213` both give it), PMI is Q1852556 (from ROR `005rxfw29`). Resolving each seed by ROR also gave its LEI and SEC CIK from Wikidata: Coca-Cola LEI `UWJKFUJFZ02DKWI3RY53`, CIK `0000021344`; PMI LEI `HL3H1H2BGXWVG3BSWR90`, CIK `0001413329`.
+
+| Seed | Distinct items (raw) | Kept | Dropped | Dropped, by class | Kept with a ROR / LEI |
+|---|---|---|---|---|---|
+| Coca-Cola Q3295867 | 116 (222 SPARQL rows, one per class/ROR/LEI combination) | 49 | 67 | 41 US patents, 16 brands, 4 drink brands, a heliport, a factory building, a shop | 8 / 13 |
+| PMI Q1852556 | 29 | 21 | 8 | cigarette brands (Virginia Slims, Parliament, "Philip Morris"), Iqos, a nicotine-pouch brand | 7 / 6 |
+
+- Dropped examples: Dasani, Schweppes, Thums Up, "Coca-Cola Baltimore Branch Factory" (fixed construction), "The Coca Cola Company" (a heliport); for PMI, Virginia Slims and Iqos.
+- Kept examples: Coca-Cola HBC, Coca-Cola FEMSA, Coca-Cola Bottlers Japan Holdings, Costa Coffee, Monster Beverage; for PMI, Swedish Match, Papastratos, Rothmans Benson & Hedges, PMFTC.
+- **Noise the filter keeps:** P127 "owned by" on the seed gives shareholders (10 for Coca-Cola: BlackRock, Vanguard, Berkshire Hathaway, Norges Bank...; 3 for PMI). `family.py` suggests no `rel` for them. **After Reviewer round 1** (which approved BlackRock as a subsidiary with one `set` command and saw `apply` write it): a P127-only owner is now `needs_human_source` with reason "shareholder (P127 owned-by), not corporate family", a funder found through its ROR inherits that status, and `apply` refuses such a row unless `set` was given `--source <url>`. P127-only children (10 for Coca-Cola, for example Monster, about a 19% stake, FEMSA, Fairlife) now say "owned-by (P127), size of stake unknown" in their evidence. **Round 3:** the mark is kept in a separate `flag: "shareholder"` field that `family.py set` never writes, so rejecting a row with another reason and then hand-editing it to approved no longer gets it through: `apply` refuses every approved row flagged shareholder that has no human source (`set --source <url>`), whatever its reason says. `review` prints the flag, and "(foundation-like name)" next to the suggested `rel` of an institution whose name looks like a foundation. **Still to do: the live re-check of the per-status counts.** This Builder did not re-run it after rounds 2 and 3; the coordinator reports that Wikidata answered 429 (rate limit). So the status counts in the table below (68 proposed, 3 `needs_human_source`, 1 collision) are from before it; by the rule, the 10 shareholder rows and their 5 funders would now be `needs_human_source` as well, but that is not measured. "World of Coca-Cola" (a museum) and media firms that Coca-Cola once owned (Merv Griffin Enterprises, ELP Communications) are also kept.
+- The older D3 note said "133 raw rows"; that was a different query, so the numbers are not directly comparable.
+
+**`propose` on scratch `zz-family-coke`** (first run `--seed-wikidata Q3295867`, re-run `--seed-ror 00yc8qw13`, same 72 rows; the folder was deleted after each). The seed resolved by ID to ROR `00yc8qw13`, LEI `UWJKFUJFZ02DKWI3RY53`.
+
+| Source | Rows |
+|---|---|
+| ROR relationships | 0 (ROR lists none for Coca-Cola) |
+| Wikidata (after the filter) | 49 |
+| GLEIF direct children | 10 |
+| GLEIF same-name check | 4: 1 `same_name_collision` (the Australian "The Coca-Cola Company", LEI 8945007BLGJ517U74C54), 3 `needs_human_source` (two Coca-Cola retirement/401(k) trusts, a Saudi bottler) |
+| OpenAlex funders found by ROR | 8 |
+| SEC Exhibit 21 | 0: skipped, `SEC_USER_AGENT` not set (the warning says so) |
+| **Total** | 72 rows (seed included), **17 mapped to OpenAlex** |
+
+- **Mapped rows:** the seed `I1312732213`; the 3 funders that share the seed's ROR, kept as separate rows (Coca-Cola `F4320307807` company, Coca-Cola Foundation `F4320308599` foundation, Beverage Institute for Health and Wellness `F4320311326` foundation by name); and 13 shareholder rows (8 institutions, 5 funders such as Lubrizol), which are noise.
+- **None of the 41 Wikidata subsidiaries or the 10 GLEIF children maps to OpenAlex**, because Wikidata gives them no ROR and GLEIF has no ROR. The two Japanese bottlers in `obesity-coke` (`I4405274843`, `I4405273583`) were **not** found; "Coca-Cola Bottlers Japan Holdings" appears, but unmapped. For Coca-Cola, the pipeline adds only the funders that the hand-built case already has, plus one new candidate (the Beverage Institute).
+- Same entity, two rows: Costa Coffee (Wikidata) and COSTA LIMITED (GLEIF) share LEI 213800U2NC79HDGLZN36 but are not merged (only rows with the same OpenAlex id are merged).
+- Wikidata's query service was rate-limiting to 1 request a minute (429, "active wdqs outage"); one run waited for a retry.
+
+**Not run:** `propose` for PMI (only its Wikidata filter was run), `apply` on a real case (tested offline only), and SEC Exhibit 21 live: `family.from_sec` is built but runs only when env `SEC_USER_AGENT` is set (SEC asks for a contact there; we put no one's email in code). It is tested only on a synthetic EDGAR fixture, never against SEC. Its entries carry no IDs, so they map to no OpenAlex id unless a human adds one.
+
+**Reviewer checklist for a person reviewing `candidates.json`:**
+1. Reject every row whose reason is "shareholder (P127 owned-by), not corporate family" unless a source shows control (then approve with `--source <url>`). For children whose evidence says "size of stake unknown", check the stake before approving.
+2. For each `same_name_collision`, open its GLEIF URL and confirm it is a different legal entity; reject it with that reason.
+3. For each `needs_human_source` row, approve it only with `--source <url>` that shows a formal link.
+4. Give every approved institution a `rel` (`subsidiary` or `bottler`; exactly one `parent`), and check each funder's `kind` (company or foundation).
+5. Read each funder's quoted description: it is the source's words, never TieTrace's label.
+6. Unmapped rows cannot reach `case.json`; look an OpenAlex id up with `discover.py institutions` and pass `--openalex-id` only if you are sure it is the same body.
+
+Human review time: not measured yet (needs a person). Aaryan to time one review of the Coca-Cola `candidates.json` and record it here.
 
 ## Judgement calls for the Reviewer to challenge
 1. E3: only four names could be confirmed publicly; I did not guess a fifth. Hill and Peters are Tier A2 (foundation), so "Tier A" is read as A1 or A2.

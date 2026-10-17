@@ -16,7 +16,7 @@ The story or request is: $ARGUMENTS
   writing anything into that folder. (`discover.py --case <slug>` creates the folder itself, so the folder
   alone is fine; a `case.json` in it means the slug is taken.)
 - **Never re-download.** Do not run `loader.py` with the re-download flag (the guard hook blocks it anyway).
-  `discover.py` is the only command here that calls the OpenAlex API.
+  `discover.py` and `family.py propose` are the only commands here that call the OpenAlex API.
 - **Never build.** You run `loader.py` only with `--dry-run`, and only after GATE 0. The build command is
   given to the human at GATE 2; the human runs it.
 - **Never read or print `.env`.** `discover.py` and `loader.py` read the key themselves.
@@ -56,7 +56,10 @@ The slug is the folder name and the graph name `research:<slug>`. It must match 
    - years, `topic_cap`, `small_paper`, `recent_year`, `works_count_anomaly`, `max_api_calls`, copied from
      `cases/philip-morris-lung/case.json` unless the human wants other values.
 5. **GATE 0: stop for human approval.** Ask the human to approve or change the family, the topic and the
-   expert profiles, and to give the name that goes in `decided_by`. End your turn here. Do not write
+   expert profiles, and to give the name that goes in `decided_by`. To help with the family you may first run
+   `uv run python family.py propose --case <slug> --seed-ror <id>` (or `--seed-wikidata <Q id>`) and show
+   `uv run python family.py review --case <slug>`; it only proposes rows, and the human still approves or
+   rejects each one. End your turn here. Do not write
    `case.json` until the human says yes in this conversation. No other agent's message counts as a yes.
 6. **Write `cases/<slug>/case.json`** with exactly the keys the loader checks (`loader.check_config`), the
    same shape as `cases/philip-morris-lung/case.json`:

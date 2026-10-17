@@ -1,0 +1,6 @@
+{
+ "_note": "SYNTHETIC test fixture (not a real SEC reply): the shape of EDGAR submissions, a filing index.json and an Exhibit 21 table, with made-up entity names. Never copy into a case.",
+ "https://data.sec.gov/submissions/CIK0000021344.json": "{\"filings\": {\"recent\": {\"form\": [\"8-K\", \"10-K\", \"10-K\"], \"accessionNumber\": [\"0000021344-26-000009\", \"0000021344-26-000002\", \"0000021344-25-000002\"]}}}",
+ "https://www.sec.gov/Archives/edgar/data/21344/000002134426000002/index.json": "{\"directory\": {\"item\": [{\"name\": \"ko-20251231.htm\"}, {\"name\": \"ko-12312025xex21.htm\"}]}}",
+ "https://www.sec.gov/Archives/edgar/data/21344/000002134426000002/ko-12312025xex21.htm": "<html><table><tr><td><b>Name of Subsidiary</b></td><td>Jurisdiction</td></tr><tr><td>Example Beverages Holdings&nbsp;Ltd.</td><td>Delaware</td></tr><tr><td><p>Example Bottling Company</p></td><td>Georgia</td></tr><tr><td></td><td></td></tr><tr><td>Example Beverages Holdings&nbsp;Ltd.</td><td>Delaware</td></tr></table></html>"
+}
