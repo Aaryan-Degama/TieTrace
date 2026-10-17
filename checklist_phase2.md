@@ -31,6 +31,7 @@ Status key: ⬜ not started · 🟨 in progress · ✅ done · ✂️ cut
 - [x] W4 chat UI: expert cards, tier chips, scope on every no-tie, evidence panel showing the Cypher, ambiguous-name picker, "Expert #n" only (Aaryan, Oct 17)
 - [x] W5 human gates: Approve buttons for `record_verdict` / `approve_note`; the model cannot trigger them (Aaryan, Oct 17)
 - [x] W6 tests and Builder/Reviewer pass (tests listed in `WebApp.md` section 7); the Coca-Cola example matches `tests/test_golden.py` (Blair A1, Hill A2) (Aaryan, Oct 17)
+- [x] Login help on the web: an expired Claude login now shows a panel with a Log in button (`POST /api/login` runs `claude auth login`), a check-again button (`GET /api/auth`) and the terminal command; 3 new tests in `tests/test_web.py`. Not yet Reviewer-checked, and the real browser sign-in was not run (Abdul, Oct 17)
 - [ ] W7 deployable version with a free-tier hosted model, request limits, no write tools exposed: **built last**, cut first if short (→ unassigned)
 
 ## P2-0. Loose ends (from checkpoints 5b-9)
@@ -85,3 +86,6 @@ Status key: ⬜ not started · 🟨 in progress · ✅ done · ✂️ cut
 ---
 
 **Gate for phase 2:** a journalist's story about a company we have not loaded goes from "no data" to a checked answer using only the human-approved steps, with tests green and results written honestly. If time is short, keep P2-0 and P2-1 and cut P2-3 first (`IMPROVEMENT.md` cut order: 5h, 5g, 5e polish).
+
+---
+**Abdul, Oct 17 (P2-0 progress, tick-worthy but Aaryan may review):** one container `falkordb-main` (v4.22.1, AOF yes) on port 6500 (6380-6481 are now Windows-reserved), volume `falkordb-data-v4`; Philip Morris graph loaded from `phillip_lung.zip` (21,756 works, 68,723 people, 0 API calls); MCP server re-registered on 6500 (Connected); `test_memory` 32/32. Still failing on Windows (Aaryan's stand-in `claude` scripts are shell scripts): 10 tests in `tests/test_web.py`. (Abdul)

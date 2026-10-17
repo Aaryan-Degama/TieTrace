@@ -303,6 +303,56 @@ def test_auth_failure_gives_a_readable_error():
         os.environ.pop("TIETRACE_CLAUDE") if old is None else os.environ.__setitem__("TIETRACE_CLAUDE", old)
 
 
+def _stand_in_claude(d, name, out_text):
+    """A tiny fake `claude` that prints out_text (a .cmd file on Windows, a shell script elsewhere)."""
+    lines = out_text.splitlines()
+    if os.name == "nt":
+        f = d / f"{name}.cmd"
+        f.write_text("@echo off\n" + "".join(f"echo {x}\n" for x in lines))  # write_text makes it CRLF on Windows
+    else:
+        f = d / name
+        f.write_text("#!/bin/sh\n" + "".join(f"echo '{x}'\n" for x in lines))
+        f.chmod(f.stat().st_mode | stat.S_IEXEC)
+    return str(f)
+
+
+def test_auth_endpoint_says_logged_in_or_not_and_nothing_else():
+    d = Path(tempfile.mkdtemp(prefix="zz-test-web-"))
+    old = os.environ.get("TIETRACE_CLAUDE")
+    try:
+        os.environ["TIETRACE_CLAUDE"] = _stand_in_claude(d, "claude-in", '{"loggedIn": true, "email": "a@b.c"}')
+        assert CLIENT.get("/api/auth").json() == {"ok": True, "logged_in": True}  # no email passed on
+        os.environ["TIETRACE_CLAUDE"] = _stand_in_claude(d, "claude-out", '{"loggedIn": false}')
+        assert CLIENT.get("/api/auth").json() == {"ok": True, "logged_in": False}
+        os.environ["TIETRACE_CLAUDE"] = _stand_in_claude(d, "claude-junk", "not json")
+        assert CLIENT.get("/api/auth").json() == {"ok": True, "logged_in": None}
+        os.environ["TIETRACE_CLAUDE"] = "/nonexistent/claude-not-here"
+        assert CLIENT.get("/api/auth").json() == {"ok": True, "logged_in": None}
+    finally:
+        os.environ.pop("TIETRACE_CLAUDE") if old is None else os.environ.__setitem__("TIETRACE_CLAUDE", old)
+
+
+def test_login_endpoint_refuses_other_origins_and_returns_the_sign_in_link():
+    d = Path(tempfile.mkdtemp(prefix="zz-test-web-"))
+    old = os.environ.get("TIETRACE_CLAUDE")
+    try:
+        os.environ["TIETRACE_CLAUDE"] = _stand_in_claude(d, "claude-login", "Opening browser. Visit https://example.test/oauth/x?y=1 to sign in")
+        assert CLIENT.post("/api/login", content="{}", headers={"Origin": "https://example.com"}).status_code == 403
+        assert TestClient(w.app, base_url=ORIGIN).post("/api/login", content="{}").status_code == 403  # no Origin
+        j = CLIENT.post("/api/login", content="{}").json()
+        assert j["ok"] and j["started"] and j["url"] == "https://example.test/oauth/x?y=1", j
+        os.environ["TIETRACE_CLAUDE"] = "/nonexistent/claude-not-here"
+        assert CLIENT.post("/api/login", content="{}").json()["error"]["code"] == "CLAUDE_NOT_FOUND"
+    finally:
+        os.environ.pop("TIETRACE_CLAUDE") if old is None else os.environ.__setitem__("TIETRACE_CLAUDE", old)
+
+
+def test_page_script_shows_login_help_on_an_auth_error():
+    js = (w.STATIC / "app.js").read_text(encoding="utf-8")
+    assert 'd.code === "AUTH"' in js and "authHelp(" in js and "/api/login" in js and "/api/auth" in js
+    assert "claude auth login" in js and "independent" not in js.lower() and "conflicted" not in js.lower()
+
+
 def test_falkordb_down_gives_a_readable_error_before_claude_starts():
     old = os.environ["FALKORDB_PORT"]
     os.environ["FALKORDB_PORT"] = "1"
