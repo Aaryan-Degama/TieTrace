@@ -191,7 +191,7 @@ def test_no_cypher_string_formatting_of_data():
     # Every data-bearing query must take its values from $rows parameters.
     for name, q in loader.QUERIES.items():
         assert q.startswith("UNWIND $rows AS r"), name
-    src = Path(loader.__file__).read_text()
+    src = Path(loader.__file__).read_text(encoding="utf-8")
     fq = [ln.strip() for ln in src.splitlines() if 'query(f"' in ln]
     # the only f-string queries interpolate loop constants (label / rel), never API data
     assert all("{label}" in ln or "{rel}" in ln for ln in fq), fq
@@ -234,7 +234,7 @@ def test_cache_header_params_checked():
     old = loader.RAW
     try:
         loader.RAW = Path(tempfile.mkdtemp())
-        (loader.RAW / "x.jsonl").write_text(loader.header_line({"a": 1}) + '{"k": 1}\n')
+        (loader.RAW / "x.jsonl").write_text(loader.header_line({"a": 1}) + '{"k": 1}\n', encoding="utf-8")
         assert loader.read_cache("x", {"a": 1}, False) == [{"k": 1}]
         assert loader.read_cache("x", {"a": 2}, False) is None
         assert loader.read_cache("x", {"a": 1}, True) is None

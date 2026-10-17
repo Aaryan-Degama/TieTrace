@@ -130,8 +130,8 @@ def test_config_file_over_20_kb_is_rejected():
     try:
         loader.CASES = Path(tempfile.mkdtemp())
         (loader.CASES / "big-case").mkdir()
-        cfg = {**json.loads((old / "obesity-coke" / "case.json").read_text()), "slug": "big-case", "notes": "x" * 20_000}
-        (loader.CASES / "big-case" / "case.json").write_text(json.dumps(cfg))
+        cfg = {**json.loads((old / "obesity-coke" / "case.json").read_text(encoding="utf-8")), "slug": "big-case", "notes": "x" * 20_000}
+        (loader.CASES / "big-case" / "case.json").write_text(json.dumps(cfg), encoding="utf-8")
         try:
             loader.load_config("big-case")
         except ValueError as e:
@@ -326,14 +326,14 @@ def test_status_json_lifecycle():
         (loader.CASES / "zz-status").mkdir()
         path = loader.CASES / "zz-status" / "status.json"
         loader.write_status("building")
-        assert json.loads(path.read_text())["status"] == "building"
+        assert json.loads(path.read_text(encoding="utf-8"))["status"] == "building"
         loader.write_status("ready", built_at="b1", data_version="openalex@x", counts={"Person": 1}, graph=A)
         loader.write_status("building")
         loader.write_status("failed", error="RuntimeError: boom")
-        s = json.loads(path.read_text())
+        s = json.loads(path.read_text(encoding="utf-8"))
         assert (s["status"], s["built_at"], s["counts"], s["error"]) == ("failed", "b1", {"Person": 1}, "RuntimeError: boom"), s
         loader.write_status("ready", built_at="b2")
-        s = json.loads(path.read_text())
+        s = json.loads(path.read_text(encoding="utf-8"))
         assert s["status"] == "ready" and s["built_at"] == "b2" and "error" not in s, s
         assert [p.name for p in path.parent.iterdir()] == ["status.json"], "temp file left behind"
     finally:
@@ -342,13 +342,13 @@ def test_status_json_lifecycle():
 
 def with_cases(fn, public_a=()):
     """Run fn with loader.CASES = a temp registry: obesity-coke, zz-test-a/-b (graphs A, B), zz-test-c (no graph)."""
-    real = json.loads((loader.CASES / "obesity-coke" / "case.json").read_text())
+    real = json.loads((loader.CASES / "obesity-coke" / "case.json").read_text(encoding="utf-8"))
     old = loader.CASES
     tmp = Path(tempfile.mkdtemp())
     for slug, pub in (("obesity-coke", real["public_ids"]), ("zz-test-a", list(public_a)), ("zz-test-b", []),
                       ("zz-test-c", [])):
         (tmp / slug).mkdir()
-        (tmp / slug / "case.json").write_text(json.dumps({**real, "slug": slug, "public_ids": pub}))
+        (tmp / slug / "case.json").write_text(json.dumps({**real, "slug": slug, "public_ids": pub}), encoding="utf-8")
     try:
         loader.CASES = tmp
         return fn(tmp)
@@ -432,8 +432,8 @@ def test_list_cases_hides_staging_and_newsroom_and_survives_odd_status():
         DB.select_graph(nr).query("CREATE (:Note {text: 'secret'})")
 
         def run(tmp):
-            (tmp / "zz-test-a" / "status.json").write_text(json.dumps({"updated_at": "x"}))  # no "status" key
-            (tmp / "zz-test-b" / "status.json").write_text("[1, 2]")
+            (tmp / "zz-test-a" / "status.json").write_text(json.dumps({"updated_at": "x"}), encoding="utf-8")  # no "status" key
+            (tmp / "zz-test-b" / "status.json").write_text("[1, 2]", encoding="utf-8")
             return server.list_cases()
         out = with_cases(run)
         assert out["ok"], out
@@ -464,10 +464,10 @@ def test_junk_is_precomputed_and_queries_never_lower_titles():
 
 def test_second_build_of_a_case_is_refused_by_the_lock():
     # A temp case and a stubbed build: even if the lock check broke, nothing real is rebuilt or overwritten.
-    real = json.loads((loader.CASES / "obesity-coke" / "case.json").read_text())
+    real = json.loads((loader.CASES / "obesity-coke" / "case.json").read_text(encoding="utf-8"))
     tmp = Path(tempfile.mkdtemp())
     (tmp / "zz-lock2").mkdir()
-    (tmp / "zz-lock2" / "case.json").write_text(json.dumps({**real, "slug": "zz-lock2"}))
+    (tmp / "zz-lock2" / "case.json").write_text(json.dumps({**real, "slug": "zz-lock2"}), encoding="utf-8")
     lock = "build-lock:zz-lock2"
     assert DB.connection.set(lock, "someone-else", nx=True, ex=60), "a build of zz-lock2 is running?"
     old = (loader.CASES, sys.argv, loader.api_key, loader.build)
@@ -513,13 +513,13 @@ def test_server_drops_a_graph_cache_when_status_json_changes():
         loader.CASES = Path(tempfile.mkdtemp())
         (loader.CASES / "zz-test-a").mkdir()
         status = loader.CASES / "zz-test-a" / "status.json"
-        status.write_text(json.dumps({"status": "ready", "built_at": "t1", "config_hash": "h"}))
+        status.write_text(json.dumps({"status": "ready", "built_at": "t1", "config_hash": "h"}), encoding="utf-8")
         research._seen_build.clear()  # earlier tests may have looked at zz-test-a already
         research._cache[(A, "meta")] = ({"x": 1}, [])
         research._cache[(B, "meta")] = ({"x": 2}, [])
         research.drop_cache_if_rebuilt("zz-test-a")           # first look: remembered, nothing dropped
         assert (A, "meta") in research._cache
-        status.write_text(json.dumps({"status": "ready", "built_at": "t2", "config_hash": "h"}))
+        status.write_text(json.dumps({"status": "ready", "built_at": "t2", "config_hash": "h"}), encoding="utf-8")
         research.drop_cache_if_rebuilt("zz-test-a")
         assert (A, "meta") not in research._cache and (B, "meta") in research._cache
     finally:
@@ -576,11 +576,11 @@ def test_graph_without_junk_flag_is_refused_not_silently_empty():
 
 
 def test_build_lock_is_taken_with_ttl_and_released_on_success_and_failure():
-    real = json.loads((loader.CASES / "obesity-coke" / "case.json").read_text())
+    real = json.loads((loader.CASES / "obesity-coke" / "case.json").read_text(encoding="utf-8"))
     old = (loader.CASES, sys.argv, loader.api_key, loader.build)
     tmp = Path(tempfile.mkdtemp())
     (tmp / "zz-lock").mkdir()
-    (tmp / "zz-lock" / "case.json").write_text(json.dumps({**real, "slug": "zz-lock"}))
+    (tmp / "zz-lock" / "case.json").write_text(json.dumps({**real, "slug": "zz-lock"}), encoding="utf-8")
     lock, seen = "build-lock:zz-lock", []
     meta = {"built_at": "b", "data_version": "d", "config_hash": "h"}
 
@@ -601,7 +601,7 @@ def test_build_lock_is_taken_with_ttl_and_released_on_success_and_failure():
                 assert fail
             assert seen[-1][0] is not None and 0 < seen[-1][1] <= loader.BUILD_LOCK_TTL, seen
             assert DB.connection.get(lock) is None, f"lock not released (fail={fail})"
-            s = json.loads((tmp / "zz-lock" / "status.json").read_text())
+            s = json.loads((tmp / "zz-lock" / "status.json").read_text(encoding="utf-8"))
             assert s["status"] == ("failed" if fail else "ready"), s
     finally:
         loader.CASES, sys.argv, loader.api_key, loader.build = old
@@ -620,12 +620,12 @@ def test_server_answers_from_the_new_graph_after_a_swap():
             research.clear_cache()
             research._seen_build.clear()
             status = tmp / "zz-test-a" / "status.json"
-            status.write_text(json.dumps({"status": "ready", "built_at": "t1", "config_hash": "h"}))
+            status.write_text(json.dumps({"status": "ready", "built_at": "t1", "config_hash": "h"}), encoding="utf-8")
             assert server.tie_report("P1", 1, case="zz-test-a")["data"]["tier"] == "A1"
             # P3's answer depends on the CACHED Tier-A map, so a stale cache would still say TIE_FOUND
             assert server.check_no_tie("P3", 3, 5, 1, case="zz-test-a")["data"]["result"] == "TIE_FOUND"
             build(A, [work("W1", ["P1"])] + coauth)  # swapped in: P1 is no longer Tier A
-            status.write_text(json.dumps({"status": "ready", "built_at": "t2", "config_hash": "h"}))
+            status.write_text(json.dumps({"status": "ready", "built_at": "t2", "config_hash": "h"}), encoding="utf-8")
             out = server.tie_report("P1", 1, case="zz-test-a")
             assert out["ok"] and out["data"]["tier"] == "NONE", out["data"]
             out = server.check_no_tie("P3", 3, 5, 1, case="zz-test-a")
@@ -678,10 +678,10 @@ def test_cache_is_dropped_again_when_building_turns_ready():
         (loader.CASES / "zz-test-a").mkdir()
         status = loader.CASES / "zz-test-a" / "status.json"
         research._seen_build.clear()
-        status.write_text(json.dumps({"status": "building", "built_at": "t2", "config_hash": "h"}))
+        status.write_text(json.dumps({"status": "building", "built_at": "t2", "config_hash": "h"}), encoding="utf-8")
         research.drop_cache_if_rebuilt("zz-test-a")
         research._cache[(A, "tier_a")] = ({"P1": "A1"}, [])  # refilled from the OLD graph before the RENAME
-        status.write_text(json.dumps({"status": "ready", "built_at": "t2", "config_hash": "h"}))
+        status.write_text(json.dumps({"status": "ready", "built_at": "t2", "config_hash": "h"}), encoding="utf-8")
         research.drop_cache_if_rebuilt("zz-test-a")
         assert (A, "tier_a") not in research._cache, "a cache filled before the swap survived the ready write"
     finally:

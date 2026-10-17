@@ -748,29 +748,34 @@ def _bridges(log, expert_id, depth, limit, label, public_case):
     if depth == 2:
         pattern = "(e)-[c1:COAUTH_B]->(m1:Person)-[c2:COAUTH_B]->(a:Person)"
         edges = ["c1", "c2"]
-        where = "a.oa_id IN $tier_a AND a <> e"
+        where = "a <> e"
         strength = "CASE WHEN c1.recent_small_w < c2.recent_small_w THEN c1.recent_small_w ELSE c2.recent_small_w END"
         mids = "m1"
     else:
         pattern = "(e)-[c1:COAUTH_B]->(m1:Person)-[c2:COAUTH_B]->(m2:Person)-[c3:COAUTH_B]->(a:Person)"
         edges = ["c1", "c2", "c3"]
-        where = "a.oa_id IN $tier_a AND a <> e AND m2 <> e AND a <> m1"
+        where = "a <> e AND m2 <> e AND a <> m1"
         strength = ("CASE WHEN c1.recent_small_w <= c2.recent_small_w AND c1.recent_small_w <= c3.recent_small_w "
                     "THEN c1.recent_small_w WHEN c2.recent_small_w <= c3.recent_small_w "
                     "THEN c2.recent_small_w ELSE c3.recent_small_w END")
         mids = "m1, m2"
     edge_cols = ", ".join(f"{c}.recent_small_dois, {c}.recent_small_w, {c}.recent_small_works" for c in edges)
     mid_cols = ", ".join(f"{m}.oa_id, {m}.name" for m in mids.split(", "))
+    # Keep only paths that end at a Tier-A person. `a.oa_id IN $tier_a` would scan the 3,000-id list once per
+    # path (0.5 s of a 0.6 s query for the biggest hub); the second MATCH (t) finds the Tier-A people by index and
+    # FalkorDB joins it to the paths with a hash on id(a) ("Value Hash Join" in GRAPH.EXPLAIN). Same rows.
     q = (f"MATCH (e:Person) WHERE e.oa_id = $id MATCH {pattern} WHERE {where} "
+         "MATCH (t:Person) WHERE t.oa_id IN $tier_a AND id(t) = id(a) "
          f"WITH *, {strength} AS strength "
          f"RETURN {mid_cols}, a.oa_id, a.name, {edge_cols}, strength "
-         f"ORDER BY strength DESC, a.oa_id LIMIT $limit")
+         f"ORDER BY strength DESC, a.oa_id, {mid_cols} LIMIT $limit")  # oa_ids are unique: a total order
     # Time budget: paths 2 s + count 1 s stays under the 3 s gate even for a bigger hub. If the count
     # does not finish in its 1 s, the paths are still returned and bridge_count is null with a warning.
     rows = ro_query(current_graph(), q, {**params, "limit": limit}, timeout_ms=2000, log=log)
     count, count_warning = None, []
     try:
-        count = ro_query(current_graph(), f"MATCH (e:Person) WHERE e.oa_id = $id MATCH {pattern} WHERE {where} RETURN count(*)",
+        count = ro_query(current_graph(), f"MATCH (e:Person) WHERE e.oa_id = $id MATCH {pattern} WHERE {where} "
+                         "MATCH (t:Person) WHERE t.oa_id IN $tier_a AND id(t) = id(a) RETURN count(*)",
                          params, timeout_ms=1000, log=log)[0][0]
     except ToolError as e:
         if e.code != "TIMEOUT":
@@ -852,7 +857,7 @@ def _list_cases(log):
         graph = f"research:{slug}"
         status_file = loader.CASES / slug / "status.json"
         try:
-            status = json.loads(status_file.read_text())
+            status = json.loads(status_file.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             status = None
         status = status if isinstance(status, dict) else None
@@ -882,7 +887,7 @@ def drop_cache_if_rebuilt(slug):
     if its built_at or config_hash changed since we last looked, forget that graph's cached facts."""
     graph = f"research:{slug}"
     try:
-        status = json.loads((loader.CASES / slug / "status.json").read_text())
+        status = json.loads((loader.CASES / slug / "status.json").read_text(encoding="utf-8"))
         # status is in the key: the loader writes the new built_at just before RENAME and "ready" just after,
         # so a cache refilled from the old graph in between is dropped again once "ready" appears
         build = (status.get("built_at"), status.get("config_hash"), status.get("status"))

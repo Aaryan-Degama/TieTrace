@@ -24,26 +24,26 @@ Status key: ⬜ not started · 🟨 in progress · ✅ done · ✂️ cut
 
 ## P2-W. Web app (**follow `WebApp.md`**)
 **All design decisions (layout, look, pages, build order, tests, open questions) are in [`WebApp.md`](WebApp.md). Read it first; if this list and `WebApp.md` disagree, `WebApp.md` wins.** Abdul chose: chat layout B (chat + live evidence panel), dark graph-motif look, a separate "How It Works" page, local first, the deployable free-tier version last.
-- [ ] Decide the open questions in `WebApp.md` section 8 (O1 stack, O2 human gates on the web, O3 expert names, O4 file location) and record who decided (→ Abdul + Aaryan)
-- [ ] W1 static shell: chat page and "How It Works" page, dark theme, hero with the node-and-edge drawing, "Try an example" buttons (→ unassigned)
-- [ ] W2 "How It Works" content with real numbers copied from `README.md` / `eval/results.md`; no banned words (→ unassigned)
-- [ ] W3 backend: `POST /api/ask` runs `claude -p` with the MCP server and streams steps; clear message for an expired login or FalkorDB down (→ unassigned)
-- [ ] W4 chat UI: expert cards, tier chips, scope on every no-tie, evidence panel showing the Cypher, ambiguous-name picker, "Expert #n" only (→ unassigned)
-- [ ] W5 human gates: Approve buttons for `record_verdict` / `approve_note`; the model cannot trigger them (→ unassigned)
-- [ ] W6 tests and Builder/Reviewer pass (tests listed in `WebApp.md` section 7); the Coca-Cola example matches `tests/test_golden.py` (Blair A1, Hill A2) (→ unassigned)
+- [x] Decide the open questions in `WebApp.md` section 8 (Aaryan, Oct 17): O1 FastAPI + `claude -p` + plain HTML/JS + SSE; O2 the model never gets `record_verdict`/`approve_note` on the web, an on-page Approve button with a confirm step calls them directly; O3 always "Expert #n" on the web; O4 `web/`
+- [ ] W1 static shell: chat page and "How It Works" page, dark theme, hero with the node-and-edge drawing, "Try an example" buttons (→ Aaryan)
+- [ ] W2 "How It Works" content with real numbers copied from `README.md` / `eval/results.md`; no banned words (→ Aaryan)
+- [ ] W3 backend: `POST /api/ask` runs `claude -p` with the MCP server and streams steps; clear message for an expired login or FalkorDB down (→ Aaryan)
+- [ ] W4 chat UI: expert cards, tier chips, scope on every no-tie, evidence panel showing the Cypher, ambiguous-name picker, "Expert #n" only (→ Aaryan)
+- [ ] W5 human gates: Approve buttons for `record_verdict` / `approve_note`; the model cannot trigger them (→ Aaryan)
+- [ ] W6 tests and Builder/Reviewer pass (tests listed in `WebApp.md` section 7); the Coca-Cola example matches `tests/test_golden.py` (Blair A1, Hill A2) (→ Aaryan)
 - [ ] W7 deployable version with a free-tier hosted model, request limits, no write tools exposed: **built last**, cut first if short (→ unassigned)
 
 ## P2-0. Loose ends (from checkpoints 5b-9)
 - [ ] **Before submit.** Migrate Abdul's container the same way as Aaryan's (`checkpoints.md` 5b): done as a **side container** `falkordb-v4` (v4.22.1, AOF on, port 6381); still to do: stop using the old `falkordb` (`:latest`, AOF off) and move to one container on 6380/3001 (→ Abdul)
 - [ ] **Before submit.** Re-register the MCP server for the new port: `claude mcp add tietrace-alpha -e TIETRACE_NEWSROOM=alpha -e FALKORDB_PORT=6381 -- uv run --directory <path> python server.py` (→ Abdul)
-- [ ] **Before submit.** Load `research:philip-morris-lung` on Abdul's machine so `test_memory` passes: `uv run python loader.py --case philip-morris-lung --rebuild` needs `cases/philip-morris-lung/raw/` from Aaryan (the cache is not in git) (→ Abdul + Aaryan)
-- [ ] Fix the 6 `test_discover` failures: a fixture is read without `encoding="utf-8"` (Windows `charmap` error) (→ unassigned)
-- [ ] Fix the 6 `test_obsidian` failures on Windows: `signal.SIGINT` is unsupported in the watch tests, plus the path checks (→ unassigned)
-- [ ] `test_research`: cold-start `bridges3_hub` took 4.2 s against the 3 s limit on a fresh container; re-measure on a warm machine, and fix the query if it is real (do not raise the limit) (→ unassigned)
+- [ ] **Before submit.** Load `research:philip-morris-lung` on Abdul's machine so `test_memory` passes: `uv run python loader.py --case philip-morris-lung --rebuild` needs `cases/philip-morris-lung/raw/` from Aaryan (the cache is not in git) (→ Abdul + Aaryan). Aaryan, Oct 17: zipped as `data/tietrace-pmi-raw.zip` (21 MB, no key inside); unzip it in the repo root
+- [x] Fix the 6 `test_discover` failures (Aaryan, Oct 17): `encoding="utf-8"` on 43 text-mode reads/writes across the repo; discover saves its case file before printing. **Abdul: re-run on Windows to confirm**
+- [x] Fix the 6 `test_obsidian` failures on Windows (Aaryan, Oct 17): CTRL_BREAK_EVENT + SIGBREAK handler, symlink sub-step skipped only on Windows with a `mklink /J` fallback; found and fixed a junctioned `.trash` / export-folder escape. **Abdul: re-run on Windows to confirm**
+- [x] `test_research`: cold-start `bridges3_hub` (Aaryan, Oct 17): the Tier-A filter scanned a 3,035-id list per path; now a hash join. Biggest hub 1.2 s → 0.21 s cold; output identical (2,340 calls compared by the Reviewer); the order is now total so LIMIT is deterministic; limit unchanged
 - [ ] Choose a licence for our own code and add `LICENSE` (decide together) (→ Abdul + Aaryan)
 - [ ] Decision D9 recorded as decided (case slug is a tool argument, newsroom stays env-only): copy it into `docs/mcp-spec.md` section 3 and the redesign with `(decided by Aaryan)` if not there yet (→ unassigned)
 - [ ] E5 profile hand-check: a person fills the verdict columns in `eval/e5_sample.md` (50 authors), then the error rate goes to `eval/results.md` and the README "limits" (→ unassigned)
-- [ ] Tier meaning follow-up from E11: check a DOI with two evidence items prints both labels correctly in notes (`checkpoints.md` 7 follow-up) (→ unassigned)
+- [x] Tier meaning follow-up (Aaryan, Oct 17): a DOI with two evidence items now prints them as separate groups split by " | " (DOIs split by "; "); test in `test_notes`
 
 ## P2-1. Hardening (`IMPROVEMENT.md` 5g, D11, D12)
 - [ ] A Claude Code `PreToolUse` hook that denies `loader.py` calls with `--refresh`, or without a valid `--case` (so the model cannot spend the API budget); unit-test the hook (→ unassigned)
