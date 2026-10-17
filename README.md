@@ -1,6 +1,6 @@
 # TieTrace
 
-*Last updated by Aaryan, Oct 17: web app section (`web/`). Earlier, Abdul, Oct 17: checkpoint 8 results (E4, E6, E8, E9, E10), architecture diagram, licence note, test status. Earlier, Aaryan, Oct 16: checkpoint 7 (verdicts, sourcing notes, the Writer subagent; 13 tools); PMI funder share now read from the graph's Meta node. Earlier the same day: rewritten to match the code after checkpoint 6 and the hardening round (both tracks, 10 tools, setup, test and evaluation results, limits).*
+*Last updated by Aaryan, Oct 17: MIT licence for our code (`LICENSE`). Earlier the same day: web app section (`web/`). Earlier, Abdul, Oct 17: checkpoint 8 results (E4, E6, E8, E9, E10), architecture diagram, licence note, test status. Earlier, Aaryan, Oct 16: checkpoint 7 (verdicts, sourcing notes, the Writer subagent; 13 tools); PMI funder share now read from the graph's Meta node. Earlier the same day: rewritten to match the code after checkpoint 6 and the hardening round (both tracks, 10 tools, setup, test and evaluation results, limits).*
 
 TieTrace helps a journalist check how connected an expert is to the company in a story. It looks the expert up in a research graph built from [OpenAlex](https://openalex.org) and stored in [FalkorDB](https://www.falkordb.com), and it answers with evidence, not opinions:
 
@@ -187,4 +187,4 @@ Abdul and Aaryan. Most code was written with Claude Code in a Builder/Reviewer l
 
 - Research data: OpenAlex, released under **CC0**.
 - FalkorDB is used as a separate, unmodified Docker image; FalkorDB is licensed under the Server Side Public License v1 (SSPLv1) (checked on its Docker Hub and GitHub pages, Oct 17). We do not redistribute it.
-- Licence for this code: **not chosen yet**.
+- Licence for this code: **MIT**, see [`LICENSE`](LICENSE) (decided by Aaryan, Oct 17; Abdul to confirm).
