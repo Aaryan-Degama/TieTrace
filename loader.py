@@ -581,6 +581,13 @@ INDEXES = [
 ]
 
 
+def connect():
+    """The one place that opens FalkorDB. Env: FALKORDB_PORT (default 6379), FALKORDB_PASSWORD (default none:
+    the local container has no password; see CLAUDE.md "Optional: a FalkorDB password")."""
+    return FalkorDB(port=int(os.environ.get("FALKORDB_PORT", 6379)),
+                    password=os.environ.get("FALKORDB_PASSWORD") or None)
+
+
 def staging_name(graph):
     return graph.replace("research:", "staging:", 1)
 
@@ -588,7 +595,7 @@ def staging_name(graph):
 def write_graph(rows, meta, rebuild, before_swap=None):
     """Build the graph aside as staging:<slug>, check it, then swap it in with Redis RENAME.
     If anything fails, staging is dropped and research:<slug> stays exactly as it was."""
-    db = FalkorDB(port=int(os.environ.get("FALKORDB_PORT", 6379)))
+    db = connect()
     staging = staging_name(GRAPH)
     if GRAPH in db.list_graphs() and not rebuild:
         raise SystemExit(f"{GRAPH} already exists; pass --rebuild to build a new copy and swap it in")
@@ -630,6 +637,49 @@ def self_check(g, counts):
     rows = g.ro_query("MATCH (m:Meta) RETURN m.build_status, m.data_version, m.recent_year").result_set
     if len(rows) != 1 or rows[0][0] != "complete" or not rows[0][1] or rows[0][2] is None:
         raise RuntimeError(f"self-check failed: Meta is {rows}")
+
+
+DEFAULT_GRAPH_MB = 1000  # no earlier build of this case: the largest graph so far is 784 MB (obesity-coke)
+RAM_SHARE = 0.9          # refuse when used + new graph would pass 90% of the limit
+
+
+def graph_estimate_mb():
+    """(MB, where it came from) for the new graph: the last build's total_graph_sz_mb, else DEFAULT_GRAPH_MB."""
+    try:
+        mb = json.loads((CASES / SLUG / "status.json").read_text(encoding="utf-8")).get("total_graph_sz_mb")
+    except (OSError, ValueError):
+        mb = None
+    if isinstance(mb, (int, float)) and mb > 0:
+        return mb, "last build's total_graph_sz_mb in status.json"
+    return DEFAULT_GRAPH_MB, "rule of thumb (no earlier build)"
+
+
+def ram_problem(info, estimate_mb, meminfo="/proc/meminfo"):
+    """None when the build fits, else the reason to refuse. `info` is FalkorDB's INFO memory dict.
+
+    The staging build adds a whole new graph while the old research:<slug> is still loaded (it is freed only
+    by the RENAME swap). used_memory already counts the old graph, so the need is used_memory + new graph.
+    Check 1: that need must stay under 90% of maxmemory when set, else of total_system_memory (all the RAM
+    Redis sees: the host, or Docker Desktop's VM; it ignores what other programs use).
+    Check 2: the new graph must fit in this machine's MemAvailable (/proc/meminfo, Linux only; skipped
+    when the file is missing). ponytail: a `docker run --memory` limit is invisible to both; setting
+    maxmemory on FalkorDB is the real guard."""
+    used = info.get("used_memory")
+    limit = info.get("maxmemory") or info.get("total_system_memory")
+    if not used or not limit:
+        return f"FalkorDB INFO memory gave no used_memory or memory limit ({used=}, {limit=})"
+    need, cap, gib = used + estimate_mb * 2 ** 20, RAM_SHARE * limit, 2 ** 30
+    if need > cap:
+        return (f"not enough RAM: FalkorDB uses {used / gib:.2f} GiB and the new graph needs about "
+                f"{estimate_mb / 1024:.2f} GiB more until the swap, which passes {RAM_SHARE:.0%} of the "
+                f"{limit / gib:.2f} GiB limit ({cap / gib:.2f} GiB). Free RAM first (CLAUDE.md, Idle graphs)")
+    if meminfo and os.path.exists(meminfo):
+        with open(meminfo, encoding="utf-8") as f:
+            avail_kb = next((int(line.split()[1]) for line in f if line.startswith("MemAvailable:")), None)
+        if avail_kb is not None and estimate_mb * 1024 > avail_kb:
+            return (f"not enough free RAM on this machine: the new graph needs about {estimate_mb / 1024:.2f} GiB "
+                    f"but MemAvailable is {avail_kb / 2 ** 20:.2f} GiB. Close programs or free a graph first")
+    return None
 
 
 def graph_size_mb(db, graph):
@@ -714,6 +764,8 @@ def main():
     ap.add_argument("--dry-run", action="store_true", help="print counts, calls, cost and RAM; write nothing")
     ap.add_argument("--until-year", type=int, help="staged demo: load only works published up to this year "
                                                    "(only for a case with cache_from, so a real case is never cut)")
+    ap.add_argument("--skip-ram-check", action="store_true", help="build even when FalkorDB's RAM looks too "
+                                                                     "full (the check is a rough estimate)")
     args = ap.parse_args()
     try:
         use_case(args.case)
@@ -727,9 +779,15 @@ def main():
     KEY = api_key()
     if args.dry_run:
         return dry_run()
-    db = FalkorDB(port=int(os.environ.get("FALKORDB_PORT", 6379)))
+    db = connect()
     if GRAPH in db.list_graphs() and not args.rebuild:
         raise SystemExit(f"{GRAPH} already exists; pass --rebuild to build a new copy and swap it in")
+    if not args.skip_ram_check:
+        estimate, source = graph_estimate_mb()
+        problem = ram_problem(db.connection.info("memory"), estimate)
+        if problem:
+            raise SystemExit(f"{problem}; estimate from {source}. Override: --skip-ram-check")
+        print(f"RAM check passed (new graph about {estimate} MB, from {source})")
     # One build per case at a time: two builds would share staging:<slug> and status.json.
     lock, token = f"build-lock:{SLUG}", f"{os.getpid()}@{time.time():.0f}"
     if not db.connection.set(lock, token, nx=True, ex=BUILD_LOCK_TTL):

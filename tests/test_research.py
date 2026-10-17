@@ -48,11 +48,11 @@ import research  # noqa: E402
 
 import verifier  # noqa: E402
 
-from falkordb import FalkorDB  # noqa: E402
+import loader  # noqa: E402
 
 
 
-G = FalkorDB(port=int(os.environ["FALKORDB_PORT"])).select_graph(research.GRAPH)
+G = loader.connect().select_graph(research.GRAPH)
 
 SEED = 20261017
 

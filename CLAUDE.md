@@ -1,5 +1,7 @@
 # TieTrace
 
+Last updated by Aaryan, Oct 17 2026: P2-1 hardening (loader hook, `.env` deny, RAM check, password, ACL, CI, idle graphs).
+
 FalkorDB Graph Hacks entry (Tracks 1 and 2). **Submit by Oct 18 2026, 6 PM IST.**
 TieTrace checks how connected an expert is to the company in a story, using an OpenAlex research graph in FalkorDB. Every tie comes with its DOI, and every "no tie found" comes with its scope.
 
@@ -75,6 +77,46 @@ TieTrace checks how connected an expert is to the company in a story, using an O
   - `uv run python loader.py --rebuild` rebuilds from the `data/raw/` cache, with zero API calls once the cache exists;
   - add `--refresh` to re-download;
   - the OpenAlex key lives in `.env` (`OPENALEX_API_KEY`). Never print or log it.
+  - **RAM check before a real build (a rough guard, not a promise).** The new graph's size is estimated from the case's last `total_graph_sz_mb`, or 1000 MB if there is no earlier build. The loader refuses if either test fails; `--skip-ram-check` overrides.
+    - **Test 1:** FalkorDB's `used_memory` plus the new graph must stay under 90% of `maxmemory`, or of `total_system_memory` when `maxmemory` is 0. The staging build keeps the old graph until the RENAME swap, and `used_memory` already counts it.
+    - **Test 2 (Linux):** the new graph must fit in `/proc/meminfo` MemAvailable.
+    - **What it cannot see:** with `maxmemory` at 0, `total_system_memory` is the whole machine (on Aaryan's machine, Oct 17: 15.01 GiB, while only about 3.98 GiB was available), so test 1 alone would wave through a build that cannot fit. Test 2 catches that on native Linux Docker. Neither test can see a `docker run --memory` limit, and on Docker Desktop MemAvailable is the host's, not the VM's. Also, `total_graph_sz_mb` overstates real RAM (784 + 727 MB reported, against 1.19 GiB `used_memory` for both graphs).
+    - **The real guard is `maxmemory`** on FalkorDB (for example `--maxmemory 6gb` in `REDIS_ARGS`): Redis then refuses writes past it, and test 1 uses it.
+- **Guard hook (model-issued Bash only):** `.claude/hooks/guard_loader.py` (`PreToolUse`, `onFailure: block`, which needs Claude Code 2.1.295 or later; older versions let a crashed hook through) blocks:
+  - `loader.py --refresh`;
+  - `loader.py` without a `--case <slug>` that has `cases/<slug>/case.json`;
+  - any command naming `.env`, except inside a `git commit -m` message. For a message that would need `$(...)`, write it to a file and use `git commit -F <file>`.
+
+  **It is a text check and a seatbelt, not a sandbox.** The real limit on the API budget is the OpenAlex key itself (its spending limit), not this hook. Humans in their own terminal are not affected; run `--refresh` yourself.
+  - **Whole-text rules come first.** If the text mentions loader outside a pure reader part, any `--ref` anywhere is refused. If a loader run is found (or loader sits inside `$(...)`, backticks or a heredoc), the last `--case` must be a real case. Python reading code from `-c`, `-` or a heredoc is refused while loader is mentioned.
+  - **Known evasions (still get through):**
+    - a `$(...)` name built from pieces (`$(echo lo''ader.py)`, `printf`), and a `--case` taken from a later, unrelated command (a `$(...)` name with a quoted or escaped `--ref` flag is caught);
+    - a variable (`x=loader.py; python $x`);
+    - `cp loader.py y.py`, then running `y.py`;
+    - a command built with `printf` or `eval` from pieces;
+    - a script file that imports loader;
+    - a `python -c` string run without the word loader in the command.
+  - **Known false positives, and what to do instead:**
+    - `uv run ruff check loader.py` and `python -m py_compile loader.py` are blocked: run them in your own terminal.
+    - `sed`/`awk` on `loader.py` are blocked (both can run commands): use the Read tool or `head`/`grep`.
+    - A heredoc with unbalanced quotes that mentions loader is blocked: use the Edit tool.
+    - Searching for the file name: `grep '[.]env'` instead of `grep .env`.
+    - Any mention of `--ref...` next to a loader command is blocked, even in text.
+
+  Tests: `tests/test_hooks.py`.
+- **`.env` deny rules:** `permissions.deny` has `Read(/.env)` and `Edit(/.env)` (in project settings `/` means the primary working directory, per the permissions docs). They cover the file tools and the Bash file commands Claude Code recognises (`cat`, `head`, `sed`, redirections), but not a script that opens the file itself (`python -c "open('.env')"`); the guard hook blocks those when the command text names `.env`.
+- **Optional: a FalkorDB password.** All code connects through `loader.connect()`, which reads `FALKORDB_PASSWORD` (default: none). To turn it on: `docker exec falkordb redis-cli CONFIG SET requirepass '<pw>'` (lasts until the container restarts; to keep it, add `--requirepass <pw>` to `REDIS_ARGS` in the `docker run` line). Export `FALKORDB_PASSWORD` for the loader, tests and the web app, and add `-e FALKORDB_PASSWORD=<pw>` to `claude mcp add`. The web app passes it on in its MCP config file, which is written owner-only (0600). After that, `redis-cli` needs `-a <pw>`. Not turned on yet (Aaryan's call; it would break Abdul's setup until he sets the variable). Tested on a throwaway container, Oct 17: no password gives `Authentication required`, a wrong one is refused, the right one lists graphs.
+- **Optional: read-only Redis user for the research graphs (D11).** Tested Oct 17 on a throwaway `falkordb/falkordb:v4.22.1` container only, never on the live one:
+  ```
+  redis-cli ACL SETUSER reader on '>pw' resetkeys '~research:*' resetchannels -@all +graph.ro_query +graph.list +ping +info +hello +client
+  ```
+  As `reader`: `PING`, `GRAPH.LIST` and `GRAPH.RO_QUERY research:*` work, also from the Python client (`FalkorDB(username="reader", password=...)`). `GRAPH.QUERY` gives `NOPERM ... 'graph.QUERY'`, a write in `RO_QUERY` gives `graph.RO_QUERY is to be executed only on read-only queries`, `RO_QUERY newsroom:*` gives `NOPERM No permissions to access a key`, and `GRAPH.DELETE`, `GET`, `KEYS` and `CONFIG GET` give `NOPERM`. `GRAPH.LIST` still shows the `newsroom:*` names, but not their contents. The MCP server cannot use this user yet, because it writes `newsroom:<id>`; the code has no `FALKORDB_USERNAME`. `ACL SETUSER` is lost on restart unless it goes into an ACL file.
+- **Idle graphs: free RAM, rebuild for free.** Each research graph takes about 0.7-0.8 GB by `GRAPH.MEMORY`. With Docker Desktop (a VM of about 7.75 GiB), 6-8 fit. With native Docker on Linux (Aaryan's machine), the limit is the host's free RAM (about 4 GiB free on Oct 17), not `total_system_memory`.
+  - List the graphs and their sizes: `docker exec falkordb redis-cli GRAPH.LIST`, then `docker exec falkordb redis-cli GRAPH.MEMORY USAGE research:<slug>` (first two lines: `total_graph_sz_mb`) and `docker exec falkordb redis-cli INFO memory | grep used_memory_human`. On Aaryan's machine add `--context default` after `docker`.
+  - Free an idle case graph: `docker exec falkordb redis-cli GRAPH.DELETE research:<slug>`. The raw cache in `cases/<slug>/raw/` (obesity-coke: `data/raw/`) stays, so `uv run python loader.py --case <slug> --rebuild` brings it back with 0 API calls. A server on that case gets `NO_GRAPH` until then.
+  - **Never delete `newsroom:*`.** That is the newsroom's memory (cases, verdicts, notes); it is not rebuildable from anything.
+  - Do not delete the graph of the default case or of a case the web app or a demo is using.
+- **CI:** `.github/workflows/ci.yml` runs the suites that need no research graph and no key: `test_hooks`, `test_e5_precheck`, `test_discover` (recorded fixtures), plus a compile check. The other suites need the gitignored research graphs (checked on an empty FalkorDB, Oct 17) and run locally only.
 - **Tests:** `uv run python tests/<suite>.py` for `test_loader`, `test_research`, `test_server`, `test_eval`, `test_cases`, `test_discover`, `test_memory`, `test_obsidian` (plain asserts, no pytest). Suites use `zz-test-*` newsrooms, never `alpha`.
 - **Web app:** `uv run uvicorn web.app:app --host 127.0.0.1 --port 8000` (needs a logged-in `claude`; env `TIETRACE_NEWSROOM`, default `alpha`, and `FALKORDB_PORT`). Tests: `uv run python tests/test_web.py` (`WEB_LIVE=1` adds a real `claude -p` run).
 - **See the memory graph in Obsidian:** `uv run python obsidian_export.py --watch 5` writes linked notes (cases, experts, papers, funders) to `~/Documents/Obsidian Vault/TieTrace/<newsroom>/`; open Graph view (Ctrl+G). Read-only on FalkorDB; writes only in that folder, and moves stale notes to the vault's `.trash/`. The full research graph is better viewed in the FalkorDB Browser.

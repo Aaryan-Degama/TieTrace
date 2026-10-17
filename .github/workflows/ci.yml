@@ -1,0 +1,31 @@
+# Last updated by Aaryan, Oct 17 2026: first CI (phase 2, P2-1).
+# Runs only the suites that need no research graph, no FalkorDB, no API key and no `claude` login.
+# No secrets are used; the OpenAlex key never reaches CI.
+#
+# Skipped, because they read research:obesity-coke / research:philip-morris-lung (built from data/raw/,
+# which is gitignored) and fail on an empty FalkorDB (checked Oct 17 on an empty v4.22.1 container):
+#   test_loader (part b), test_research, test_server, test_eval, test_cases, test_memory, test_obsidian,
+#   test_notes, test_golden, test_concurrency, test_isolation, test_web.
+# Run those locally with FalkorDB up (CLAUDE.md, Commands > Tests).
+name: ci
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  offline-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7          # moving major tag (v7.0.1 latest, checked Oct 17)
+      - uses: astral-sh/setup-uv@v10.3.0   # exact: setup-uv publishes no moving v10 tag (git ls-remote, Oct 17)
+      - run: uv sync --locked
+      - name: Every Python file compiles
+        run: uv run python -m compileall -q -x '/\.venv/' .
+      - name: Hook that blocks costly loader calls
+        run: uv run python tests/test_hooks.py
+      - name: E5 pre-check rules
+        run: uv run python tests/test_e5_precheck.py
+      - name: discover.py on recorded OpenAlex fixtures
+        run: uv run python tests/test_discover.py

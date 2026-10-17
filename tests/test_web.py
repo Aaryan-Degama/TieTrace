@@ -314,6 +314,30 @@ def test_falkordb_down_gives_a_readable_error_before_claude_starts():
         os.environ.pop("TIETRACE_CLAUDE")
 
 
+def test_mcp_config_is_owner_only_and_carries_password_only_when_set():
+    """Reviewer (P2-1): the generated MCP config may hold FALKORDB_PASSWORD, so it is 0600 when claude reads it,
+    holds the password only when the env var is set, and is gone afterwards. A stand-in claude records what it saw."""
+    d = Path(tempfile.mkdtemp(prefix="zz-test-web-"))
+    seen, f = d / "seen.txt", d / "claude-cfg"
+    f.write_text("#!/bin/sh\nwhile [ $# -gt 0 ]; do\n  if [ \"$1\" = --mcp-config ]; then\n"
+                 f"    stat -c %a \"$2\" >> {seen}; grep -c zz-test-pw \"$2\" >> {seen}; echo \"$2\" >> {seen}\n"
+                 "  fi\n  shift\ndone\nexit 1\n")
+    f.chmod(f.stat().st_mode | stat.S_IEXEC)
+    old_pw = os.environ.get("FALKORDB_PASSWORD")
+    os.environ["TIETRACE_CLAUDE"] = str(f)
+    try:
+        for pw, want in (("zz-test-pw", "1"), (None, "0")):
+            os.environ.pop("FALKORDB_PASSWORD", None) if pw is None else os.environ.__setitem__("FALKORDB_PASSWORD", pw)
+            seen.write_text("")
+            run_events(w.ask_events("a story"))
+            mode, hits, path = seen.read_text().split()
+            assert mode == "600" and hits == want, (pw, mode, hits)
+            assert not Path(path).exists(), "the config is removed after the run"
+    finally:
+        os.environ.pop("TIETRACE_CLAUDE")
+        os.environ.pop("FALKORDB_PASSWORD", None) if old_pw is None else os.environ.__setitem__("FALKORDB_PASSWORD", old_pw)
+
+
 def test_timeout_kills_claude_and_gives_a_readable_error():
     d = Path(tempfile.mkdtemp(prefix="zz-test-web-"))
     f = d / "claude-slow"

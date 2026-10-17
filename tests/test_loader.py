@@ -264,8 +264,7 @@ _G = None
 def G():
     global _G
     if _G is None:
-        from falkordb import FalkorDB
-        _G = FalkorDB(port=int(os.environ.get("FALKORDB_PORT", 6379))).select_graph(loader.GRAPH)
+        _G = loader.connect().select_graph(loader.GRAPH)
     return _G
 
 
@@ -498,6 +497,153 @@ def test_ro_query_rejects_write():
 
 
 # ---------- runner ----------
+# ---------- pre-flight RAM check (P2-1, Aaryan) ----------
+GiB, MiB = 2 ** 30, 2 ** 20
+
+
+def fake_meminfo(avail_kb):
+    import tempfile
+    f = tempfile.NamedTemporaryFile("w", suffix=".meminfo", delete=False)
+    f.write(f"MemTotal:       16000000 kB\nMemFree:          400000 kB\nMemAvailable:   {avail_kb} kB\n")
+    f.close()
+    import atexit
+    atexit.register(os.unlink, f.name)
+    return f.name
+
+
+BIG = fake_meminfo(64 * 2 ** 20)  # 64 GiB available: only the INFO check matters in these tests
+
+
+def test_ram_check_fits_and_refuses():
+    info = {"used_memory": int(1.2 * GiB), "total_system_memory": 16 * GiB, "maxmemory": 0}
+    assert loader.ram_problem(info, 784, BIG) is None
+    # 6.5 GiB used (old graph included) + 1 GiB new graph on an 8 GiB VM passes 90% (7.2 GiB): refuse
+    msg = loader.ram_problem({"used_memory": int(6.5 * GiB), "total_system_memory": 8 * GiB, "maxmemory": 0}, 1024,
+                             BIG)
+    assert msg and "not enough RAM" in msg and "8.00 GiB" in msg, msg
+    # right at the edge: 90% exactly still fits, one byte more does not
+    edge = {"used_memory": int(0.9 * 8 * GiB) - 1000 * MiB, "total_system_memory": 8 * GiB}
+    assert loader.ram_problem(edge, 1000, BIG) is None
+    assert loader.ram_problem({**edge, "used_memory": edge["used_memory"] + 1}, 1000, BIG)
+
+
+def test_ram_check_exact_boundary_integers():
+    # 90% of 10 GiB is exactly 9 GiB (no rounding): used + new == 9 GiB fits, one byte more is refused
+    edge = {"used_memory": 9 * GiB - 1000 * MiB, "total_system_memory": 10 * GiB, "maxmemory": 0}
+    assert loader.ram_problem(edge, 1000, BIG) is None
+    assert loader.ram_problem({**edge, "used_memory": 9 * GiB - 1000 * MiB + 1}, 1000, BIG)
+
+
+def test_ram_check_mem_available():
+    info = {"used_memory": int(1.2 * GiB), "total_system_memory": 15 * GiB, "maxmemory": 0}  # INFO says fine
+    low = fake_meminfo(int(3.98 * 2 ** 20))  # this host on Oct 17: about 3.98 GiB available
+    assert loader.ram_problem(info, 784, low) is None
+    msg = loader.ram_problem(info, 5000, low)
+    assert msg and "MemAvailable is 3.98 GiB" in msg, msg
+    assert loader.ram_problem(info, 4096, fake_meminfo(4 * 2 ** 20)) is None  # equal is still enough
+    assert loader.ram_problem(info, 4097, fake_meminfo(4 * 2 ** 20))
+    assert loader.ram_problem(info, 5000, "/no/such/meminfo") is None  # not Linux: INFO check only
+    assert loader.ram_problem(info, 5000, None) is None
+
+
+def test_ram_check_prefers_maxmemory_and_needs_info():
+    info = {"used_memory": 1 * GiB, "total_system_memory": 64 * GiB, "maxmemory": 2 * GiB}
+    assert loader.ram_problem(info, 1000, BIG), "maxmemory (2 GiB) is the limit when set, not the 64 GiB host"
+    for bad in ({}, {"used_memory": GiB}, {"total_system_memory": 8 * GiB}, {"used_memory": 0, "maxmemory": GiB}):
+        assert "gave no used_memory" in loader.ram_problem(bad, 100, BIG), bad  # unknown means refuse, not pass
+
+
+def test_ram_estimate_from_status_or_rule():
+    import tempfile
+    old = loader.CASES, loader.SLUG
+    with tempfile.TemporaryDirectory() as d:
+        try:
+            loader.CASES, loader.SLUG = Path(d), "zz-test-ram"
+            assert loader.graph_estimate_mb()[0] == loader.DEFAULT_GRAPH_MB  # no status.json
+            (Path(d) / "zz-test-ram").mkdir()
+            status = Path(d) / "zz-test-ram" / "status.json"
+            status.write_text(json.dumps({"status": "failed", "total_graph_sz_mb": None}))
+            assert loader.graph_estimate_mb()[0] == loader.DEFAULT_GRAPH_MB
+            status.write_text("{not json")
+            assert loader.graph_estimate_mb()[0] == loader.DEFAULT_GRAPH_MB
+            for junk in (0, -5, "784"):  # reviewer: a size that is not a positive number is not trusted
+                status.write_text(json.dumps({"status": "ready", "total_graph_sz_mb": junk}))
+                assert loader.graph_estimate_mb()[0] == loader.DEFAULT_GRAPH_MB, junk
+            status.write_text(json.dumps({"status": "ready", "total_graph_sz_mb": 726}))
+            mb, source = loader.graph_estimate_mb()
+            assert mb == 726 and "status.json" in source
+        finally:
+            loader.CASES, loader.SLUG = old
+
+
+def test_main_uses_connect_and_ram_check():
+    """main() opens FalkorDB only through connect(), refuses a too-full RAM before taking the build lock,
+    skips the check with --skip-ram-check, and --dry-run never connects. Fakes only: no real DB, no API."""
+    calls = []
+
+    class Conn:
+        def info(self, section):
+            calls.append("info")
+            return {"used_memory": 7 * GiB, "total_system_memory": 8 * GiB, "maxmemory": 0}
+
+        def set(self, *a, **kw):
+            calls.append("lock")
+            return False  # pretend another build holds the lock, so main stops here
+
+    class DB:
+        connection = Conn()
+
+        def list_graphs(self):
+            return [loader.GRAPH]
+
+    def no_direct(**kw):
+        raise AssertionError("main() must open FalkorDB through loader.connect()")
+
+    saved = {k: getattr(loader, k) for k in ("FalkorDB", "connect", "api_key", "dry_run")}
+    old_argv, old_case = sys.argv, (loader.SLUG,)
+    try:
+        loader.FalkorDB, loader.connect = no_direct, lambda: (calls.append("connect"), DB())[1]
+        loader.api_key, loader.dry_run = (lambda: "zz-test-key"), (lambda: calls.append("dry") or 0)
+        base = ["loader.py", "--case", "obesity-coke", "--rebuild"]
+        for argv, want_msg, want_calls in (
+                (base, "not enough RAM", ["connect", "info"]),
+                (base + ["--skip-ram-check"], "another build", ["connect", "lock"]),
+                (["loader.py", "--case", "obesity-coke", "--dry-run"], None, ["dry"])):
+            calls.clear()
+            sys.argv = argv
+            try:
+                loader.main()
+                msg = None
+            except SystemExit as e:
+                msg = str(e)
+            assert (want_msg is None and not msg) or (want_msg and want_msg in (msg or "")), (argv, msg)
+            assert calls == want_calls, (argv, calls)
+    finally:
+        for k, v in saved.items():
+            setattr(loader, k, v)
+        sys.argv = old_argv
+        loader.use_case(old_case[0])
+
+
+def test_connect_reads_password_env():
+    seen = {}
+    old, old_env = loader.FalkorDB, os.environ.get("FALKORDB_PASSWORD")
+    loader.FalkorDB = lambda **kw: seen.update(kw)
+    try:
+        os.environ.pop("FALKORDB_PASSWORD", None)
+        loader.connect()
+        assert seen["password"] is None
+        os.environ["FALKORDB_PASSWORD"] = "zz-test-pw"
+        loader.connect()
+        assert seen["password"] == "zz-test-pw"
+    finally:
+        loader.FalkorDB = old
+        if old_env is None:
+            os.environ.pop("FALKORDB_PASSWORD", None)
+        else:
+            os.environ["FALKORDB_PASSWORD"] = old_env
+
+
 if __name__ == "__main__":
     tests = [(n, f) for n, f in list(globals().items()) if n.startswith("test_") and callable(f)]
     failed = 0

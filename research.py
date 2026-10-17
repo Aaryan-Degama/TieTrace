@@ -6,7 +6,7 @@ or {"ok": False, "error": {"code", "message"}, "cypher": [...]}.
 
 Rules kept here: reads only through GRAPH.RO_QUERY (timeout + row cap); every value goes in as a
 query parameter, never into the query text; COAUTH is always matched with `->`.
-Port: env FALKORDB_PORT (default 6379).
+Port: env FALKORDB_PORT (default 6379); optional FALKORDB_PASSWORD (loader.connect).
 
 Which graph: `on_graph(graph)` sets it for the calls inside the `with` block (a contextvar);
 the default is GRAPH (research:obesity-coke). Cached facts are kept per graph.
@@ -17,7 +17,6 @@ import json
 import os
 import re
 
-from falkordb import FalkorDB
 from redis.exceptions import RedisError, ResponseError
 
 import loader  # the one shared junk rule and name folding live in the loader
@@ -159,7 +158,7 @@ def ro_query(graph, query, params=None, timeout_ms=3000, row_cap=500, log=None):
 def _conn():
     global _db
     if _db is None:
-        _db = FalkorDB(port=int(os.environ.get("FALKORDB_PORT", 6379)))
+        _db = loader.connect()  # FALKORDB_PORT and the optional FALKORDB_PASSWORD
     return _db
 
 
