@@ -94,12 +94,78 @@ def wrong_key():
     raise AssertionError("a wrong key was accepted")
 
 
+def live_agent():
+    """A2: run_agent with real Gemini + the real McpClient + the real graph (FALKORDB_PORT=6500, newsroom
+    zz-test-agent-a2, deleted after). Events are already redacted by web.app.Parser; say() checks for the key."""
+    import json
+    key = env_key("GEMINI_API_KEY")
+    if not key:
+        say("SKIP  agent live: not run: no key")
+        return
+    os.environ["TIETRACE_NEWSROOM"] = "zz-test-agent-a2"
+    os.environ["FALKORDB_PORT"] = "6500"
+    from web.agent.loop import run_agent
+    from web.agent.mcp_client import McpClient
+    BLAIR, HILL = "A5105003630", "A5031318756"
+    story = ("Coca-Cola and obesity. The article quotes Steven Blair and James O. Hill. "
+             "Check how connected each is to Coca-Cola.")
+
+    async def go():
+        evs = []
+        session = {}
+        async with McpClient() as c:
+            async for ev in run_agent(get_provider("gemini"), key, story, max_turns=8, client=c, session=session):
+                evs.append(ev)
+            # "Steven Blair" has a split OpenAlex profile (golden test), so the model must stop at the picker.
+            # Do what the page does when the reporter clicks "Use this author": same session, same sentence.
+            pick = [d for e, d in evs if e == "ambiguous" and BLAIR in [x["expert_id"] for x in d["candidates"]]]
+            if pick:
+                say("  (reporter picks Blair's candidate in the picker, same session)")
+                follow = f"For {pick[0]['name_ref']}, use OpenAlex author {BLAIR}. Continue the check."
+                async for ev in run_agent(get_provider("gemini"), key, follow, max_turns=8, client=c, session=session):
+                    evs.append(ev)
+        return evs
+    try:
+        evs = asyncio.run(asyncio.wait_for(go(), 300))
+    except ProviderError as e:
+        say(f"FAIL  agent live: {e.code} {e}")
+        sys.exit(2 if e.code == "RATE_LIMIT" else 1)
+    for e, d in evs:
+        if e == "step":
+            say(f"  step {d.get('tool')} {'running' if d.get('status') else 'ok=' + str(d.get('ok'))}")
+        elif e == "expert":
+            say(f"  expert {d.get('label')} id={d.get('expert_id')} tier={d.get('tier')} dois={[x.get('doi') for x in d.get('evidence') or []][:3]}")
+        else:
+            say(f"  {e}: {json.dumps(d, ensure_ascii=False)[:300]}")
+    errs = [d for e, d in evs if e == "error"]
+    if errs and errs[0].get("code") == "RATE_LIMIT":
+        say("429 received: stopping, no retry")
+        sys.exit(2)
+    assert not errs, errs
+    used = {d.get("tool") for e, d in evs if e == "step"}
+    assert "resolve_experts" in used and used & {"check_case", "tie_report"}, used
+    assert not used & {"record_verdict", "approve_note"}
+    tier = {d["expert_id"]: d for e, d in evs if e == "expert" and d.get("tier")}
+    assert tier[BLAIR]["tier"] == "A1" and tier[HILL]["tier"] == "A2", {k: v.get("tier") for k, v in tier.items()}
+    for x in (BLAIR, HILL):
+        assert tier[x]["label"].startswith("Expert #")
+    # check_case rows carry no evidence, so a DOI shows only if the model also called tie_report for Blair
+    assert any(e == "expert" and d.get("expert_id") == BLAIR and any(x.get("doi") for x in d.get("evidence") or [])
+               for e, d in evs), "no tie_report card with a DOI for Blair"
+    dumped = json.dumps(evs, ensure_ascii=False)
+    for secret in ("Steven Blair", "Blair", "Hill", "James O."):
+        assert secret not in dumped, secret
+    assert "orcid.org" not in dumped and evs[-1][0] == "done"
+    say("PASS  agent live (Blair A1, Hill A2, labels Expert #n, no names, no key)")
+
+
 if __name__ == "__main__":
     if os.environ.get("AGENT_LIVE") != "1":
         print("not run: set AGENT_LIVE=1")
         sys.exit(0)
     run("gemini", "GEMINI_API_KEY")
     wrong_key()
+    live_agent()
     run("claude", "TEST_KEY_CLAUDE")
     run("openai", "TEST_KEY_OPENAI")
     say("done; no key value was printed")

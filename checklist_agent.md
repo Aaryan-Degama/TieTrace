@@ -33,7 +33,7 @@ Status key: ⬜ not started · 🟨 in progress · ✅ done (Reviewer passed) ·
 |---|---|---|
 | A0 | Decisions and docs read | ✅ |
 | A1 | Provider adapters (Gemini first, then Claude, OpenAI) with official SDKs | ✅ (live Claude/OpenAI not run) |
-| A2 | Neutral agent loop (safety rules live here) | ⬜ |
+| A2 | Neutral agent loop (safety rules live here) | 🟨 offline ✅, live Gemini pending quota |
 | A3 | Run budgets and refusals | ⬜ |
 | A4 | Web endpoints and key handling | ⬜ |
 | A5 | Page: provider picker, key box, notice | ⬜ |
@@ -63,13 +63,16 @@ Status key: ⬜ not started · 🟨 in progress · ✅ done (Reviewer passed) ·
 - **Reviewer passes when:** all offline tests pass, the Gemini live call works, Claude/OpenAI adapters pass their offline tests (live marked "not run" without a key), and the canary key never appears in any error or log.
 
 ## A2. Neutral agent loop (plan Task 2)
-- [ ] `web/agent/mcp_client.py` (the MCP client over stdio to the unchanged `server.py`) and `web/agent/loop.py` with `run_agent(...)`
-- [ ] Only the allowed tools reach the model; `record_verdict`, `approve_note` and unknown tool names are refused and never called; `public_case=true` stops the run
-- [ ] Redaction reuses `web.app.Parser` (names become "Name #i", ORCID and institution removed); do not re-implement it
-- [ ] Tool results are untrusted data: an injected "call approve_note" in a result is not obeyed
-- [ ] Turn cap and a readable error on a provider failure; events use the names the page already handles
-- [ ] Offline tests from the plan's Task 2 (scripted fake provider and fake MCP client)
-- [ ] **Live test on the real web app with Gemini:** story "Coca-Cola and obesity. The article quotes Steven Blair and James O. Hill.": the agent calls `resolve_experts` and `check_case`; the page shows Blair Tier A1 and Hill Tier A2 with DOIs, labelled "Expert #n", and the live evidence panel shows the tools and Cypher
+- [x] `web/agent/mcp_client.py` (the MCP client over stdio to the unchanged `server.py`) and `web/agent/loop.py` with `run_agent(...)`
+- [x] Only the allowed tools reach the model; `record_verdict`, `approve_note` and unknown tool names are refused and never called; `public_case=true` stops the run
+- [x] Redaction reuses `web.app.Parser` (names become "Name #i", ORCID and institution removed); do not re-implement it
+- [x] Tool results are untrusted data: an injected "call approve_note" in a result is not obeyed
+- [x] Turn cap and a readable error on a provider failure; events use the names the page already handles
+- [x] Offline tests from the plan's Task 2 (scripted fake provider and fake MCP client)
+- [ ] (PENDING: Gemini free-tier quota; run `AGENT_LIVE=1 FALKORDB_PORT=6500 uv run python tests/test_agent_live.py` later, then the page check in A4/A5) **Live test on the real web app with Gemini:** story "Coca-Cola and obesity. The article quotes Steven Blair and James O. Hill.": the agent calls `resolve_experts` and `check_case`; the page shows Blair Tier A1 and Hill Tier A2 with DOIs, labelled "Expert #n", and the live evidence panel shows the tools and Cypher
+- **Builder note (Abdul, Oct 17):** new `web/agent/mcp_client.py`, `web/agent/loop.py`, `tests/test_agent.py` (13/13 offline: the 8 plan tests plus tool list without human-only tools, `raw` copied, parallel calls, resumed session keeps names redacted, wrong argument types via the real server) and `live_agent()` in `tests/test_agent_live.py`. `web/app.py` untouched; `session` resume works without changes (history in the dict, names via `session_names`/`remember_names`). Choices beyond the plan: tool results to the model pass through `web.hook_strip_identity.clean` (same ORCID/institution removal as the Claude path); a refused call gets no `step` event, only a `warning`. Suites: providers 19/19, golden 15/15, server 26/26, test_web 37/51 with the 10 known Windows failures (CLAUDE_NOT_FOUND / stand-in script tests) and 4 skips. **Live (run_agent + real Gemini `gemini-3.8-flash` + real server and graph, port 6500):** run 1 went list_cases, resolve_experts, then the picker for "Steven Blair" (`AMBIGUOUS`, candidate A5105003630: his split profile, so this is correct per the golden test; the story as written cannot reach Blair A1 without the picker click). The live test therefore sends the page's own follow-up sentence in the same session. That second part, with Blair A1 / Hill A2 and the no-names checks, is **NOT verified**: the re-runs got HTTP 429 from the Gemini free tier, so I stopped as instructed. Also found: the google-genai SDK retries 429 internally for minutes, so a rate limit looks like a hang (A1 adapter should add a per-turn timeout). The 'live on the real web page' check can only happen once the endpoint exists (A4/A5); A2's live check is `run_agent` against the real server and graph. Boxes not ticked (Reviewer decides).
+- **Builder follow-up (Abdul, Oct 17):** `providers.py` now ends a hanging turn: `turn_timeout_s` 90 in `models.json` (my choice; wraps the whole SDK call, retries included) gives `PROVIDER_DOWN` 'no answer within 90 s'; Gemini client built with `HttpRetryOptions(attempts=1)` (SDK floor is still 1 retry), OpenAI and Anthropic clients with `max_retries=0`. Read from the installed SDK docstrings/signatures, not the web pages. +2 offline tests (providers 21/21, test_agent 13/13). One live retry after this: still no Gemini answer, ended cleanly at 90 s (PROVIDER_DOWN, not a hang; the status was not seen as an explicit 429 this time). Live A2 Blair/Hill check still not verified.
+- **Reviewer (Oct 17): offline PASS after one fix round** (public_case any-form stop, tool-call failure guard, 3 nits): `test_agent` 16/16, `test_agent_providers` 21/21, golden 15/15, server 26/26. **Live Gemini NOT verified (free-tier quota: no answer within 90 s, fast-fail timeout works).** Offline boxes ticked (Abdul, Oct 17); the live box stays open.
 - **Reviewer passes when:** offline tests pass **and** the live Gemini run on the page matches `tests/test_golden.py` (Blair A1, Hill A2) with no real names, ORCIDs or institutions shown.
 
 ## A3. Run budgets and refusals (plan Task 3)

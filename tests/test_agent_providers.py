@@ -139,6 +139,40 @@ def test_rate_limit_and_provider_down_codes():
         assert CANARY not in chain_text(expect_error(name, Fake(exc=HttpError(429))))
 
 
+def test_a_provider_that_never_answers_ends_with_PROVIDER_DOWN_within_the_timeout():
+    import time
+
+    class Hang(Fake):
+        async def _create(self, **kw):
+            await asyncio.sleep(3600)
+
+    for name in ("gemini", "openai", "claude"):
+        fake = Hang()
+        fake.interactions = fake.responses = fake.messages = NS(create=fake._create)
+        p = get_provider(name, client_factory=lambda k: fake)
+        p.timeout_s = 0.3
+        t0 = time.time()
+        try:
+            asyncio.run(p.turn("SYS", [{"role": "user", "text": "hi"}], TOOLS, CANARY))
+            raise AssertionError("no error")
+        except ProviderError as e:
+            assert e.code == "PROVIDER_DOWN" and CANARY not in str(e), e
+        assert time.time() - t0 < 5, name
+
+
+def test_a_429_is_RATE_LIMIT_at_once_and_the_sdk_clients_are_built_with_few_retries():
+    import time
+    t0 = time.time()
+    for name in ("gemini", "openai", "claude"):
+        assert expect_error(name, Fake(exc=HttpError(429))).code == "RATE_LIMIT"
+    assert time.time() - t0 < 2
+    from web.agent.providers import GeminiProvider, OpenAIProvider, ClaudeProvider
+    g = GeminiProvider._default_factory("k")  # real SDK clients, built offline (no request is made)
+    assert g.interactions.sdk_configuration.retry_config.max_retries <= 1
+    assert OpenAIProvider._default_factory("k").max_retries == 0
+    assert ClaudeProvider._default_factory("k").max_retries == 0
+
+
 def test_google_400_with_API_KEY_INVALID_becomes_BAD_KEY():
     e = HttpError(400)  # shape seen live on Oct 17: body is a list of {"error": {"details": [{"reason": ...}]}}
     e.body = [{"error": {"message": f"bad {CANARY}", "details": [{"reason": "API_KEY_INVALID"}]}}]

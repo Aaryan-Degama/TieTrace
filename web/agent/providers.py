@@ -6,6 +6,7 @@ Neutral messages: {"role":"user","text"} | {"role":"assistant","text","calls":[T
 {"role":"tool","call_id","name","result":str}.  "raw" is the opaque Turn.raw of that assistant turn: Gemini thought
 steps and OpenAI reasoning items must be sent back as they came, so the loop should copy Turn.raw into the message.
 """
+import asyncio
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -114,14 +115,17 @@ class Provider:
         self._factory = client_factory or self._default_factory
         self.model = MODELS[self.name]["model"]
         self.max_tokens = MODELS[self.name]["turn_max_tokens"]
+        self.timeout_s = MODELS[self.name].get("turn_timeout_s", 90)  # overall cap for one turn, retries included
 
     async def turn(self, system: str, messages: list, tools: list, key: str) -> Turn:
         client = None
         try:
             client = self._factory(key)  # the only place the key is used
-            return await self._call(client, system, messages, tools)
+            return await asyncio.wait_for(self._call(client, system, messages, tools), self.timeout_s)
         except ProviderError as e:
             err = e
+        except asyncio.TimeoutError:  # a hang (SDK retry sleeps, slow network) must end as a readable error
+            err = ProviderError("PROVIDER_DOWN", f"{self.name}: no answer within {self.timeout_s:g} s")
         except Exception as e:
             err = _classify(self.name, e)
         finally:
@@ -144,7 +148,10 @@ class GeminiProvider(Provider):
     @staticmethod
     def _default_factory(key):
         from google import genai
-        return genai.Client(api_key=key).aio
+        from google.genai import types
+        # attempts=1: the SDK still makes one retry (its minimum for the Interactions API); the turn timeout bounds it
+        return genai.Client(api_key=key, http_options=types.HttpOptions(
+            retry_options=types.HttpRetryOptions(attempts=1))).aio
 
     def _input(self, messages):
         steps = []
@@ -186,7 +193,7 @@ class OpenAIProvider(Provider):
     @staticmethod
     def _default_factory(key):
         from openai import AsyncOpenAI
-        return AsyncOpenAI(api_key=key)
+        return AsyncOpenAI(api_key=key, max_retries=0)
 
     def _input(self, messages):
         items = []
@@ -229,7 +236,7 @@ class ClaudeProvider(Provider):
     @staticmethod
     def _default_factory(key):
         from anthropic import AsyncAnthropic
-        return AsyncAnthropic(api_key=key)
+        return AsyncAnthropic(api_key=key, max_retries=0)
 
     def _messages(self, messages):
         out = []
