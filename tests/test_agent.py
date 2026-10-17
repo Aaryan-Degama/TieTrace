@@ -267,6 +267,360 @@ def test_wrong_argument_types_return_the_servers_own_error_to_the_model():
     assert names(evs)[-1] == "done" and bad["error"]["code"] in tool_results(p)[0]
 
 
+# ---------------- A3: budgets and refusals ----------------
+
+def test_the_run_stops_when_the_token_cap_is_reached():
+    p = Script([], forever=Turn("", [tc("list_cases")], "tool_use", 400, 700))
+    evs = run(p, max_tokens_total=2000)
+    assert p.n == 2 and evs[-1][0] == "error" and evs[-1][1]["code"] == "TOKEN_LIMIT" and "done" not in names(evs)
+    assert "2,000" in evs[-1][1]["message"]
+    p = Script([], forever=Turn("", [tc("list_cases")], "tool_use", 10 ** 6, 0))  # one huge turn, default cap
+    assert run(p)[-1][1]["code"] == "TOKEN_LIMIT" and p.n == 1
+
+
+def test_an_empty_reply_is_a_readable_error():
+    for t in (Turn("", [], "end"), Turn("  \n", [], "other")):
+        evs = run(Script([t]))
+        assert len(evs) == 1 and evs[0][0] == "error" and evs[0][1]["code"] == "BAD_REPLY", evs
+        m = evs[0][1]["message"]
+        assert 0 < len(m) < 400 and "Traceback" not in m and "empty" in m
+    evs = run(Script([tool_turn(tc("list_cases")), Turn("", [], "end")]))
+    assert evs[-1][1]["code"] == "BAD_REPLY"  # also after tool turns
+
+
+def test_an_empty_reply_cut_off_by_the_length_limit_says_so():
+    evs = run(Script([Turn("", [], "length", 5, 2048)]))
+    assert evs[0][1]["code"] == "BAD_REPLY" and "cut short" in evs[0][1]["message"] and len(evs[0][1]["message"]) < 400
+
+
+def test_a_model_refusal_is_shown_as_text_not_as_a_crash():
+    evs = run(Script([Turn("I can't help with that request.", [], "other", 5, 8)]))
+    assert names(evs) == ["text", "done"] and "can't help" in evs[0][1]["text"], evs
+
+
+# ---------------- A4: endpoints and key handling ----------------
+
+import logging  # noqa: E402
+import tempfile  # noqa: E402
+import threading  # noqa: E402
+import uuid  # noqa: E402
+from contextlib import contextmanager, redirect_stderr, redirect_stdout  # noqa: E402
+from io import StringIO  # noqa: E402
+
+from fastapi.testclient import TestClient  # noqa: E402
+
+import web.app as w  # noqa: E402
+
+ORIGIN = "http://127.0.0.1:8000"
+CLI = TestClient(w.app, base_url=ORIGIN, headers={"Origin": ORIGIN})
+HOST_KEY = "HOST-GEMINI-SECRET-777"
+STORY = {"provider": "gemini", "story": "Coca-Cola and obesity."}
+
+
+@contextmanager
+def hooks(factory, env=None):
+    """Fake provider + fake MCP client injected; env vars set and restored."""
+    old = {k: os.environ.get(k) for k in (env or {})}
+    w.AGENT_PROVIDER_FACTORY, w.AGENT_CLIENT_FACTORY = factory, FakeClient
+    os.environ.update(env or {})
+    try:
+        yield
+    finally:
+        w.AGENT_PROVIDER_FACTORY = w.AGENT_CLIENT_FACTORY = None
+        for k, v in old.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
+def post(body=None, key=CANARY, client=CLI, **headers):
+    h = dict(headers)
+    if key is not None:
+        h["X-Provider-Key"] = key
+    return client.post("/api/agent/ask", json=body or STORY, headers=h)
+
+
+def sse_events(r):
+    out = []
+    for blk in r.text.strip().split("\n\n"):
+        ev, data = blk.split("\n", 1)
+        out.append((ev[7:], json.loads(data[6:])))
+    return out
+
+
+def files_since(t0):
+    hits, skip = [], {".git", ".venv", "node_modules", "__pycache__", ".pytest_cache"}
+    for base in (ROOT, Path(tempfile.gettempdir())):
+        for dp, dn, fn in os.walk(base):
+            dn[:] = [d for d in dn if d not in skip]
+            for f in fn:
+                fp = Path(dp) / f
+                try:
+                    if fp.stat().st_mtime >= t0 and fp.stat().st_size < 5_000_000:
+                        hits.append(fp)
+                except OSError:
+                    pass
+    return hits
+
+
+def test_the_key_never_appears_in_the_stream_the_logs_or_a_temp_file():
+    t0 = time.time() - 1
+    for scripts in ([text_turn("Expert #1 has no tie found in the research record.")],
+                    [ProviderError("BAD_KEY", "gemini: key rejected (HTTP 400)")],
+                    [RuntimeError(f"echo {CANARY}")]):
+        log, out, err = StringIO(), StringIO(), StringIO()
+        h = logging.StreamHandler(log)
+        root = logging.getLogger()
+        old_level = root.level
+        root.addHandler(h)
+        root.setLevel(logging.DEBUG)
+        try:
+            with hooks(lambda n, s=scripts: Script(list(s))), redirect_stdout(out), redirect_stderr(err):
+                r = post()
+        finally:
+            root.removeHandler(h)
+            root.setLevel(old_level)
+        assert r.status_code == 200 and sse_events(r)[-1][0] in ("done", "error")
+        for where, text in (("body", r.text), ("log", log.getvalue()), ("stdout", out.getvalue()),
+                            ("stderr", err.getvalue()), ("headers", str(dict(r.headers)))):
+            assert CANARY not in text, where
+    for fp in files_since(t0):
+        try:
+            assert CANARY.encode() not in fp.read_bytes(), fp
+        except OSError:
+            pass
+
+
+def test_a_bad_key_gives_a_key_rejected_error_event():
+    with hooks(lambda n: Script([ProviderError("BAD_KEY", "gemini: key rejected (HTTP 400)")])):
+        evs = sse_events(post())
+    assert evs[-1][0] == "error" and evs[-1][1]["code"] == "BAD_KEY" and "rejected" in evs[-1][1]["message"]
+
+
+def test_no_key_header_is_refused_with_NO_KEY():
+    with hooks(lambda n: Script([text_turn("x")])):
+        for k in (None, "", "   "):
+            r = post(key=k)
+            assert r.status_code == 400 and r.json()["ok"] is False and r.json()["error"]["code"] == "NO_KEY", k
+
+
+def test_other_origins_are_refused_for_agent_endpoints():
+    with hooks(lambda n: Script([text_turn("x")])):
+        assert post(Origin="https://example.com").status_code == 403
+        assert post(Origin="http://localhost:9999").status_code == 403
+        assert post(client=TestClient(w.app, base_url=ORIGIN)).status_code == 403  # no Origin at all
+
+
+def test_two_requests_with_different_keys_do_not_share_state():
+    made = []
+
+    class Slow(Script):
+        async def turn(self, system, messages, tools, key):
+            await asyncio.sleep(0.4)
+            return await super().turn(system, messages, tools, key)
+
+    def factory(n):
+        made.append(Slow([text_turn("ok")]))
+        return made[-1]
+    res = {}
+
+    def go(k):
+        res[k] = post(key=k, client=TestClient(w.app, base_url=ORIGIN, headers={"Origin": ORIGIN}))
+    with hooks(factory):
+        ts = [threading.Thread(target=go, args=(k,)) for k in ("KEY-A-111", "KEY-B-222")]
+        [t.start() for t in ts]
+        [t.join() for t in ts]
+    assert len(made) == 2 and sorted(p.seen[0][0] for p in made) == ["KEY-A-111", "KEY-B-222"]
+    assert all(len(p.seen) == 1 for p in made)
+    assert len({sse_events(r)[-1][1]["session_id"] for r in res.values()}) == 2
+    assert all("KEY-" not in r.text for r in res.values())
+
+
+def test_the_providers_list_contains_no_key_or_secret():
+    with hooks(None, {"TIETRACE_HOST_GEMINI": "1", "GEMINI_API_KEY": HOST_KEY}):
+        r = CLI.get("/api/agent/providers")
+    j = r.json()
+    assert sorted(p["id"] for p in j["providers"]) == ["claude", "gemini", "openai"]
+    assert all(set(p) == {"id", "label", "model"} for p in j["providers"])
+    assert isinstance(j["local_claude"], bool) and j["host_gemini"] is True
+    assert HOST_KEY not in r.text
+    with hooks(None, {"TIETRACE_HOST_GEMINI": "0", "GEMINI_API_KEY": HOST_KEY}):
+        assert CLI.get("/api/agent/providers").json()["host_gemini"] is False
+
+
+def test_over_http_on_a_non_local_host_is_refused_when_deployed():
+    site = "https://tietrace.example.org"
+    cli = TestClient(w.app, base_url=site, headers={"Origin": site})
+    env = {"TIETRACE_DEPLOYED": "1", "TIETRACE_ALLOWED_ORIGIN": site}
+    with hooks(lambda n: Script([text_turn("fine")]), env):
+        assert post(client=cli, **{"X-Forwarded-Proto": "http"}).status_code == 403
+        assert post(client=cli, **{"X-Forwarded-Proto": "https"}).status_code == 200
+        assert post(client=cli).status_code == 403  # header missing: refused too (the key could travel in clear)
+        assert post(client=cli, Origin="https://evil.example").status_code == 403
+        assert post().status_code == 403  # the local origin is not the allowed one when deployed
+        assert CLI.get("/api/agent/providers").json()["local_claude"] is False
+    with hooks(lambda n: Script([text_turn("fine")]), {"TIETRACE_DEPLOYED": "1", "TIETRACE_ALLOWED_ORIGIN": ""}):
+        assert post(client=cli).status_code == 403  # deployed without an allowed origin: closed
+
+
+def test_the_host_key_rule():
+    seen = []
+
+    def factory(n):
+        seen.append(Script([text_turn("ok")]))
+        return seen[-1]
+    with hooks(factory, {"TIETRACE_HOST_GEMINI": "0", "GEMINI_API_KEY": HOST_KEY}):
+        assert post(key=None).json()["error"]["code"] == "NO_KEY" and not seen  # flag off
+    with hooks(factory, {"TIETRACE_HOST_GEMINI": "1", "GEMINI_API_KEY": HOST_KEY}):
+        r = post(key=None)
+        assert r.status_code == 200 and seen[-1].seen[0][0] == HOST_KEY and HOST_KEY not in r.text
+        assert post(key="").status_code == 400  # a present but empty header is still NO_KEY
+        post(key="visitor-own-key")
+        assert seen[-1].seen[0][0] == "visitor-own-key"  # the visitor's key wins
+        assert post({"provider": "openai", "story": "x"}, key=None).status_code == 400  # only Gemini
+        assert HOST_KEY not in CLI.get("/api/agent/providers").text
+    with hooks(factory, {"TIETRACE_HOST_GEMINI": "1", "GEMINI_API_KEY": ""}):
+        assert post(key=None).status_code == 400  # flag on but no key on the host
+
+
+def test_session_resume_works_and_holds_no_key():
+    ps = []
+
+    def factory(n):
+        ps.append(Script([tool_turn(tc("list_cases")), text_turn("first")] if not ps else [text_turn("second")]))
+        return ps[-1]
+    with hooks(factory):
+        sid = sse_events(post(key="KEY-ONE-1"))[-1][1]["session_id"]
+        r2 = post({"provider": "gemini", "story": "and again?", "session_id": sid}, key="KEY-TWO-2")
+    assert sse_events(r2)[-1][1]["session_id"] == sid and len(ps[1].seen[0][2]) > 3
+    assert ps[1].seen[0][0] == "KEY-TWO-2"
+    stored = repr(w._agent_sessions.get(sid))
+    assert "KEY-ONE-1" not in stored and "KEY-TWO-2" not in stored and CANARY not in stored
+    with hooks(lambda n: Script([ProviderError("BAD_KEY", "x")])):  # a failed run leaves no half-finished turn
+        n0 = len(w._agent_sessions[sid]["s"]["messages"])
+        post({"provider": "gemini", "story": "again", "session_id": sid})
+        assert len(w._agent_sessions[sid]["s"]["messages"]) == n0
+
+
+def test_bad_provider_story_and_session_id_are_clean_400s():
+    with hooks(lambda n: Script([text_turn("x")])):
+        r = post({"provider": "bogus", "story": "x"})
+        assert r.status_code == 400 and r.json()["error"]["code"] == "BAD_PROVIDER"
+        assert post({"provider": "gemini", "story": "   "}).status_code == 400
+        assert post({"provider": "gemini", "story": "x" * (w.MAX_STORY + 1)}).status_code == 400
+        assert post({"provider": "gemini", "story": "x", "session_id": "not-a-uuid"}).status_code == 400
+        assert post({"provider": "gemini", "story": "x", "session_id": str(uuid.uuid4())}).status_code == 200
+        big = CLI.post("/api/agent/ask", content=b"x" * (w.MAX_BODY + 10))
+        assert big.status_code == 413
+
+
+def test_sessions_are_bounded():
+    with hooks(lambda n: Script([text_turn("x")])):
+        for _ in range(w.MAX_AGENT_SESSIONS + 5):
+            post({"provider": "gemini", "story": "x"})
+    assert len(w._agent_sessions) <= w.MAX_AGENT_SESSIONS
+
+
+def test_the_existing_ask_endpoint_and_static_page_are_unchanged():
+    assert CLI.get("/").status_code == 200 and CLI.get("/api/auth").status_code == 200
+    assert CLI.post("/api/ask", json={"story": "x"}, headers={"Origin": "https://example.com"}).status_code == 403
+    assert CLI.post("/api/ask", json={"story": "x", "session_id": "bad"}).status_code == 400
+
+
+# ---------- Reviewer's attack tests (A3/A4) ----------
+
+def test_attack_odd_provider_names_keys_and_origins_are_refused_cleanly():
+    with hooks(lambda n: Script([text_turn("x")])):
+        for prov in ("GEMINI", " gemini", "gemini ", "gemini\n", "", "__class__"):
+            r = post({"provider": prov, "story": "x"})
+            assert r.status_code == 400 and r.json()["error"]["code"] == "BAD_PROVIDER", repr(prov)
+        assert post(key="k" * 513).json()["error"]["code"] == "NO_KEY"  # too long
+        r = post(key="cafe-key,;<>\"'")  # odd but legal header characters: runs, never echoed
+        assert r.status_code == 200 and "caf" not in r.text
+        for origin in ("null", "file://", "http://127.0.0.1:9999", "http://localhost:8000", "https://127.0.0.1:8000",
+                       "http://127.0.0.1:8000.evil.com", "http://127.0.0.1:8000/"):
+            assert post(Origin=origin).status_code == 403, origin
+
+
+def test_attack_preflight_does_not_enable_other_sites():
+    r = CLI.options("/api/agent/ask", headers={"Origin": "https://evil.example", "Access-Control-Request-Method": "POST",
+                                               "Access-Control-Request-Headers": "x-provider-key"})
+    assert not any(k.lower().startswith("access-control-") for k in r.headers), dict(r.headers)
+    assert r.status_code in (400, 403, 405)
+
+
+def test_attack_a_second_request_on_a_busy_session_gets_409():
+    gate = threading.Event()
+
+    class Hold(Script):
+        async def turn(self, system, messages, tools, key):
+            while not gate.is_set():
+                await asyncio.sleep(0.05)
+            return await super().turn(system, messages, tools, key)
+    sid = uuid.uuid4().hex
+    res = {}
+
+    def first():
+        res["a"] = post({"provider": "gemini", "story": "x", "session_id": sid},
+                        client=TestClient(w.app, base_url=ORIGIN, headers={"Origin": ORIGIN}))
+    with hooks(lambda n: Hold([text_turn("ok")])):
+        t = threading.Thread(target=first)
+        t.start()
+        for _ in range(100):
+            if sid in w._agent_sessions and w._agent_sessions[sid]["busy"]:
+                break
+            time.sleep(0.05)
+        r2 = post({"provider": "gemini", "story": "y", "session_id": sid})
+        gate.set()
+        t.join()
+    assert r2.status_code == 409 and res["a"].status_code == 200
+    assert w._agent_sessions[sid]["busy"] is False
+
+
+def test_attack_a_dropped_connection_leaves_no_half_finished_turn_and_frees_the_session():
+    from starlette.requests import Request
+    body = w.AgentAsk(provider="gemini", story="x")
+    scope = {"type": "http", "method": "POST", "path": "/api/agent/ask", "scheme": "http", "server": ("127.0.0.1", 8000),
+             "headers": [(b"origin", ORIGIN.encode()), (b"host", b"127.0.0.1:8000"), (b"x-provider-key", b"K-DROP-1")]}
+
+    async def go():
+        resp = await w.agent_ask(body, Request(scope))
+        it = resp.body_iterator
+        first = await it.__anext__()  # the first event, then the browser goes away
+        await it.aclose()
+        return first
+    p = Script([tool_turn(tc("list_cases")), text_turn("never reached")])
+    with hooks(lambda n: p):
+        asyncio.run(go())
+    assert all(not e["busy"] for e in w._agent_sessions.values()), "session stuck busy"
+    last = list(w._agent_sessions.values())[-1]
+    assert last["s"]["messages"] == [], [m["role"] for m in last["s"]["messages"]]
+
+
+def test_attack_a_provider_error_text_carrying_the_key_is_not_echoed():
+    with hooks(lambda n: Script([ProviderError("BAD_KEY", f"gemini says: invalid key {CANARY}")])):
+        r = post()
+    assert CANARY not in r.text, "the endpoint forwards a provider error text containing the key"
+
+
+def test_attack_cap_and_empty_reply_edges():
+    class P(Script):
+        name = "gemini"
+    big = Turn("a" * 50, [], "end", 40000, 20000)
+    evs = run(P([big]))
+    assert evs[-1][0] == "error" and evs[-1][1]["code"] == "TOKEN_LIMIT" and "text" not in names(evs)
+    evs = run(P([tool_turn(tc("list_cases"))]), max_tokens_total=1)  # cap below the first turn
+    assert evs[-1][1]["code"] == "TOKEN_LIMIT"
+    evs = run(P([Turn("  \n", [], "end", 1, 1)]))
+    assert evs[-1][1]["code"] == "BAD_REPLY" and len(evs[-1][1]["message"]) < 400
+    evs = run(P([Turn("", [], "length", 1, 1)]))
+    assert "cut short" in evs[-1][1]["message"]
+    evs = run(P([], forever=Turn("", [tc("list_cases")], "tool_use", 9000, 1000)))  # never ends: caps stop it
+    assert evs[-1][1]["code"] in ("TOKEN_LIMIT", "TURN_LIMIT")
+
+
+
 if __name__ == "__main__":
     only = sys.argv[1:]
     tests = [(n, f) for n, f in list(globals().items()) if n.startswith("test_") and callable(f)

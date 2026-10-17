@@ -7,7 +7,7 @@ import json
 import uuid
 
 from web.agent.mcp_client import McpClient
-from web.agent.providers import ProviderError
+from web.agent.providers import MODELS, ProviderError
 from web.app import ALLOWED, ERROR_TEXT, HUMAN_ONLY, PROMPT_HEAD, SYSTEM, Parser, _err, remember_names, session_names
 from web.hook_strip_identity import clean  # same ORCID/institution removal the Claude path applies before the model
 
@@ -25,7 +25,7 @@ def _asks_public(x):
     return False
 
 
-async def run_agent(provider, key, story, *, session=None, max_turns=12, client=None):
+async def run_agent(provider, key, story, *, session=None, max_turns=12, client=None, max_tokens_total=None):
     """Yields (event, data) with the names the page handles. `session` (a dict) keeps the history and the redaction
     names across runs: its "id" is the session_id in the done event."""
     session = session if session is not None else {}
@@ -34,6 +34,8 @@ async def run_agent(provider, key, story, *, session=None, max_turns=12, client=
     parser = Parser(names=session_names(sid))
     parser.session_id = sid
     own = None
+    cap = max_tokens_total if max_tokens_total is not None else MODELS.get(getattr(provider, "name", ""), {}).get("token_cap", 50000)
+    used = 0
     try:
         if client is None:
             own = client = await McpClient().__aenter__()
@@ -47,6 +49,15 @@ async def run_agent(provider, key, story, *, session=None, max_turns=12, client=
                 return
             except Exception as e:  # never str(e): an SDK message could carry request details
                 yield _err("PROVIDER_DOWN", f"The model call failed ({type(e).__name__}).")
+                return
+            used += (turn.input_tokens or 0) + (turn.output_tokens or 0)
+            if used > cap:  # input + output summed over the whole run
+                yield _err("TOKEN_LIMIT", f"The check used more than {cap:,} model tokens and was stopped.")
+                return
+            if not turn.calls and not (turn.text or "").strip():
+                yield _err("BAD_REPLY", "The model's answer was cut short before any text (it ran out of its output "
+                           "limit). Try a shorter story." if turn.stop == "length" else
+                           "The model sent an empty reply. Try again, or pick another model.")
                 return
             # Parser ids are made unique per call (a provider may repeat an id); the messages keep the provider's id.
             pid = {id(c): f"{i}:{c.id}" for i, c in enumerate(turn.calls)}

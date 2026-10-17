@@ -761,4 +761,133 @@ def record_verdict(body: RecordVerdict, request: Request):
     return server.record_verdict(body.type, body.target, body.reason, body.reviewer, case=body.case, agent="web")
 
 
+
+
+# ---------- the agent endpoints (A4, Abdul's Builder, Oct 17): any provider drives the tools, with the visitor's key ----------
+# Additive only: /api/ask above is untouched. The key is read from the X-Provider-Key header into a local variable of
+# one request and handed to run_agent; it is never stored, logged, returned or put in a session. This section logs nothing.
+
+AGENT_PROVIDER_FACTORY = None  # tests: callable(name) -> provider (fake). None = web.agent.providers.get_provider
+AGENT_CLIENT_FACTORY = None    # tests: callable() -> fake MCP client. None = run_agent starts the real server.py
+_agent_sessions = {}           # uuid hex -> {"s": session dict (id, messages), "exp": float, "busy": bool}; never holds a key
+MAX_AGENT_SESSIONS, MAX_AGENT_MESSAGES, MAX_AGENT_CHARS = 200, 80, 400_000
+MAX_KEY_LEN = 512
+
+
+def _deployed():
+    return os.environ.get("TIETRACE_DEPLOYED") == "1"
+
+
+def _host_gemini():
+    return os.environ.get("TIETRACE_HOST_GEMINI") == "1" and bool(os.environ.get("GEMINI_API_KEY"))
+
+
+def _agent_origin_ok(request):
+    """Local: the same check as /api/ask. Deployed: the Origin must equal TIETRACE_ALLOWED_ORIGIN and the request must
+    not have come over plain http (X-Forwarded-Proto), because the key travels in a header."""
+    if not _deployed():
+        return _local_origin(request)
+    allowed = os.environ.get("TIETRACE_ALLOWED_ORIGIN", "")
+    return bool(allowed) and request.headers.get("origin") == allowed and \
+        request.headers.get("x-forwarded-proto", "").lower() == "https"  # absent or http: the key could travel in clear
+
+
+def _agent_session(sid):
+    """The stored session for this id, or a new one. Expired ones are dropped; the oldest go when full."""
+    now = time.time()
+    with _tlock:
+        for k in [k for k, v in _agent_sessions.items() if v["exp"] < now]:
+            del _agent_sessions[k]
+        entry = _agent_sessions.get(sid) if sid else None
+        if entry is None:
+            while len(_agent_sessions) >= MAX_AGENT_SESSIONS:
+                idle = [k for k, v in _agent_sessions.items() if not v["busy"]]
+                del _agent_sessions[(idle or list(_agent_sessions))[0]]  # oldest idle one first
+            sid = sid or uuid.uuid4().hex
+            entry = _agent_sessions[sid] = {"s": {"id": sid, "messages": []}, "exp": 0, "busy": False}
+        if entry["busy"]:
+            return None
+        entry["busy"], entry["exp"] = True, now + SESSION_TTL_S
+        return entry
+
+
+class AgentAsk(BaseModel):
+    provider: str
+    story: str
+    session_id: str | None = None
+
+
+@app.get("/api/agent/providers")
+def agent_providers():
+    from web.agent.providers import MODELS
+    return {"ok": True, "providers": [{"id": k, "label": v["label"], "model": v["model"]} for k, v in MODELS.items()],
+            "local_claude": not _deployed() and shutil.which(os.environ.get("TIETRACE_CLAUDE", "claude")) is not None,
+            "host_gemini": _host_gemini()}
+
+
+@app.post("/api/agent/ask")
+async def agent_ask(body: AgentAsk, request: Request):
+    from web.agent.loop import run_agent
+    from web.agent.providers import MODELS, get_provider
+    if not _agent_origin_ok(request):
+        return _refuse(403, "only this page may call the API")
+    if body.provider not in MODELS:
+        return JSONResponse({"ok": False, "error": {"code": "BAD_PROVIDER", "message": "unknown provider"}}, status_code=400)
+    raw_key = request.headers.get("x-provider-key")
+    key = (raw_key or "").strip()
+    if raw_key is None and body.provider == "gemini" and _host_gemini():
+        key = os.environ["GEMINI_API_KEY"]  # the host's own free-tier key: only for Gemini, only when the host allows it
+    if len(key) > MAX_KEY_LEN:
+        return JSONResponse({"ok": False, "error": {"code": "NO_KEY", "message":
+                            f"That key is longer than {MAX_KEY_LEN} characters, so it cannot be a real API key."}},
+                            status_code=400)
+    if not key:
+        return JSONResponse({"ok": False, "error": {"code": "NO_KEY", "message":
+                            "Paste your API key for this provider (it is sent with the request and not saved)."}},
+                            status_code=400)
+    story = body.story.strip()
+    if not 1 <= len(story) <= MAX_STORY:
+        return _refuse(400, f"paste a story of 1 to {MAX_STORY:,} characters")
+    sid = None
+    if body.session_id is not None:
+        try:
+            sid = uuid.UUID(body.session_id).hex
+        except ValueError:
+            return _refuse(400, "bad session_id")
+    entry = _agent_session(sid)
+    if entry is None:
+        return _refuse(409, "this session already has a check running")
+    session = entry["s"]
+    if len(session["messages"]) >= MAX_AGENT_MESSAGES or sum(
+            len(str(m.get("text") or m.get("result") or "")) for m in session["messages"]) > MAX_AGENT_CHARS:
+        entry["busy"] = False
+        return _refuse(400, "this conversation is too long; start a new check")
+    factory = AGENT_PROVIDER_FACTORY or get_provider
+
+    async def stream():
+        start, acquired, ok = len(session["messages"]), False, False
+        try:
+            if AGENT_CLIENT_FACTORY is None and not falkordb_up():
+                yield sse(*_err("FALKORDB_DOWN", ERROR_TEXT["FALKORDB_DOWN"]))
+                return
+            if _runs.locked():
+                yield sse(*_err("BUSY", f"{MAX_RUNS} checks are already running. Wait for one to finish, then try again."))
+                return
+            await _runs.acquire()
+            acquired = True
+            client = AGENT_CLIENT_FACTORY() if AGENT_CLIENT_FACTORY else None
+            async for event, data in run_agent(factory(body.provider), key, story, session=session, client=client):
+                ok = event == "done"  # only a run that reached done keeps its history (also on cancel)
+                yield sse(*json.loads(json.dumps([event, data]).replace(key, "[key]").replace(json.dumps(key)[1:-1], "[key]")))
+        except Exception as e:  # type name only: a message could carry request details
+            yield sse(*_err("PROVIDER_DOWN", f"The run failed ({type(e).__name__})."))
+        finally:
+            if not ok:
+                del session["messages"][start:]  # failed or cut-off run: no half-finished turn stays in the history
+            if acquired:
+                _runs.release()
+            entry["busy"] = False
+    return StreamingResponse(stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
+
+
 app.mount("/", StaticFiles(directory=STATIC), name="static")  # last: style.css, app.js, how.html (relative links, so the pages also open from a file)

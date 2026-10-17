@@ -34,8 +34,8 @@ Status key: ⬜ not started · 🟨 in progress · ✅ done (Reviewer passed) ·
 | A0 | Decisions and docs read | ✅ |
 | A1 | Provider adapters (Gemini first, then Claude, OpenAI) with official SDKs | ✅ (live Claude/OpenAI not run) |
 | A2 | Neutral agent loop (safety rules live here) | 🟨 offline ✅, live Gemini pending quota |
-| A3 | Run budgets and refusals | ⬜ |
-| A4 | Web endpoints and key handling | ⬜ |
+| A3 | Run budgets and refusals | ✅ offline (page check with A5) |
+| A4 | Web endpoints and key handling | ✅ (page check with A5) |
 | A5 | Page: provider picker, key box, notice | ⬜ |
 | A6 | New story: model proposes a case (no build) | ⬜ |
 | A7 | New story: human-approved build | ⬜ |
@@ -76,18 +76,22 @@ Status key: ⬜ not started · 🟨 in progress · ✅ done (Reviewer passed) ·
 - **Reviewer passes when:** offline tests pass **and** the live Gemini run on the page matches `tests/test_golden.py` (Blair A1, Hill A2) with no real names, ORCIDs or institutions shown.
 
 ## A3. Run budgets and refusals (plan Task 3)
-- [ ] Token cap per run, empty-reply error, model refusal shown as text
-- [ ] Offline tests from the plan's Task 3
-- [ ] **Live:** on the real page, a story with no experts and a nonsense story each end with a readable message (no traceback, no hang); the Reviewer records both
+- [x] Token cap per run, empty-reply error, model refusal shown as text
+- [x] Offline tests from the plan's Task 3
+- [ ] (PENDING A5, page check) **Live:** on the real page, a story with no experts and a nonsense story each end with a readable message (no traceback, no hang); the Reviewer records both
+- **Reviewer (Oct 17): PASS offline** (token cap each turn, empty/length/refusal handled); `test_agent` 38/38. Page-level live check waits for A5. Boxes (Abdul, Oct 17).
 - **Reviewer passes when:** no run can loop past the turn or token cap and every failure is readable.
+- **Builder note (Abdul, Oct 17):** `web/agent/loop.py`: `max_tokens_total` argument (default `token_cap` from models.json, 50000), input+output tokens summed over the run and checked right after each turn (so even a final huge answer is replaced by `TOKEN_LIMIT`); a turn with no text and no calls is `BAD_REPLY` (under 400 chars, no traceback; says the answer was cut short when stop is `length`); a refusal is ordinary text, shown with `done`. 4 new offline tests in `tests/test_agent.py`. Live check on the page: NOT done (needs A5 page). Boxes not ticked (Reviewer decides).
 
 ## A4. Web endpoints and key handling (plan Task 4)
-- [ ] `POST /api/agent/ask` (provider in the body, the visitor's key in the `X-Provider-Key` header), `GET /api/agent/providers`; same SSE events as `/api/ask`; the existing `/api/ask` (Claude Code login) is **unchanged**
-- [ ] The key is only a local variable for one request: not stored, logged, echoed, or written to any file; HTTPS required when `TIETRACE_DEPLOYED=1`
-- [ ] Offline tests from the plan's Task 4 (canary key absent from stream, logs and temp files; no key refused with `NO_KEY`; other origins refused; two requests with different keys do not share state)
-- [ ] The host's own `GEMINI_API_KEY` is used **only** when the visitor chose Gemini and typed no key **and** the host allows it (`TIETRACE_HOST_GEMINI=1`, on locally); it is never returned by any endpoint
-- [ ] **Live:** on the real web app, a request with a **wrong** key shows a clear "key rejected" message and the wrong key text is not shown anywhere in the page, the network responses (read with the network tool) or the server log
+- [x] `POST /api/agent/ask` (provider in the body, the visitor's key in the `X-Provider-Key` header), `GET /api/agent/providers`; same SSE events as `/api/ask`; the existing `/api/ask` (Claude Code login) is **unchanged**
+- [x] The key is only a local variable for one request: not stored, logged, echoed, or written to any file; HTTPS required when `TIETRACE_DEPLOYED=1`
+- [x] Offline tests from the plan's Task 4 (canary key absent from stream, logs and temp files; no key refused with `NO_KEY`; other origins refused; two requests with different keys do not share state)
+- [x] The host's own `GEMINI_API_KEY` is used **only** when the visitor chose Gemini and typed no key **and** the host allows it (`TIETRACE_HOST_GEMINI=1`, on locally); it is never returned by any endpoint
+- [ ] (PENDING A5, page check) **Live:** on the real web app, a request with a **wrong** key shows a clear "key rejected" message and the wrong key text is not shown anywhere in the page, the network responses (read with the network tool) or the server log
+- **Reviewer (Oct 17): PASS after one fix round** (dropped-connection cleanup, key scrub, deployed-mode https header, nits). Real app checked over HTTP: providers list has no secret, no key -> NO_KEY, wrong key -> BAD_KEY in 6 s with the key in neither the stream nor the log, foreign/null Origin 403, no CORS, existing routes still load. `test_agent` 38/38, providers 21/21, golden 15/15, server 26/26, test_web only the 10 known Windows failures. Not verified: a successful run (Gemini quota), Claude/OpenAI, a real TLS proxy, and the on-page view of the wrong-key message (A5). Boxes (Abdul, Oct 17).
 - **Reviewer passes when:** the Reviewer searches the server output, the SSE bodies and the repo for the canary key and the real `.env` Gemini key prefix and finds nothing.
+- **Builder note (Abdul, Oct 17):** added section at the end of `web/app.py` (the static mount stays last; no existing code changed): `POST /api/agent/ask`, `GET /api/agent/providers`, hooks `AGENT_PROVIDER_FACTORY` / `AGENT_CLIENT_FACTORY` for tests, `_agent_sessions` (max 200, 6 h TTL, 80 messages / 400k chars each, no key ever stored; a failed run removes its half-finished turn; one run per session at a time). Choices beyond the brief: deployed mode checks the Origin against `TIETRACE_ALLOWED_ORIGIN` *instead of* `_local_origin` (a hosted site is not 127.0.0.1) and fails closed when it is unset; `X-Forwarded-Proto` absent is accepted (only `http` is refused); `local_claude` is false when deployed; providers reply is `{ok, providers:[{id,label,model}], local_claude, host_gemini}`; errors BAD_PROVIDER (400) and 409 for a busy session. Tests: `test_agent` 32/32, `test_agent_providers` 21/21, `test_golden` 15/15, `test_server` 26/26, `test_web` 37/51 with the same 10 known Windows failures and 4 skips (no new failure). **Live (wrong key, real app on 127.0.0.1:8000, port 6500):** Gemini answered 400, the page stream got `error BAD_KEY "gemini: key rejected (HTTP 400)"`, the wrong key text is not in the uvicorn log (0 matches); no-key request gave 400 NO_KEY; providers list shows no secret. I stopped a stale uvicorn on 8000 first and stopped mine after. NOT verified: the page/network-tool check (A5), a real successful run (Gemini quota), `X-Forwarded-Proto` behind a real proxy, Claude/OpenAI. Boxes not ticked (Reviewer decides).
 
 ## A5. Page: provider picker, key box, notice (plan Task 5)
 - [ ] Provider choice (Gemini default, Claude, OpenAI, plus "Local (Claude Code login)" when the server offers it) and a password-type key box; the key lives only in a JS variable (no `localStorage`, `sessionStorage` or cookie)

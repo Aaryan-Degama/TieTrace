@@ -117,6 +117,8 @@ uv run uvicorn web.app:app --host 127.0.0.1 --port 8000   # then open http://127
 
 `TIETRACE_NEWSROOM` (default `alpha`) and `FALKORDB_PORT` work as for the server. The model gets no built-in tools and never `record_verdict` or `approve_note`; those run only from a button on the page with a second confirm. Tests: `uv run python tests/test_web.py`.
 
+**Agent mode (Gemini, OpenAI, Claude with the visitor's own key):** `POST /api/agent/ask` takes the key only in the `X-Provider-Key` header and never stores or logs it. Run the same command as above (uvicorn's access log shows the request line only, never headers; add `--no-access-log` to be extra safe). Optional env: `TIETRACE_HOST_GEMINI=1` lets Gemini use the host's `GEMINI_API_KEY` when the visitor sends no key (off by default); on a hosted copy set `TIETRACE_DEPLOYED=1` and `TIETRACE_ALLOWED_ORIGIN=https://your.site` (requests without `X-Forwarded-Proto: https`, or marked `http`, are refused: run it behind a TLS proxy that sets this header, because the key travels in a header). Tests: `uv run python tests/test_agent.py`.
+
 ## Tests
 
 Plain-assert scripts, no pytest. They need FalkorDB with both research graphs loaded, use scratch `zz-test-*` newsrooms (never `alpha`) and delete them at the end:
