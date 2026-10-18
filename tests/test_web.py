@@ -145,6 +145,20 @@ def test_sidebar_markup_and_new_text_have_no_banned_words():
     assert "verdict words" in visible_text(index)  # the reworded protocol line
 
 
+def test_home_view_keeps_the_landing_sections_only_inside_the_about_panel():
+    index = pages()["/"]
+    assert 'id="about-open"' in index and ">About TieTrace</button>" in index
+    start = index.index('<dialog class="about" id="about"')
+    end = index.index("</dialog>", start)
+    inside, outside = index[start:end], index[:start] + index[end:]
+    for sec in ("lp-start", "lp-blind", "lp-method", "lp-tiers", "lp-scope", "lp-metrics", "lp-gate", "lp-bounds"):
+        assert f'id="{sec}"' in inside and f'id="{sec}"' not in outside, sec
+    for text in ("follow the evidence", "Unseen ties in the quotation box", "Four steps from text to source record",
+                 "Investigation standard"):
+        assert text in inside and text not in outside, text
+    assert index.index('id="about-open"') < start  # the button is in the sidebar, outside the panel
+
+
 def test_history_script_never_stores_the_api_key_and_guards_every_storage_call():
     js = (w.STATIC / "app.js").read_text(encoding="utf-8")
     hist = js[js.index("// ---------- history"):js.index("// ---------- sidebar and evidence")]

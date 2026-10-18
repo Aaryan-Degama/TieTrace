@@ -245,7 +245,7 @@ function step(d) {
   const s = d.scope || {};
   const bits = [s.graph, s.data_version, s.hops != null && `${s.hops} hops`, s.years,
     s.funder_coverage != null && `funder coverage ${pct(s.funder_coverage)}`].filter(Boolean);
-  if (bits.length) li.append(el("p", { class: "line", text: "Scope: " + bits.join(" · ") }));
+  if (bits.length) li.append(el("p", { class: "line", text: "Scope: " + bits.join("; ") }));
   if (d.verdicts_applied && d.verdicts_applied.length) li.append(el("p", { class: "line", text: "Verdicts applied: " + d.verdicts_applied.join(", ") }));
   for (const w of d.warnings || []) li.append(el("p", { class: "line", text: "Warning: " + w }));
   const cy = d.cypher || [];
@@ -270,7 +270,7 @@ function card(reply, d) {
   if (c.evidence && c.evidence.length) {
     const ul = el("ul");
     for (const e of c.evidence) {
-      const li = el("li", {}, doiLink(e.doi), el("span", { class: "meta", text: ` · ${e.kind === "FUNDED_BY" ? "funded by" : "affiliation with"} ${e.via} · tier ${e.tier} · ${e.topic_label} · ${e.year}` }), " ");
+      const li = el("li", {}, doiLink(e.doi), el("span", { class: "meta", text: `, ${e.kind === "FUNDED_BY" ? "funded by" : "affiliation with"} ${e.via}, tier ${e.tier}, ${e.topic_label}, ${e.year}` }), " ");
       if (!publicDemo) li.append(excludeButton(li, e.doi, c.case || null));
       ul.append(li);
     }
@@ -297,7 +297,7 @@ function picker(reply, d) {
   for (const c of d.candidates || []) {
     const id = `${name}-${c.expert_id}`;
     fs.append(el("label", { for: id }, el("input", { type: "radio", name, id, value: c.expert_id }),
-      ` OpenAlex ${c.expert_id} · ${c.works_on_topic} works on the topic`));
+      ` OpenAlex ${c.expert_id}, ${c.works_on_topic} works on the topic`));
   }
   const box = el("form", { class: "picker" }, fs);
   if ((d.candidates || []).length) {

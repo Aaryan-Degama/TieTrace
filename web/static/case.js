@@ -67,7 +67,7 @@
   function candidate(kind, c, extra) {
     const id = `wz-${kind}-${c.id}`;
     const box = el("input", { type: "checkbox", id, value: c.id });
-    const bits = [c.id, c.type, c.country, c.works_count != null && `${c.works_count} works`, c.subfield].filter(Boolean).join(" · ");
+    const bits = [c.id, c.type, c.country, c.works_count != null && `${c.works_count} works`, c.subfield].filter(Boolean).join(", ");
     const desc = c.description ? String(c.description).slice(0, 240) : "";
     const fam = [...(c.parents || []).map((p) => `parent: ${p.name} (${p.id})`), ...(c.children || []).map((p) => `child: ${p.name} (${p.id})`)].join("; ");
     const row = el("div", { class: "wz-cand" }, box,

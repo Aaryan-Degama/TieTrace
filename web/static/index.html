@@ -6,7 +6,7 @@
 <title>TieTrace</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Newsreader:wght@400;700&family=Work+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400&family=Literata:opsz,wght@7..72,400;7..72,500&family=Public+Sans:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="landing.css">
 </head>
@@ -43,6 +43,7 @@
   <ul class="recents" id="history" aria-labelledby="recents-h"></ul>
   <p class="sb-empty" id="history-empty">No saved checks yet.</p>
   <div class="sb-foot">
+    <button type="button" class="sb-link about-btn" id="about-open" aria-haspopup="dialog" aria-controls="about"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.5"/><line x1="10" y1="9" x2="10" y2="14"/><line x1="10" y1="6.2" x2="10" y2="6.3"/></svg>About TieTrace</button>
     <p>Saved in this browser only. <button type="button" class="linkish" id="clear-all">Clear all</button></p>
     <p>Sourcing aid only. Human editorial review is required before publication.</p>
   </div>
@@ -124,6 +125,36 @@
     <footer class="disclaimer">Ties found in the research record. A missing tie is not proof.</footer>
   </div>
 
+</main>
+
+<aside class="evidence" id="evidence" aria-labelledby="ev-title" hidden>
+  <div class="pane-head">
+    <div>
+      <p class="kicker">Evidence inspector</p>
+      <h2 id="ev-title">Live evidence</h2>
+    </div>
+    <button type="button" class="icon-btn" id="ev-close" aria-label="Hide the evidence panel">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><line x1="5" y1="5" x2="15" y2="15"/><line x1="15" y1="5" x2="5" y2="15"/></svg>
+    </button>
+  </div>
+  <p class="pane-sub">Each tool as it runs, with the exact read-only Cypher it returned.</p>
+  <div class="scroll">
+    <p class="empty" id="ev-empty">Nothing has run yet.</p>
+    <ol class="steps" id="steps"></ol>
+  </div>
+  <div class="protocol">
+    <p class="kicker">Newsroom protocol</p>
+    <ol><li><strong>Experts are anonymous</strong> (“Expert #n”) unless the case is public.</li><li><strong>Ties found in the research record.</strong> We never use verdict words about a person.</li></ol>
+  </div>
+</aside>
+</div>
+<dialog class="about" id="about" aria-labelledby="about-title">
+  <div class="about-head">
+    <h2 id="about-title">About TieTrace</h2>
+    <button type="button" class="icon-btn" id="about-close" aria-label="Close About TieTrace">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><line x1="5" y1="5" x2="15" y2="15"/><line x1="15" y1="5" x2="5" y2="15"/></svg>
+    </button>
+  </div>
   <div class="more" id="more">
 <section class="lp-hero" id="lp-start">
   <p class="lp-pill"><span class="dot"></span>Case initiation</p>
@@ -168,14 +199,14 @@
     <div class="lp-boxhead"><span>Graph traversal trace</span><b class="okc">Up to 3 hops</b></div>
     <svg viewBox="0 0 900 230" role="img" aria-label="Expert authored a paper, the paper was funded by a funder, the funder is part of the company">
       <g class="edges" fill="none" stroke-width="3" stroke-linecap="round">
-        <path pathLength="1" d="M164 105H276" stroke="#78b99c"/><path pathLength="1" d="M384 105H496" stroke="#78b99c"/><path pathLength="1" d="M604 105H716" stroke="#e6b566"/>
+        <path pathLength="1" d="M164 105H276" stroke="#5E9E94"/><path pathLength="1" d="M384 105H496" stroke="#5E9E94"/><path pathLength="1" d="M604 105H716" stroke="#E7B7BF"/>
       </g>
-      <g class="elabels" font-family="JetBrains Mono, monospace" font-size="12" fill="#b5bdca" text-anchor="middle"><text x="220" y="92">AUTHORED</text><text x="440" y="92">FUNDED BY</text><text x="660" y="92">PART OF</text></g>
-      <g class="nodes" font-family="Newsreader, serif" font-weight="700" font-size="17" fill="#f2f3f5" text-anchor="middle">
-        <circle cx="110" cy="105" r="54" fill="#202631" stroke="#78b99c" stroke-width="2.5"/><text x="110" y="103">Expert</text><text x="110" y="124" font-family="JetBrains Mono, monospace" font-size="12" font-weight="400" fill="#8e98aa">OpenAlex ID</text>
-        <circle cx="330" cy="105" r="54" fill="#202631" stroke="#78b99c" stroke-width="2.5"/><text x="330" y="103">Paper</text><text x="330" y="124" font-family="JetBrains Mono, monospace" font-size="12" font-weight="400" fill="#e6b566">DOI</text>
-        <circle cx="550" cy="105" r="54" fill="#202631" stroke="#78b99c" stroke-width="2.5"/><text x="550" y="103">Funder</text><text x="550" y="124" font-family="JetBrains Mono, monospace" font-size="12" font-weight="400" fill="#8e98aa">on the paper</text>
-        <circle cx="770" cy="105" r="54" fill="#292f3b" stroke="#e6b566" stroke-width="2.5"/><text x="770" y="103">Company</text><text x="770" y="124" font-family="JetBrains Mono, monospace" font-size="12" font-weight="400" fill="#e6b566">or a bottler</text>
+      <g class="elabels" font-family="Public Sans, sans-serif" font-size="12" fill="#B9BEC5" text-anchor="middle"><text x="220" y="92">authored</text><text x="440" y="92">funded by</text><text x="660" y="92">part of</text></g>
+      <g class="nodes" font-family="Public Sans, sans-serif" font-weight="600" font-size="17" fill="#E6E8EB" text-anchor="middle">
+        <circle cx="110" cy="105" r="54" fill="#262A2F" stroke="#5E9E94" stroke-width="2.5"/><text x="110" y="103">Expert</text><text x="110" y="124" font-family="Public Sans, sans-serif" font-size="12" font-weight="400" fill="#8B9199">OpenAlex ID</text>
+        <circle cx="330" cy="105" r="54" fill="#262A2F" stroke="#5E9E94" stroke-width="2.5"/><text x="330" y="103">Paper</text><text x="330" y="124" font-family="Public Sans, sans-serif" font-size="12" font-weight="400" fill="#E7B7BF">DOI</text>
+        <circle cx="550" cy="105" r="54" fill="#262A2F" stroke="#5E9E94" stroke-width="2.5"/><text x="550" y="103">Funder</text><text x="550" y="124" font-family="Public Sans, sans-serif" font-size="12" font-weight="400" fill="#8B9199">on the paper</text>
+        <circle cx="770" cy="105" r="54" fill="#2E3238" stroke="#E7B7BF" stroke-width="2.5"/><text x="770" y="103">Company</text><text x="770" y="124" font-family="Public Sans, sans-serif" font-size="12" font-weight="400" fill="#E7B7BF">or a bottler</text>
       </g>
     </svg>
     <p class="lp-legend"><span><i class="g"></i>Direct primary record</span><span><i class="a"></i>Company link</span></p>
@@ -252,34 +283,12 @@
   <form class="lp-box lp-form rv" data-landing-form>
     <label class="lp-sr" for="lp-story-2">Story text</label>
     <textarea id="lp-story-2" required maxlength="20000" placeholder="Paste the story here"></textarea>
-    <div class="lp-boxfoot"><span>Nothing is sent until you press Run Check.</span><button class="lp-btn primary" type="submit">Run Check <span aria-hidden="true">→</span></button></div>
+    <div class="lp-boxfoot"><span>Nothing is sent until you press Run Check.</span><button class="lp-btn primary" type="submit">Run Check</button></div>
   </form>
-  <p class="lp-foot">Ties found in the research record · Strict non-inference · DOI on every tie</p>
+  <p class="lp-foot">Ties found in the research record. Strict non-inference. DOI on every tie.</p>
 </section>
   </div>
-</main>
-
-<aside class="evidence" id="evidence" aria-labelledby="ev-title" hidden>
-  <div class="pane-head">
-    <div>
-      <p class="kicker">Evidence inspector</p>
-      <h2 id="ev-title">Live evidence</h2>
-    </div>
-    <button type="button" class="icon-btn" id="ev-close" aria-label="Hide the evidence panel">
-      <svg viewBox="0 0 20 20" aria-hidden="true"><line x1="5" y1="5" x2="15" y2="15"/><line x1="15" y1="5" x2="5" y2="15"/></svg>
-    </button>
-  </div>
-  <p class="pane-sub">Each tool as it runs, with the exact read-only Cypher it returned.</p>
-  <div class="scroll">
-    <p class="empty" id="ev-empty">Nothing has run yet.</p>
-    <ol class="steps" id="steps"></ol>
-  </div>
-  <div class="protocol">
-    <p class="kicker">Newsroom protocol</p>
-    <ol><li><strong>Experts are anonymous</strong> (“Expert #n”) unless the case is public.</li><li><strong>Ties found in the research record.</strong> We never use verdict words about a person.</li></ol>
-  </div>
-</aside>
-</div>
+</dialog>
 <script src="app.js"></script>
 <script src="case.js"></script>
 <script src="landing.js"></script>
