@@ -313,8 +313,8 @@ function card(reply, d) {
       if (!publicDemo) li.append(excludeButton(li, e.doi, c.case || null));
       ul.append(li);
     }
-    n.append(el("p", { class: "basis", text: `Evidence (${c.evidence.length} item${c.evidence.length === 1 ? "" : "s"}):` }), ul,
-      publicDemo ? el("p", { class: "basis", text: APPROVALS_OFF }) : null);
+    n.append(el("p", { class: "basis", text: `Evidence (${c.evidence.length} item${c.evidence.length === 1 ? "" : "s"}):` }), ul);
+    if (publicDemo) n.append(el("p", { class: "basis", text: APPROVALS_OFF }));  // append(null) would print "null"
   } else if (c.tier === "A1" || c.tier === "A2") {
     n.append(el("p", { class: "basis", text: "The DOIs come with the detailed report for this expert." }));
   }
