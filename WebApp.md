@@ -1,6 +1,6 @@
 # TieTrace web app: design plan
 
-*Last updated by Aaryan, Oct 18 2026: "Create a case" wizard (section 3.3); the provider picker now lists every provider the server returns. Earlier, Aaryan, Oct 18 2026: Groq added to the agent providers (after section 3.1's layout note). Earlier, Aaryan, Oct 18 2026: chat-app layout and browser-only history (section 3.1). Earlier, Aaryan, Oct 17 2026: section 8 decided (O1-O4); W1-W6 built in `web/` and `tests/test_web.py`. Earlier, Abdul, Oct 17 2026: first version, from the brainstorming session with Claude Code (layout and look chosen by Abdul in mockups).*
+*Last updated by Aaryan, Oct 18 2026: W7 public demo mode (`TIETRACE_PUBLIC=1`, section 6; deploy steps in `DEPLOY.md`). Earlier, Aaryan, Oct 18 2026: "Create a case" wizard (section 3.3); the provider picker now lists every provider the server returns. Earlier, Aaryan, Oct 18 2026: Groq added to the agent providers (after section 3.1's layout note). Earlier, Aaryan, Oct 18 2026: chat-app layout and browser-only history (section 3.1). Earlier, Aaryan, Oct 17 2026: section 8 decided (O1-O4); W1-W6 built in `web/` and `tests/test_web.py`. Earlier, Abdul, Oct 17 2026: first version, from the brainstorming session with Claude Code (layout and look chosen by Abdul in mockups).*
 
 **This is the file to follow for the web app.** `checklist_phase2.md` section P2-W points here. Items marked **(Abdul decided)** were chosen by Abdul in the brainstorm; items marked **(Claude's default)** are proposals nobody has agreed to yet; change them freely.
 
@@ -100,6 +100,7 @@ Phase A is local; phase B (deployable) goes **last** (Abdul decided).
 - No write tools exposed to anonymous visitors: `record_verdict`, `approve_note` and any case creation are off; read tools only.
 - Read-only FalkorDB access (separate Redis user is the `IMPROVEMENT.md` P2-1 item) and no OpenAlex key on the host.
 - Cut first if time is short.
+- **Built (Aaryan, Oct 18): `TIETRACE_PUBLIC=1`.** The visitor's own key drives `/api/agent/ask` (no hosted model key). The server refuses `/api/ask`, `/api/login`, `/api/auth`, `/api/case/*`, `/api/confirm`, `/api/approve_note` and `/api/record_verdict` (403), never uses the host Gemini key, needs a `demo*` newsroom to start, and limits agent runs per IP (10/hour, 1 at once); the agent loop runs at most 8 tool calls per turn and 40 per check; uvicorn runs with `--no-proxy-headers` so only the app reads `X-Forwarded-*`, and only with `TIETRACE_TRUST_PROXY=1`. `TIETRACE_ALLOWED_HOSTS` adds the public name to the Host/Origin checks. The page shows a banner and hides the wizard and approval buttons. Caddy (HTTPS, basic auth) and systemd files in `deploy/`; steps in `DEPLOY.md`; tests in `tests/test_web_public.py`. The FalkorDB read-only user and a daily cap are not built. (decided by Aaryan)
 
 ## 7. Tests (each task owns its test)
 - Pages contain none of the banned words ("independent", "conflicted") and no number that is missing from `README.md` or `eval/results.md`.

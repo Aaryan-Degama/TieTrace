@@ -121,6 +121,30 @@ def test_human_only_tools_are_refused_and_never_called():
     assert len(got) == 2 and all("TOOL_REFUSED" in r for r in got)
 
 
+def test_at_most_8_tool_calls_run_per_turn_and_the_rest_get_a_tool_error():
+    from web.agent.loop import MAX_CALLS_PER_TURN
+    c = FakeClient()
+    p = Script([tool_turn(*[tc("list_cases", id=f"c{i}") for i in range(MAX_CALLS_PER_TURN + 3)]), text_turn("ok")])
+    evs = run(p, client=c)
+    assert len(c.calls) == MAX_CALLS_PER_TURN == 8
+    got = tool_results(p)
+    assert len(got) == MAX_CALLS_PER_TURN + 3  # every call has a result, so the provider history stays valid
+    assert sum("TOOL_LIMIT" in r and "too many tool calls" in r for r in got) == 3
+    assert names(evs).count("step") == 2 * MAX_CALLS_PER_TURN  # running + done for the ones that ran only
+    assert names(evs).count("warning") == 1 and evs[-1][0] == "done"
+
+
+def test_at_most_40_tool_calls_run_per_check_then_it_ends_cleanly():
+    from web.agent.loop import MAX_CALLS_PER_RUN
+    c = FakeClient()
+    p = Script([], forever=tool_turn(*[tc("list_cases", id=f"c{i}") for i in range(7)]))
+    evs = run(p, client=c, max_turns=50)
+    assert len(c.calls) == MAX_CALLS_PER_RUN == 40
+    # turns 1-5 run 7 each (35), turn 6 runs 5 and gets 2 TOOL_LIMIT results, turn 7 asks again: stopped
+    assert p.n == 7 and evs[-1][0] == "error" and evs[-1][1]["code"] == "TOOL_LIMIT", (p.n, evs[-1])
+    assert "done" not in names(evs)
+
+
 def test_unknown_tool_names_are_refused():
     c = FakeClient()
     p = Script([tool_turn(tc("delete_everything")), text_turn("ok")])

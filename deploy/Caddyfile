@@ -1,0 +1,12 @@
+# TieTrace public demo behind Caddy, with a domain (automatic HTTPS). See DEPLOY.md section 9. Aaryan, Oct 18 2026.
+# A template: DEPLOY.md fills DOMAIN_HERE, USER_HERE and HASH_HERE (a bcrypt hash from `caddy hash-password`) with sed
+# and writes the result to /etc/caddy/Caddyfile (root:caddy, mode 640). Nothing goes into Caddy's environment, because
+# the apt caddy.service runs `caddy run --environ`, which prints the environment to the journal.
+# SSE: Caddy flushes text/event-stream responses at once by itself, so no flush_interval is set.
+
+DOMAIN_HERE {
+	basic_auth {
+		USER_HERE HASH_HERE
+	}
+	reverse_proxy 127.0.0.1:8000
+}

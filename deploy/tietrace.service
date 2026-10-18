@@ -1,0 +1,33 @@
+# TieTrace public demo web app (systemd). See DEPLOY.md. Aaryan, Oct 18 2026.
+# Assumes the default Ubuntu user `ubuntu` and the repo at /home/ubuntu/TieTrace; change both if yours differ.
+# Install: sudo cp deploy/tietrace.service /etc/systemd/system/ && sudo systemctl daemon-reload
+#          sudo systemctl enable --now tietrace
+[Unit]
+Description=TieTrace public demo (uvicorn on 127.0.0.1:8000)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/TieTrace
+# uv lives in ~/.local/bin; the app also starts `uv run ... server.py` for each check, so it must be on PATH
+Environment=PATH=/home/ubuntu/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=TIETRACE_PUBLIC=1
+Environment=TIETRACE_NEWSROOM=demo
+Environment=FALKORDB_PORT=6379
+Environment=TIETRACE_TRUST_PROXY=1
+# The public host name(s) the page is served on (domain or IP), comma-separated. Set in an override, e.g.
+#   sudo systemctl edit tietrace   ->   [Service]  Environment=TIETRACE_ALLOWED_HOSTS=tietrace.example.org
+Environment=TIETRACE_ALLOWED_HOSTS=
+# --no-proxy-headers: uvicorn's default trusts X-Forwarded-For/-Proto from 127.0.0.1 and rewrites the client address
+# from them, which anyone on an SSH tunnel (also 127.0.0.1) could forge. The app reads those headers itself, and only
+# with TIETRACE_TRUST_PROXY=1 (the last hop, which Caddy sets). For the SSH-tunnel-only setup, set it to 0.
+ExecStart=/home/ubuntu/.local/bin/uv run uvicorn web.app:app --host 127.0.0.1 --port 8000 --no-proxy-headers
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

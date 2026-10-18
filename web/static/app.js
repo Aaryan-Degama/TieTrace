@@ -11,6 +11,9 @@ let busy = false;
 // anywhere (no browser storage, no cookie, no URL), and is cleared when the page is left or the server rejects it.
 const provSel = $("provider"), keyBox = $("keybox"), keyInput = $("apikey"), ownKey = $("own-key");
 let hostGemini = false;   // the server may use its own Gemini key; then the key box is optional
+// Public demo (TIETRACE_PUBLIC=1): the server refuses approvals, verdicts and the case wizard; the page just says so.
+let publicDemo = false;
+const APPROVALS_OFF = "Approvals are turned off on the public demo";
 function syncKeyBox() {
   const p = provSel.value, optional = p === "gemini" && hostGemini && !keyInput.value;
   keyBox.hidden = p === "local" || (optional && ownKey.dataset.open !== "1");
@@ -21,6 +24,9 @@ ownKey.addEventListener("click", () => { ownKey.dataset.open = "1"; syncKeyBox()
 addEventListener("pagehide", () => { keyInput.value = ""; });
 fetch("/api/agent/providers").then((r) => r.json()).then((j) => {
   hostGemini = j.host_gemini === true;
+  publicDemo = j.public === true;
+  $("public-banner").hidden = !publicDemo;
+  $("new-case").hidden = publicDemo;
   for (const p of j.providers || []) {
     // A provider the page has no option for yet (e.g. groq) gets one, so new providers appear by themselves.
     const o = [...provSel.options].find((x) => x.value === p.id) || provSel.appendChild(el("option", { value: p.id }));
@@ -265,10 +271,11 @@ function card(reply, d) {
     const ul = el("ul");
     for (const e of c.evidence) {
       const li = el("li", {}, doiLink(e.doi), el("span", { class: "meta", text: ` · ${e.kind === "FUNDED_BY" ? "funded by" : "affiliation with"} ${e.via} · tier ${e.tier} · ${e.topic_label} · ${e.year}` }), " ");
-      li.append(excludeButton(li, e.doi, c.case || null));
+      if (!publicDemo) li.append(excludeButton(li, e.doi, c.case || null));
       ul.append(li);
     }
-    n.append(el("p", { class: "basis", text: `Evidence (${c.evidence.length} item${c.evidence.length === 1 ? "" : "s"}):` }), ul);
+    n.append(el("p", { class: "basis", text: `Evidence (${c.evidence.length} item${c.evidence.length === 1 ? "" : "s"}):` }), ul,
+      publicDemo ? el("p", { class: "basis", text: APPROVALS_OFF }) : null);
   } else if (c.tier === "A1" || c.tier === "A2") {
     n.append(el("p", { class: "basis", text: "The DOIs come with the detailed report for this expert." }));
   }
@@ -345,7 +352,8 @@ function note(reply, d) {
     el("p", { class: "basis", text: `Status: ${d.status}` }));
   for (const r of d.rejections || []) n.append(el("p", { class: "basis", text: `Claim ${r.claim_index} rejected: ${r.reason}` }));
   if (d.preview) n.append(el("p", { class: "basis", text: "The note as it will be approved (read it before approving):" }), el("pre", { class: "md", text: d.preview }));
-  if (d.status === "verified") {
+  if (d.status === "verified" && publicDemo) n.append(el("p", { class: "basis", text: APPROVALS_OFF }));
+  else if (d.status === "verified") {
     const b = el("button", { type: "button", text: "Approve note…" });
     b.addEventListener("click", () => {
       b.disabled = true;

@@ -8,6 +8,11 @@ only after a two-step confirm on the page with a one-time token the server issue
 Run:  uv run uvicorn web.app:app --host 127.0.0.1 --port 8000
 Env:  TIETRACE_NEWSROOM (default alpha), FALKORDB_HOST/FALKORDB_PORT (default 127.0.0.1:6379),
       FALKORDB_PASSWORD (optional, passed on to the MCP server), TIETRACE_CLAUDE (default claude), TIETRACE_WEB_TIMEOUT (seconds, default 420).
+Public demo (W7, Aaryan, Oct 18; DEPLOY.md): TIETRACE_PUBLIC=1 turns off local claude -p, login, the case wizard and
+      the human-only writes, rate-limits /api/agent/ask per IP, and needs a TIETRACE_NEWSROOM starting with "demo";
+      TIETRACE_ALLOWED_HOSTS (comma-separated host names allowed besides 127.0.0.1 and localhost);
+      TIETRACE_TRUST_PROXY=1 takes the client IP and scheme from the last X-Forwarded-For / X-Forwarded-Proto hop
+      (only behind our own proxy). Run uvicorn with --no-proxy-headers, or uvicorn rewrites the client IP itself.
 """
 import asyncio
 import contextlib
@@ -39,6 +44,9 @@ from pydantic import BaseModel
 ROOT = Path(__file__).resolve().parent.parent
 STATIC = Path(__file__).resolve().parent / "static"
 os.environ.setdefault("TIETRACE_NEWSROOM", "alpha")
+if os.environ.get("TIETRACE_PUBLIC") == "1" and not os.environ["TIETRACE_NEWSROOM"].startswith("demo"):
+    sys.exit("TieTrace public mode (TIETRACE_PUBLIC=1) needs a TIETRACE_NEWSROOM that starts with 'demo' "
+             "(never alpha): refusing to start.")
 sys.path.insert(0, str(ROOT))
 import server  # noqa: E402  (imported, not run: the stdio loop only starts under __main__)
 import verifier  # noqa: E402
@@ -629,22 +637,112 @@ async def limit_body(request, call_next):
     return await call_next(request)
 
 
+def _allowed_hosts():
+    """127.0.0.1 and localhost, plus the exact host names in TIETRACE_ALLOWED_HOSTS (the deployed name). Exact
+    matches only, no wildcard, so "*" never allows everything."""
+    extra = {h.strip().lower() for h in os.environ.get("TIETRACE_ALLOWED_HOSTS", "").split(",")}
+    return {"127.0.0.1", "localhost"} | {h for h in extra if h and h != "*"}
+
+
 def _local_origin(request):
     """Refuse calls from other web pages: the Origin header must be present and equal this page's own scheme, host
-    and port, and the host must be this machine (so a DNS-rebinding name cannot pass either)."""
+    and port, and the host must be this machine or an allowed host (so a DNS-rebinding name cannot pass either)."""
     origin, host = request.headers.get("origin"), request.headers.get("host", "")
-    if not origin or origin != f"{request.url.scheme}://{host}":
+    if not origin or origin != f"{_scheme(request)}://{host}":
         return False
-    return urlparse(origin).hostname in ("127.0.0.1", "localhost")
+    try:
+        return urlparse(origin).hostname in _allowed_hosts()
+    except ValueError:
+        return False
 
 
 def _local_host(request):
-    """For GET endpoints (a same-origin GET may carry no Origin): the Host must be this machine, the same hostname
-    test as _local_origin, so a DNS-rebinding name cannot read them."""
+    """For GET endpoints (a same-origin GET may carry no Origin): the Host must be this machine or an allowed host,
+    the same hostname test as _local_origin, so a DNS-rebinding name cannot read them."""
     try:
-        return urlparse(f"http://{request.headers.get('host', '')}").hostname in ("127.0.0.1", "localhost")
+        return urlparse(f"http://{request.headers.get('host', '')}").hostname in _allowed_hosts()
     except ValueError:
         return False
+
+
+# ---------- public demo mode (TIETRACE_PUBLIC=1; W7, Aaryan, Oct 18) ----------
+# Enforced here on the server, by path; the page only hides the buttons. Read per request, like _deployed().
+
+def _public():
+    return os.environ.get("TIETRACE_PUBLIC") == "1"
+
+
+ASK_OFF = "Not available on the public demo: bring your own key"
+APPROVALS_OFF = "Approvals are turned off on the public demo"
+CASES_OFF = "Creating cases is turned off on the public demo"
+PUBLIC_OFF = {"/api/ask": ASK_OFF, "/api/login": ASK_OFF, "/api/auth": ASK_OFF, "/api/confirm": APPROVALS_OFF,
+              "/api/approve_note": APPROVALS_OFF, "/api/record_verdict": APPROVALS_OFF, "/api/case": CASES_OFF}
+
+
+@app.middleware("http")
+async def public_mode(request, call_next):
+    if _public():
+        path = request.scope.get("path", "").rstrip("/")
+        msg = PUBLIC_OFF.get(path) or (CASES_OFF if path.startswith("/api/case/") else None)
+        if msg:
+            return _refuse(403, msg)
+    return await call_next(request)
+
+
+RATE_PER_HOUR, RATE_AT_ONCE = 10, 1  # per client IP, public mode only; 1 < MAX_RUNS, so one visitor never holds all
+_ip_runs = {}    # ip -> start times of its runs in the last hour
+_ip_active = {}  # ip -> expiry times of its runs still streaming (a run that never ends expires, so no slot leaks)
+
+
+def _trust_proxy():
+    return os.environ.get("TIETRACE_TRUST_PROXY") == "1"
+
+
+def _last_hop(request, header):
+    return ",".join(request.headers.getlist(header)).split(",")[-1].strip()
+
+
+def _client_ip(request):
+    """The peer address, or, only with TIETRACE_TRUST_PROXY=1, the LAST X-Forwarded-For hop: the one our own proxy
+    (Caddy) added. Earlier hops are whatever the visitor sent, so they are never used. This holds only when uvicorn
+    runs with --no-proxy-headers (deploy/tietrace.service): uvicorn's default proxy-header handling trusts
+    127.0.0.1 and would put the header's value into request.client itself, also over an SSH tunnel."""
+    if _trust_proxy() and (last := _last_hop(request, "x-forwarded-for")):
+        return last
+    return request.client.host if request.client else "unknown"
+
+
+def _scheme(request):
+    """http or https as the browser saw it: behind our own proxy (TIETRACE_TRUST_PROXY=1) the last X-Forwarded-Proto
+    hop, which Caddy sets; otherwise the connection's own scheme."""
+    proto = _last_hop(request, "x-forwarded-proto").lower() if _trust_proxy() else ""
+    return proto if proto in ("http", "https") else request.url.scheme
+
+
+def _rate_take(ip):
+    """(slot, None) when this IP may start a run (it is counted now), else (None, message)."""
+    now = time.time()
+    with _tlock:
+        for d, keep in ((_ip_runs, lambda t: t > now - 3600), (_ip_active, lambda t: t > now)):
+            for k in list(d):
+                d[k] = [t for t in d[k] if keep(t)]
+                if not d[k]:
+                    del d[k]
+        if len(_ip_active.get(ip, [])) >= RATE_AT_ONCE:
+            return None, ("A check from your address is already running on the public demo. "
+                          "Wait for it to finish, then try again.")
+        if len(_ip_runs.get(ip, [])) >= RATE_PER_HOUR:
+            return None, f"The public demo allows {RATE_PER_HOUR} checks per hour from one address. Try again later."
+        slot = now + TIMEOUT_S + 60
+        _ip_runs.setdefault(ip, []).append(now)
+        _ip_active.setdefault(ip, []).append(slot)
+        return slot, None
+
+
+def _rate_release(ip, slot):
+    with _tlock:
+        if slot in _ip_active.get(ip, []):
+            _ip_active[ip].remove(slot)
 
 
 def _refuse(status, message):
@@ -809,8 +907,8 @@ def _deployed():
     return os.environ.get("TIETRACE_DEPLOYED") == "1"
 
 
-def _host_gemini():
-    return os.environ.get("TIETRACE_HOST_GEMINI") == "1" and bool(os.environ.get("GEMINI_API_KEY"))
+def _host_gemini():  # never on the public demo: visitors bring their own key
+    return not _public() and os.environ.get("TIETRACE_HOST_GEMINI") == "1" and bool(os.environ.get("GEMINI_API_KEY"))
 
 
 def _agent_origin_ok(request):
@@ -868,8 +966,9 @@ def agent_providers(request: Request):
     if not _deployed() and not _local_host(request):  # deployed: served on the host's own public name
         return _refuse(403, "only this page may call the API")
     return {"ok": True, "providers": [{"id": k, "label": v["label"], "model": v["model"]} for k, v in MODELS.items()],
-            "local_claude": not _deployed() and shutil.which(os.environ.get("TIETRACE_CLAUDE", "claude")) is not None,
-            "host_gemini": _host_gemini()}
+            "local_claude": not _deployed() and not _public() and
+            shutil.which(os.environ.get("TIETRACE_CLAUDE", "claude")) is not None,
+            "host_gemini": _host_gemini(), "public": _public()}
 
 
 @app.post("/api/agent/ask")
@@ -915,6 +1014,12 @@ async def agent_ask(body: AgentAsk, request: Request):
             len(str(m.get("text") or m.get("result") or "")) for m in session["messages"]) > MAX_AGENT_CHARS:
         entry["busy"] = False
         return _refuse(400, "this conversation is too long; start a new check")
+    ip, slot = _client_ip(request), None
+    if _public():
+        slot, msg = _rate_take(ip)
+        if msg:
+            entry["busy"] = False
+            return JSONResponse({"ok": False, "error": {"code": "RATE_LIMIT", "message": msg}}, status_code=429)
     factory = AGENT_PROVIDER_FACTORY or get_provider
 
     async def stream():
@@ -939,6 +1044,8 @@ async def agent_ask(body: AgentAsk, request: Request):
                 del session["messages"][start:]  # failed or cut-off run: no half-finished turn stays in the history
             if acquired:
                 _runs.release()
+            if slot is not None:
+                _rate_release(ip, slot)
             entry["busy"] = False
     return StreamingResponse(stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
 

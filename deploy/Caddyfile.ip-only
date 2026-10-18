@@ -1,0 +1,15 @@
+# TieTrace public demo behind Caddy on a bare IP, no domain. See DEPLOY.md section 9. Aaryan, Oct 18 2026.
+#
+# WARNING: this is plain HTTP. The basic-auth password AND every visitor's API key cross the internet
+# unencrypted, so anyone on the path can read them. Prefer the SSH tunnel (DEPLOY.md section 11), or get a
+# domain and use deploy/Caddyfile. Use this only for a short demo with throwaway keys.
+#
+# A template: DEPLOY.md fills USER_HERE and HASH_HERE (bcrypt, from `caddy hash-password`) with sed and writes the
+# result to /etc/caddy/Caddyfile (root:caddy, mode 640). Caddy flushes text/event-stream (SSE) at once by itself.
+
+http://:80 {
+	basic_auth {
+		USER_HERE HASH_HERE
+	}
+	reverse_proxy 127.0.0.1:8000
+}

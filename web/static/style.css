@@ -307,3 +307,6 @@ body.wiz-on .thread, body.wiz-on .dock, body.wiz-on .more { display: none; }
 .wz-step dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0; }
 .wz-step dt { color: var(--muted); }
 .wz-step dd { margin: 0; }
+
+/* Public demo banner (TIETRACE_PUBLIC=1; Aaryan, Oct 18) */
+.public-banner { margin: 0; padding: 6px 14px; font-size: 13px; text-align: center; color: var(--a1-fg); background: var(--a1-bg); border-bottom: 1px solid var(--line); }
