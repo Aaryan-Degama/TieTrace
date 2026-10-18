@@ -15,7 +15,11 @@ services:
     network_mode: host
     depends_on: [falkordb]
     environment:
-      TIETRACE_NEWSROOM: alpha
+      # Public mode (Aaryan, Oct 18): on the open internet, local claude -p, approvals/verdicts and the case
+      # wizard are refused by the server, and the memory graph is a shared demo one, never alpha (DEPLOY.md).
+      TIETRACE_PUBLIC: "1"
+      TIETRACE_NEWSROOM: demo
+      TIETRACE_ALLOWED_HOSTS: tietrace.kavyan.fun
       TIETRACE_DEPLOYED: "1"
       TIETRACE_ALLOWED_ORIGIN: https://tietrace.kavyan.fun
   # One-off: docker compose run --rm loader --case <slug> --rebuild (reads data/ and cases/*/raw, 0 API calls)
