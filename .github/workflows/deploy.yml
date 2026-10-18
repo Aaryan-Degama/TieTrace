@@ -1,0 +1,30 @@
+# Deploys main to the server after ci passes. Secrets: DEPLOY_SSH_KEY (private key), DEPLOY_HOST, DEPLOY_USER.
+name: deploy
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [main]
+concurrency: deploy
+permissions:
+  contents: read
+jobs:
+  deploy:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - name: SSH setup
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id && chmod 600 ~/.ssh/id
+          ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts
+        env: { KEY: "${{ secrets.DEPLOY_SSH_KEY }}", HOST: "${{ secrets.DEPLOY_HOST }}" }
+      - name: Sync and restart
+        run: |
+          rsync -az -e "ssh -i ~/.ssh/id" --exclude .git --exclude data --exclude 'cases/*/raw' ./ "$U@$H:/opt/tietrace/"
+          ssh -i ~/.ssh/id "$U@$H" 'cd /opt/tietrace && docker compose up -d --build --remove-orphans && docker image prune -f'
+        env: { U: "${{ secrets.DEPLOY_USER }}", H: "${{ secrets.DEPLOY_HOST }}" }
