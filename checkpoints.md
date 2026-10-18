@@ -165,6 +165,8 @@ Review: round 1 PASS with 2 must-fix (attribution; E9 overlap not proven) → fi
 - [x] README: problem, tiers, data model, queries, evaluation with losses, human gates, ethics, setup (Aaryan wrote it Oct 16; Abdul added E4/E6/E8/E9/E10, E5 cut, test status, Oct 17)
 - [x] Mermaid diagrams: architecture diagram added to README, 5 in `docs/mcp-spec.md` (Abdul, Oct 17); **check they render on GitHub after the push**
 - [ ] AI-use disclosure and data/licence note: done in README (OpenAlex CC0; FalkorDB is SSPLv1, unmodified image, Abdul Oct 17). **Open: choose a licence for our own code (both of you decide; LICENSE file missing)**
+- [x] Step-by-step Installation section in the README and `install.sh` (one command, re-runnable; shellcheck clean, not yet run on a fresh machine) (Aaryan, Oct 18)
+- [x] Intro video script `INTRO_SCRIPT.md` (90 s, numbers from README/eval only) (Aaryan, Oct 18)
 - [ ] 90-second demo video, using real numbers only (human: record in real Claude Code; numbers in README/eval only)
 - [x] Repo public (Aaryan's `Aaryan-Degama/TieTrace` shows PUBLIC, checked Oct 17)
 - [ ] Submitted, with both tracks named

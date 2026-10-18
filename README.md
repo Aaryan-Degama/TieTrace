@@ -1,6 +1,6 @@
 # TieTrace
 
-*Last updated by Aaryan, Oct 17: MIT licence for our code (`LICENSE`). Earlier the same day: web app section (`web/`). Earlier, Abdul, Oct 17: checkpoint 8 results (E4, E6, E8, E9, E10), architecture diagram, licence note, test status. Earlier, Aaryan, Oct 16: checkpoint 7 (verdicts, sourcing notes, the Writer subagent; 13 tools); PMI funder share now read from the graph's Meta node. Earlier the same day: rewritten to match the code after checkpoint 6 and the hardening round (both tracks, 10 tools, setup, test and evaluation results, limits).*
+*Last updated by Aaryan, Oct 18: step-by-step Installation section and `install.sh`. Earlier, Aaryan, Oct 17: MIT licence for our code (`LICENSE`). Earlier the same day: web app section (`web/`). Earlier, Abdul, Oct 17: checkpoint 8 results (E4, E6, E8, E9, E10), architecture diagram, licence note, test status. Earlier, Aaryan, Oct 16: checkpoint 7 (verdicts, sourcing notes, the Writer subagent; 13 tools); PMI funder share now read from the graph's Meta node. Earlier the same day: rewritten to match the code after checkpoint 6 and the hardening round (both tracks, 10 tools, setup, test and evaluation results, limits).*
 
 TieTrace helps a journalist check how connected an expert is to the company in a story. It looks the expert up in a research graph built from [OpenAlex](https://openalex.org) and stored in [FalkorDB](https://www.falkordb.com), and it answers with evidence, not opinions:
 
@@ -69,11 +69,26 @@ Track 2, memory (the newsroom graph):
 
 `tie_report`, `check_case`, `open_case`, `recheck`, `record_verdict`, `draft_note` and `approve_note` are marked as writing (they add Cases, Checks, Verdicts or Notes; `record_verdict` is also marked destructive because it supersedes saved checks); the others are read-only (their Event is an audit log). `record_verdict` and `approve_note` must never be allowlisted: Claude Code's permission prompt is the human gate. The Writer is a Claude Code subagent (`.claude/agents/writer.md`) limited to `recall`, `tie_report`, `check_no_tie` and `draft_note`. What a verdict does and does not recompute is listed in `docs/mcp-spec.md` section 9f. Not built (cut): `review_queue`, `set_policy`.
 
-## Setup
+## Installation
 
-You need Docker, Python 3.13 or newer, and [uv](https://docs.astral.sh/uv/).
+You need **Docker** (running), **Python 3.13 or newer**, **[uv](https://docs.astral.sh/uv/)**, `git`, `unzip`, and **[Claude Code](https://claude.com/claude-code)** (logged in) for the agent. Linux and macOS work as they are; on Windows use WSL. Each research graph takes about 0.8 GB of RAM.
 
-1. **Start FalkorDB** (pinned version, AOF on so a crash loses at most about 1 s, ports bound to this machine only):
+### Quick install (one script)
+
+```bash
+git clone https://github.com/Aaryan-Degama/TieTrace.git
+cd TieTrace
+# put the two data zips in data/ first (step 3 below), then:
+./install.sh
+```
+
+`install.sh` does steps 2-7 below and is safe to run again: each step skips what is already done. It never downloads from OpenAlex by itself and never prints your key. If port 6379 or 3001 is taken, run `FALKORDB_PORT=6500 FALKORDB_BROWSER_PORT=3002 ./install.sh` and use the same `FALKORDB_PORT` everywhere afterwards.
+
+### Step by step (what the script does)
+
+1. **Clone the repo:** `git clone https://github.com/Aaryan-Degama/TieTrace.git && cd TieTrace`
+
+2. **Start FalkorDB** (pinned version, AOF on so a crash loses at most about 1 s, ports bound to this machine only):
 
    ```bash
    docker run -d --name falkordb -p 127.0.0.1:6379:6379 -p 127.0.0.1:3001:3000 \
@@ -82,30 +97,43 @@ You need Docker, Python 3.13 or newer, and [uv](https://docs.astral.sh/uv/).
      falkordb/falkordb:v4.22.1
    ```
 
-   Use `v4.22.1`, not `:latest`: on Oct 8 `:latest` was 6.0.2, which crashed on our data. The FalkorDB Browser is at http://127.0.0.1:3001. Next time: `docker start falkordb`. Check AOF with `docker exec falkordb redis-cli CONFIG GET appendonly` (must say `yes`).
+   Use `v4.22.1`, not `:latest`: on Oct 8 `:latest` was 6.0.2, which crashed on our data. Check: `docker exec falkordb redis-cli PING` says `PONG` and `docker exec falkordb redis-cli CONFIG GET appendonly` says `yes`. The FalkorDB Browser is at http://127.0.0.1:3001. Next time just run `docker start falkordb`.
 
-2. **Install the Python packages:** `uv sync`
-
-3. **Add your OpenAlex key:** `cp .env.example .env` and fill in `OPENALEX_API_KEY`. Never commit `.env`. Other settings are environment variables: `FALKORDB_PORT` (default 6379), `TIETRACE_NEWSROOM` (required by the server), `TIETRACE_CASE` (default `obesity-coke`).
-
-4. **Build the research graph:**
+3. **Get the data.** The OpenAlex download cache is not in git (about 50 MB zipped). Put `tietrace-data.zip` and `tietrace-pmi-raw.zip` in `data/` and unzip them from the repo root:
 
    ```bash
-   uv run python loader.py --rebuild                            # obesity-coke
-   uv run python loader.py --case philip-morris-lung --rebuild  # second case
+   unzip -o data/tietrace-data.zip      # -> data/raw/                      (obesity-coke)
+   unzip -o data/tietrace-pmi-raw.zip   # -> cases/philip-morris-lung/raw/  (philip-morris-lung)
    ```
 
-   With the raw cache present (`data/raw/` and `cases/<slug>/raw/`, not in the repo) this makes zero API calls. Without it, the loader downloads from OpenAlex using your key (capped per case by `max_api_calls` in `cases/<slug>/case.json`); `--refresh` forces a fresh download. The graph is built aside and swapped in, so a failed build leaves the old graph in place.
+   No zips? The loader can download from the OpenAlex API instead, using the key from step 5. That costs API calls, capped per case by `max_api_calls` in `cases/<slug>/case.json`.
 
-5. **Register the server with Claude Code:**
+4. **Install the Python packages:** `uv sync`
+
+5. **Create the settings file:** `cp .env.example .env`. Fill in `OPENALEX_API_KEY` only if you build without the zips. Never commit `.env`. Other settings are environment variables: `FALKORDB_PORT` (default 6379), `TIETRACE_NEWSROOM` (required by the server), `TIETRACE_CASE` (default `obesity-coke`).
+
+6. **Build the research graphs** (with the cache present: zero API calls, a few minutes each):
 
    ```bash
-   claude mcp add tietrace-alpha -e TIETRACE_NEWSROOM=alpha -- uv run --directory <path-to-repo> python server.py
+   uv run python loader.py --case obesity-coke --rebuild
+   uv run python loader.py --case philip-morris-lung --rebuild
    ```
 
-   Add `-e FALKORDB_PORT=...` if FalkorDB is not on 6379. The server exits at once if `TIETRACE_NEWSROOM` is unset or `TIETRACE_CASE` names no valid case. `claude mcp list` should show it Connected.
+   Each graph is built aside and swapped in, so a failed build leaves the old graph in place. Check: `docker exec falkordb redis-cli GRAPH.LIST` lists `research:obesity-coke` and `research:philip-morris-lung`.
 
-6. **Optional:** `uv run python obsidian_export.py --watch 5` writes the newsroom memory as linked notes into an Obsidian vault (read-only on FalkorDB).
+7. **Register the MCP server with Claude Code** (from the repo folder):
+
+   ```bash
+   claude mcp add tietrace-alpha -e TIETRACE_NEWSROOM=alpha -e FALKORDB_PORT=6379 -- uv run --directory "$PWD" python server.py
+   ```
+
+   `claude mcp list` should show `tietrace-alpha` as Connected. The server exits at once if `TIETRACE_NEWSROOM` is unset or `TIETRACE_CASE` names no valid case.
+
+8. **Try it:** run `claude` in the repo folder and ask *"Which research cases are loaded?"*, then paste a story and ask TieTrace to check its experts. Or start the web app (next section).
+
+9. **Before shutting down:** `docker exec falkordb redis-cli SAVE && docker stop -t 120 falkordb` writes the graphs to disk, then stops FalkorDB cleanly.
+
+**Optional:** `uv run python obsidian_export.py --watch 5` writes the newsroom memory as linked notes into an Obsidian vault (read-only on FalkorDB).
 
 ## Web app
 
@@ -175,6 +203,8 @@ Because E1 and E2 failed, only Tier A is a finding. Tier B, Tier C and the score
 | `loader.py` | Builds a research graph from OpenAlex (`cases/<slug>/case.json`) |
 | `discover.py` | CLI to find OpenAlex IDs for a new case (a human approves them) |
 | `obsidian_export.py` | Exports the memory graph to Obsidian |
+| `install.sh` | One-command local install (FalkorDB, packages, graphs, MCP server) |
+| `INTRO_SCRIPT.md` | Script for the 90-second intro video |
 | `eval/` | Evaluation scripts and `results.md` |
 | `tests/` | Plain-assert test suites |
 | `docs/mcp-spec.md` | Tool contract and diagrams |
