@@ -1,0 +1,29 @@
+# Host networking: the graph loader and server.py only know FALKORDB_PORT (always 127.0.0.1), so all share the host's loopback.
+services:
+  falkordb:
+    image: falkordb/falkordb:v4.22.1   # pinned, never :latest (CLAUDE.md)
+    container_name: falkordb
+    restart: unless-stopped
+    ports: ["127.0.0.1:6379:6379"]
+    volumes: ["falkordb-data:/var/lib/falkordb/data"]
+    environment:
+      REDIS_ARGS: "--appendonly yes --appendfsync everysec --maxmemory 6gb"
+    stop_grace_period: 120s
+  web:
+    build: .
+    restart: unless-stopped
+    network_mode: host
+    depends_on: [falkordb]
+    environment:
+      TIETRACE_NEWSROOM: alpha
+      TIETRACE_DEPLOYED: "1"
+      TIETRACE_ALLOWED_ORIGIN: https://tietrace.kavyan.fun
+  # One-off: docker compose run --rm loader --case <slug> --rebuild (reads data/ and cases/*/raw, 0 API calls)
+  loader:
+    build: .
+    profiles: [tools]
+    network_mode: host
+    entrypoint: ["uv", "run", "--no-sync", "python", "loader.py"]
+    volumes: ["./data:/app/data", "./cases:/app/cases"]
+volumes:
+  falkordb-data:
