@@ -447,7 +447,7 @@ def test_groq_multi_turn_translation():
     f = Fake(groq_reply(call=False))
     run_turn("groq", f, HISTORY)
     k = f.sent[0]
-    assert k["max_completion_tokens"] > 0 and k["model"] == "llama-3.3-70b-versatile"
+    assert k["max_completion_tokens"] > 0 and k["model"] == "qwen/qwen3.8-27b" and k["extra_body"] == {"reasoning_format": "hidden"}
     m = k["messages"]
     assert m[0] == {"role": "system", "content": "SYS"} and m[1] == {"role": "user", "content": "check A"}
     assert m[2] == {"role": "assistant", "tool_calls": [

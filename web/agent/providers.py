@@ -312,7 +312,7 @@ class GroqProvider(Provider):
     async def _call(self, client, system, messages, tools):
         r = await client.chat.completions.create(
             model=self.model, messages=self._messages(system, messages), timeout=60,
-            max_completion_tokens=self.max_tokens,
+            max_completion_tokens=self.max_tokens, extra_body={"reasoning_format": "hidden"},  # qwen3 reasoning; raw + tools is a 400 (https://console.groq.com/docs/reasoning)
             tools=[{"type": "function", "function": {"name": t.name, "description": t.description, "parameters": t.schema}}
                    for t in tools])
         if not r.choices:
