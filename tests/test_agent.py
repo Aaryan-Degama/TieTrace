@@ -441,7 +441,7 @@ def test_the_providers_list_contains_no_key_or_secret():
     with hooks(None, {"TIETRACE_HOST_GEMINI": "1", "GEMINI_API_KEY": HOST_KEY}):
         r = CLI.get("/api/agent/providers")
     j = r.json()
-    assert sorted(p["id"] for p in j["providers"]) == ["claude", "gemini", "openai"]
+    assert sorted(p["id"] for p in j["providers"]) == ["claude", "gemini", "groq", "openai"]
     assert all(set(p) == {"id", "label", "model"} for p in j["providers"])
     assert isinstance(j["local_claude"], bool) and j["host_gemini"] is True
     assert HOST_KEY not in r.text

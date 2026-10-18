@@ -33,6 +33,7 @@ class Fake:
         self.interactions = NS(create=call)  # gemini  (client.aio.interactions.create)
         self.responses = NS(create=call)     # openai  (client.responses.create)
         self.messages = NS(create=call)      # claude  (client.messages.create)
+        self.chat = NS(completions=NS(create=call))  # groq (client.chat.completions.create)
 
     async def _create(self, **kw):
         self.sent.append(kw)
@@ -72,7 +73,15 @@ def claude_reply(call=True, args=ARGS, text="hello"):
     return D(content=blocks, stop_reason="tool_use" if call else "end_turn", usage=D(input_tokens=7, output_tokens=3))
 
 
-REPLY = {"gemini": gemini_reply, "openai": openai_reply, "claude": claude_reply}
+def groq_reply(call=True, args=json.dumps(ARGS), text="hello", finish=None):
+    """SYNTHETIC Chat Completions reply, field names as on https://console.groq.com/docs/tool-use (Oct 18 2026)."""
+    tcs = [D(id="call_1", type="function", function=D(name="resolve_experts", arguments=args))] if call else None
+    msg = D(role="assistant", content=None if call else text, tool_calls=tcs)
+    return D(choices=[D(index=0, message=msg, finish_reason=finish or ("tool_calls" if call else "stop"))],
+             usage=D(prompt_tokens=7, completion_tokens=3, total_tokens=10))
+
+
+REPLY = {"gemini": gemini_reply, "openai": openai_reply, "claude": claude_reply, "groq": groq_reply}
 
 
 def run_turn(name, fake, messages=None, key=CANARY):
@@ -146,9 +155,10 @@ def test_a_provider_that_never_answers_ends_with_PROVIDER_DOWN_within_the_timeou
         async def _create(self, **kw):
             await asyncio.sleep(3600)
 
-    for name in ("gemini", "openai", "claude"):
+    for name in ("gemini", "openai", "claude", "groq"):
         fake = Hang()
         fake.interactions = fake.responses = fake.messages = NS(create=fake._create)
+        fake.chat = NS(completions=NS(create=fake._create))
         p = get_provider(name, client_factory=lambda k: fake)
         p.timeout_s = 0.3
         t0 = time.time()
@@ -163,14 +173,16 @@ def test_a_provider_that_never_answers_ends_with_PROVIDER_DOWN_within_the_timeou
 def test_a_429_is_RATE_LIMIT_at_once_and_the_sdk_clients_are_built_with_few_retries():
     import time
     t0 = time.time()
-    for name in ("gemini", "openai", "claude"):
+    for name in ("gemini", "openai", "claude", "groq"):
         assert expect_error(name, Fake(exc=HttpError(429))).code == "RATE_LIMIT"
     assert time.time() - t0 < 2
-    from web.agent.providers import GeminiProvider, OpenAIProvider, ClaudeProvider
+    from web.agent.providers import GeminiProvider, OpenAIProvider, ClaudeProvider, GroqProvider
     g = GeminiProvider._default_factory("k")  # real SDK clients, built offline (no request is made)
     assert g.interactions.sdk_configuration.retry_config.max_retries <= 1
     assert OpenAIProvider._default_factory("k").max_retries == 0
     assert ClaudeProvider._default_factory("k").max_retries == 0
+    gq = GroqProvider._default_factory("k")
+    assert gq.max_retries == 0 and str(gq.base_url).rstrip("/") == "https://api.groq.com/openai/v1"
 
 
 def test_google_400_with_API_KEY_INVALID_becomes_BAD_KEY():
@@ -183,10 +195,12 @@ def test_google_400_with_API_KEY_INVALID_becomes_BAD_KEY():
 
 def test_malformed_tool_arguments_become_BAD_REPLY():
     bad = {"gemini": gemini_reply(args="not a dict"), "openai": openai_reply(args="{not json"),
-           "claude": claude_reply(args="not a dict")}
+           "claude": claude_reply(args="not a dict"), "groq": groq_reply(args="{not json")}
     for name, reply in bad.items():
         assert expect_error(name, Fake(reply)).code == "BAD_REPLY", name
     assert expect_error("openai", Fake(openai_reply(args="[1, 2]"))).code == "BAD_REPLY"  # JSON but not an object
+    assert expect_error("groq", Fake(groq_reply(args="[1, 2]"))).code == "BAD_REPLY"
+    assert expect_error("groq", Fake(D(choices=[], usage=None))).code == "BAD_REPLY"  # no choice at all
     t = run_turn("claude", Fake(D(content=[], stop_reason="end_turn", usage=None)))
     assert t.text == "" and t.calls == []  # an empty reply is a Turn; the loop (A3) turns it into a readable error
 
@@ -263,7 +277,7 @@ def test_raw_of_an_earlier_turn_is_sent_back_unchanged():
                 {"role": "tool", "call_id": "call_1", "name": "resolve_experts", "result": "R"}]
         f = Fake(REPLY[name](call=False))
         run_turn(name, f, hist)
-        sent = f.sent[0]["input" if name != "claude" else "messages"]
+        sent = f.sent[0]["messages" if name in ("claude", "groq") else "input"]
         flat = json.dumps(sent, default=str)
         assert ("thought" in flat) if name == "gemini" else True
         assert ("reasoning" in flat) if name == "openai" else True
@@ -292,6 +306,10 @@ def _real_factory(name, status, body):
         if name == "openai":
             from openai import AsyncOpenAI
             return AsyncOpenAI(api_key=key, http_client=hc, max_retries=0)
+        if name == "groq":
+            from openai import AsyncOpenAI
+            from web.agent.providers import GroqProvider
+            return AsyncOpenAI(api_key=key, base_url=GroqProvider.BASE_URL, http_client=hc, max_retries=0)
         from google import genai
         return genai.Client(api_key=key, http_options={"httpx_async_client": hc}).aio
     return factory, seen
@@ -351,11 +369,16 @@ def test_real_sdk_replies_parse_with_parallel_calls_and_round_trip_raw():
           "usage": {"input_tokens": 7, "output_tokens": 3}, "content": [
               {"type": "tool_use", "id": "toolu_1", "name": "lookup", "input": {"a": 1}},
               {"type": "tool_use", "id": "toolu_2", "name": "lookup", "input": {}}]}
-    for name, body in (("openai", oa), ("claude", cl)):
+    gq = {"id": "chatcmpl-1", "object": "chat.completion", "created": 1, "model": "m", "choices": [  # SYNTHETIC
+              {"index": 0, "finish_reason": "tool_calls", "message": {"role": "assistant", "content": None, "tool_calls": [
+                  {"id": "call_1", "type": "function", "function": {"name": "lookup", "arguments": "{\"a\":1}"}},
+                  {"id": "call_2", "type": "function", "function": {"name": "lookup", "arguments": "{}"}}]}}],
+          "usage": {"prompt_tokens": 7, "completion_tokens": 3, "total_tokens": 10}}
+    for name, body in (("openai", oa), ("claude", cl), ("groq", gq)):
         fac, seen = _real_factory(name, 200, body)
         p = get_provider(name, client_factory=fac)
         t = asyncio.run(p.turn("S", [{"role": "user", "text": "hi"}], TOOLS, CANARY))
-        assert [c.id for c in t.calls] == (["call_1", "call_2"] if name == "openai" else ["toolu_1", "toolu_2"]) and t.stop == "tool_use"
+        assert [c.id for c in t.calls] == (["toolu_1", "toolu_2"] if name == "claude" else ["call_1", "call_2"]) and t.stop == "tool_use"
         assert (t.input_tokens, t.output_tokens) == (7, 3)
         hist = [{"role": "user", "text": "hi"}, {"role": "assistant", "text": t.text, "calls": t.calls, "raw": t.raw}]
         hist += [{"role": "tool", "call_id": c.id, "name": c.name, "result": "r"} for c in t.calls]
@@ -365,6 +388,10 @@ def test_real_sdk_replies_parse_with_parallel_calls_and_round_trip_raw():
         assert all(c.id in flat for c in t.calls) and CANARY not in flat
         if name == "openai":
             assert '"reasoning"' in flat and flat.count("function_call_output") == 2
+        if name == "groq":
+            assert seen[-1][0] == "https://api.groq.com/openai/v1/chat/completions", seen[-1][0]
+            assert [m["role"] for m in sent["messages"]] == ["system", "user", "assistant", "tool", "tool"]
+            assert [m["tool_call_id"] for m in sent["messages"][3:]] == ["call_1", "call_2"]
 
 
 def test_the_sdk_client_is_closed_after_every_call_with_whatever_close_method_it_has():
@@ -412,6 +439,62 @@ def test_openai_length_stop_with_empty_text_still_returns_a_Turn():
     r = D(output=[D(type="reasoning", id="rs")], status="incomplete", usage=D(input_tokens=5, output_tokens=2048))
     t = run_turn("openai", Fake(r))
     assert t.text == "" and t.calls == [] and t.stop == "length"
+
+
+# ---------- Groq (Chat Completions), added by Aaryan's Builder, Oct 18 2026; all replies SYNTHETIC ----------
+
+def test_groq_multi_turn_translation():
+    f = Fake(groq_reply(call=False))
+    run_turn("groq", f, HISTORY)
+    k = f.sent[0]
+    assert k["max_completion_tokens"] > 0 and k["model"] == "llama-3.3-70b-versatile"
+    m = k["messages"]
+    assert m[0] == {"role": "system", "content": "SYS"} and m[1] == {"role": "user", "content": "check A"}
+    assert m[2] == {"role": "assistant", "tool_calls": [
+        {"id": "call_1", "type": "function", "function": {"name": "resolve_experts", "arguments": json.dumps(ARGS)}}]}
+    assert m[3] == {"role": "tool", "tool_call_id": "call_1", "content": "RESULT-TEXT"}
+    assert "name" not in m[3]  # the OpenAI-compat page says messages[].name returns a 400
+    f2 = Fake(groq_reply(call=False))  # a text-plus-calls turn keeps its text
+    run_turn("groq", f2, [HISTORY[0], {"role": "assistant", "text": "checking", "calls": WANT}, HISTORY[2]])
+    a = f2.sent[0]["messages"][2]
+    assert a["content"] == "checking" and a["tool_calls"][0]["id"] == "call_1"
+    f3 = Fake(groq_reply(call=False))  # a text-only assistant turn keeps content too
+    run_turn("groq", f3, [HISTORY[0], {"role": "assistant", "text": "", "calls": []}, {"role": "user", "text": "more"}])
+    assert f3.sent[0]["messages"][2] == {"role": "assistant", "content": ""}
+    assert k["tools"] == [{"type": "function", "function": {"name": "resolve_experts", "description": "find experts",
+                                                            "parameters": TOOLS[0].schema}}]
+
+
+def test_groq_round_trip_of_its_own_turn_is_the_same_as_a_rebuilt_one():
+    first = run_turn("groq", Fake(groq_reply()))
+    tail = [{"role": "tool", "call_id": "call_1", "name": "resolve_experts", "result": "R"}]
+    with_raw, without = Fake(groq_reply(call=False)), Fake(groq_reply(call=False))
+    run_turn("groq", with_raw, [{"role": "user", "text": "q"},
+                                {"role": "assistant", "text": first.text, "calls": first.calls, "raw": first.raw}] + tail)
+    run_turn("groq", without, [{"role": "user", "text": "q"},
+                               {"role": "assistant", "text": first.text, "calls": first.calls}] + tail)
+    assert with_raw.sent[0]["messages"] == without.sent[0]["messages"]
+
+
+def test_groq_stop_and_usage_mapping():
+    for finish, want in (("stop", "end"), ("length", "length"), ("content_filter", "other")):
+        t = run_turn("groq", Fake(groq_reply(call=False, finish=finish)))
+        assert t.stop == want and (t.input_tokens, t.output_tokens) == (7, 3), (finish, t)
+    t = run_turn("groq", Fake(groq_reply(call=True, finish="stop")))  # calls win over the finish_reason
+    assert t.stop == "tool_use" and t.calls == WANT
+    t = run_turn("groq", Fake(D(choices=[D(message=D(content="", tool_calls=None), finish_reason="length")], usage=None)))
+    assert t.text == "" and t.calls == [] and t.stop == "length" and t.input_tokens == 0
+
+
+def test_groq_498_flex_capacity_is_RATE_LIMIT():
+    for name in REPLY:  # 498 is not a standard HTTP status; no code in this repo uses it for anything else
+        e = expect_error(name, Fake(exc=HttpError(498)))
+        assert e.code == "RATE_LIMIT" and CANARY not in chain_text(e), (name, e.code)
+
+
+def test_groq_key_never_reaches_a_Turn():
+    t = run_turn("groq", Fake(groq_reply()))
+    assert CANARY not in json.dumps([t.text, t.raw, [vars(c) for c in t.calls]], default=str)
 
 
 if __name__ == "__main__":

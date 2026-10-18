@@ -1,6 +1,6 @@
 # Test keys and provider docs (web app agent)
 
-*Last updated by Abdul, Oct 17 2026: A0 first version (docs read on Oct 17 2026 by the Builder).*
+*Last updated by Aaryan, Oct 18 2026: Groq rows added (docs read Oct 18). Earlier, Abdul, Oct 17 2026: A0 first version (docs read on Oct 17 2026 by the Builder).*
 
 No key value is written in this file or anywhere in the repo. Keys live only in environment variables or the git-ignored `.env`.
 
@@ -11,6 +11,7 @@ No key value is written in this file or anywhere in the repo. Keys live only in 
 | Gemini | https://ai.google.dev/gemini-api/docs/quickstart , https://ai.google.dev/gemini-api/docs/function-calling , https://ai.google.dev/gemini-api/docs/pricing , https://ai.google.dev/gemini-api/docs/rate-limits , https://ai.google.dev/gemini-api/docs/migrate-to-interactions (full page read by the Reviewer, Oct 17) |
 | OpenAI | https://developers.openai.com/api/docs/guides/function-calling (the old platform.openai.com URL redirects here) |
 | Anthropic | https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview , https://platform.claude.com/docs/en/models/overview |
+| Groq (read Oct 18) | https://console.groq.com/docs/openai , https://console.groq.com/docs/tool-use , https://console.groq.com/docs/models , https://console.groq.com/docs/errors , https://console.groq.com/docs/rate-limits , https://console.groq.com/docs/api-reference |
 
 ## Packages and default models
 
@@ -19,6 +20,7 @@ No key value is written in this file or anywhere in the repo. Keys live only in 
 | Gemini | `google-genai` (2.31.0; the Gemini docs do not name the pip package, verified only by installing it and importing); `from google import genai`; `genai.Client()` | `gemini-3.8-flash` (the id used in the quickstart and function-calling pages, and listed "Free of charge" for input and output on the pricing page, Standard Free Tier) | The function-calling page (read Oct 17) shows only the **Interactions API**: `client.interactions.create(model=..., input=..., tools=[{"type":"function","name":...,"parameters":{...}}])`, a `function_call` step with `.name`, `.arguments`, `.id`, and a `function_result` input with `call_id` plus `previous_interaction_id`. The full migration page (read Oct 17) says `generateContent` "remains fully supported" with no deprecation date given, and recommends the **Interactions API for all new development**. Decision for A1: default to Interactions and cite that page. |
 | OpenAI | `openai` (3.33.0); `from openai import OpenAI` | `gpt-6-astra` (the id used in the function-calling guide examples). Unknown: whether it is the cheapest sensible default; A1 may choose a smaller id only if the docs name one. | **Responses API** (`client.responses.create(model, input, tools)`); tools are dicts `{"type":"function","name","description","parameters"}`; tool calls are `function_call` items in `response.output`; reply with `{"type":"function_call_output","call_id","output"}` items. The guide says some models require the Responses API; Chat Completions is shown with another model. |
 | Anthropic | `anthropic` (1.15.0); `anthropic.Anthropic()` | `claude-sonnet-5-5` (confirmed on the models overview: "Claude API ID" row; $2 / $10 per MTok input/output). Cheaper option: `claude-haiku-5-5` (confirmed; from $0.10 / $0.50). | `client.messages.create(model, max_tokens, tools=[{"name","description","input_schema"}], messages)`; reply has `tool_use` blocks (`stop_reason: "tool_use"`); send back a user message with `tool_result` blocks (`tool_use_id`, `content`). |
+| Groq | none new: the installed `openai` SDK with `base_url="https://api.groq.com/openai/v1"` (the openai compatibility page) | `llama-3.3-70b-versatile`: listed under Production Models (context 131,072, max completion 32,768) and on the tool-use page with local tool use and parallel tool use. The gpt-oss production models do no parallel tool use. Free-tier RPM/TPM: **unknown** (the rate-limits page shows the Developer plan only). Keys: https://console.groq.com/keys | **Chat Completions** with `tools=[{"type":"function","function":{name,description,parameters}}]`; reply has `message.tool_calls[]` (`id`, `function.name`, `function.arguments` as a JSON string); send back `{"role":"tool","tool_call_id","content"}`. No `messages[].name` (a 400 per the compatibility page). Bad key 401, rate limit 429 (+ `retry-after`). |
 
 ## Gemini free-tier limits (as documented)
 

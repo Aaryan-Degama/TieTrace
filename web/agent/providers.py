@@ -1,4 +1,4 @@
-"""One neutral turn() for three vendors, each through its OFFICIAL SDK (docs: docs/test-keys.md).
+"""One neutral turn() for four vendors, each through its OFFICIAL SDK (docs: docs/test-keys.md).
 
 The key is an argument of turn(): the SDK client is built per call and never stored. Errors are rebuilt from the
 status KIND only, so no response body (which may echo the key) can reach a message, a log or the page.
@@ -70,7 +70,7 @@ def _classify(provider: str, e: Exception) -> ProviderError:
     name = type(e).__name__
     if status in (401, 403) or (status == 400 and _bad_key_reason(getattr(e, "body", None))):
         code = "BAD_KEY"
-    elif status == 429:
+    elif status in (429, 498):  # 498: Groq's "flex tier at capacity" (https://console.groq.com/docs/errors)
         code = "RATE_LIMIT"
     elif status is not None:
         code = "PROVIDER_DOWN" if status >= 500 else "BAD_REPLY"
@@ -274,7 +274,62 @@ class ClaudeProvider(Provider):
                     [_dump(b) for b in r.content or []])
 
 
-_PROVIDERS = {"gemini": GeminiProvider, "openai": OpenAIProvider, "claude": ClaudeProvider}
+class GroqProvider(Provider):
+    """Groq's OpenAI-compatible Chat Completions (https://console.groq.com/docs/openai, /docs/tool-use), through the
+    openai SDK with base_url set: assistant tool_calls go back as they came, results are role "tool" + tool_call_id."""
+    name = "groq"
+    BASE_URL = "https://api.groq.com/openai/v1"
+
+    @classmethod
+    def _default_factory(cls, key):
+        from openai import AsyncOpenAI
+        return AsyncOpenAI(api_key=key, base_url=cls.BASE_URL, max_retries=0)
+
+    def _messages(self, system, messages):
+        out = [{"role": "system", "content": system}]
+        for m in messages:
+            if m["role"] == "user":
+                out.append({"role": "user", "content": m["text"]})
+            elif m["role"] == "assistant":
+                if isinstance(m.get("raw"), list):
+                    out += m["raw"]
+                    continue
+                out.append(self._assistant(m.get("text") or "", m.get("calls", [])))
+            else:
+                out.append({"role": "tool", "tool_call_id": m["call_id"], "content": m["result"]})
+        return out
+
+    @staticmethod
+    def _assistant(text, calls):
+        msg = {"role": "assistant"}
+        if text or not calls:  # a calls-only turn leaves content out, as on https://console.groq.com/docs/tool-use
+            msg["content"] = text
+        if calls:
+            msg["tool_calls"] = [{"id": c.id, "type": "function",
+                                  "function": {"name": c.name, "arguments": json.dumps(c.args)}} for c in calls]
+        return msg
+
+    async def _call(self, client, system, messages, tools):
+        r = await client.chat.completions.create(
+            model=self.model, messages=self._messages(system, messages), timeout=60,
+            max_completion_tokens=self.max_tokens,
+            tools=[{"type": "function", "function": {"name": t.name, "description": t.description, "parameters": t.schema}}
+                   for t in tools])
+        if not r.choices:
+            raise _err(self.name, "BAD_REPLY")
+        ch = r.choices[0]
+        msg = ch.message
+        calls = [ToolCall(tc.id, tc.function.name, _args(self.name, tc.function.arguments or "{}"))
+                 for tc in (msg.tool_calls or [])]
+        text = msg.content or ""
+        stop = "tool_use" if calls else {"stop": "end", "length": "length"}.get(ch.finish_reason, "other")
+        u = r.usage
+        # raw is rebuilt from the parsed fields only, so nothing Groq adds to the message is sent back
+        return Turn(text, calls, stop, getattr(u, "prompt_tokens", 0) or 0, getattr(u, "completion_tokens", 0) or 0,
+                    [self._assistant(text, calls)])
+
+
+_PROVIDERS = {"gemini": GeminiProvider, "openai": OpenAIProvider, "claude": ClaudeProvider, "groq": GroqProvider}
 
 
 def get_provider(name: str, client_factory=None) -> Provider:

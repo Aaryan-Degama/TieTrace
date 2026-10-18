@@ -1,5 +1,6 @@
 {
   "gemini": {"label": "Google Gemini (free tier)", "model": "gemini-3.8-flash", "token_cap": 50000, "turn_max_tokens": 2048, "turn_timeout_s": 90},
   "claude": {"label": "Anthropic Claude", "model": "claude-sonnet-5-5", "token_cap": 50000, "turn_max_tokens": 2048, "turn_timeout_s": 90},
-  "openai": {"label": "OpenAI", "model": "gpt-6-astra", "token_cap": 50000, "turn_max_tokens": 8192, "turn_timeout_s": 90}
+  "openai": {"label": "OpenAI", "model": "gpt-6-astra", "token_cap": 50000, "turn_max_tokens": 8192, "turn_timeout_s": 90},
+  "groq": {"label": "Groq (free tier)", "model": "llama-3.3-70b-versatile", "token_cap": 50000, "turn_max_tokens": 2048, "turn_timeout_s": 90}
 }

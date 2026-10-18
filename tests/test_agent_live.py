@@ -2,7 +2,7 @@
 
 Run:  AGENT_LIVE=1 uv run python tests/test_agent_live.py
 Gemini reads GEMINI_API_KEY from the git-ignored .env (in-process, never printed). Claude and OpenAI run only if
-TEST_KEY_CLAUDE / TEST_KEY_OPENAI are set in the shell, else "not run: no key". A 429 stops the whole run (no retry).
+TEST_KEY_CLAUDE / TEST_KEY_OPENAI / GROQ_API_KEY are set in the shell, else "not run: no key". A 429 stops the whole run (no retry).
 Everything printed goes through say(), which fails the run if a key value would appear.
 """
 import asyncio
@@ -168,4 +168,5 @@ if __name__ == "__main__":
     live_agent()
     run("claude", "TEST_KEY_CLAUDE")
     run("openai", "TEST_KEY_OPENAI")
+    run("groq", "GROQ_API_KEY")  # added by Aaryan's Builder, Oct 18
     say("done; no key value was printed")
