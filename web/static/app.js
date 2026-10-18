@@ -1,4 +1,4 @@
-// TieTrace chat page (WebApp.md W4, W5). Plain JS, no build step.
+// TieTrace chat page (WebApp.md W4, W5; chat layout and browser-only history added by Aaryan, Oct 18). Plain JS, no build step.
 // Everything from the server is put on the page with textContent, never innerHTML.
 "use strict";
 
@@ -55,22 +55,44 @@ const scrollDown = () => { messages.scrollTop = messages.scrollHeight; };
 // ---------- asking ----------
 
 document.querySelectorAll(".example").forEach((b) =>
-  b.addEventListener("click", () => { storyBox.value = b.dataset.story; storyBox.focus(); }));
+  b.addEventListener("click", () => { storyBox.value = b.dataset.story; closeDrawer(); storyBox.focus(); }));
 
 form.addEventListener("submit", (ev) => {
   ev.preventDefault();
   const story = storyBox.value.trim();
-  if (story && !busy) { storyBox.value = ""; ask(story, sessionId); }
+  if (!story || busy) return;
+  // An old check the server can no longer continue: this message starts a new check instead.
+  if (current && current.expired) newCheck();
+  storyBox.value = ""; ask(story, sessionId);
 });
+// Enter sends, Shift+Enter starts a new line (as in most chat apps).
+storyBox.addEventListener("keydown", (ev) => {
+  if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); form.requestSubmit(); }
+});
+
+function userMsg(text) { messages.append(el("div", { class: "msg user", text })); }
+function newReply() {
+  const reply = { box: el("div", { class: "msg reply" }), cards: el("div", { class: "cards" }), byId: Object.create(null) };
+  reply.box.append(reply.cards);   // byId has no prototype: an expert_id of "__proto__" stays a plain key
+  messages.append(reply.box);
+  return reply;
+}
 
 async function ask(story, sid) {
   let reader = null;
   busy = true; sendBtn.disabled = true; statusEl.textContent = "Checking… this can take a minute or two.";
-  $("hero").hidden = true;
-  messages.append(el("div", { class: "msg user", text: story }));
-  const reply = { box: el("div", { class: "msg reply" }), cards: el("div", { class: "cards" }), byId: {} };
-  reply.box.append(reply.cards);
-  messages.append(reply.box); scrollDown();
+  setEmpty(false);
+  // History: the story and every event shown are kept with this conversation (never the API key).
+  const conv = current || startConv(story);
+  conv.provider = provSel.value;
+  conv.items.push({ role: "user", text: story });
+  const rec = { role: "reply", events: [] };
+  conv.items.push(rec);
+  saveHistory(); renderHistory();
+  userMsg(story);
+  const reply = newReply();
+  reply.events = rec.events;
+  scrollDown();
   try {
     const prov = provSel.value, headers = { "Content-Type": "application/json" };
     const key = keyInput.value.trim();
@@ -80,8 +102,7 @@ async function ask(story, sid) {
       : await fetch("/api/agent/ask", { method: "POST", headers, body: JSON.stringify({ provider: prov, story, session_id: sid }) });
     if (!res.ok || !res.body) {
       const j = await res.json().catch(() => ({}));
-      showError(reply, (j.error && j.error.message) || `The server said ${res.status}.`);
-      keyFail(j.error && j.error.code);
+      handle(reply, "error", { message: (j.error && j.error.message) || `The server said ${res.status}.`, code: j.error && j.error.code });
       return;
     }
     reader = res.body.getReader();
@@ -99,20 +120,35 @@ async function ask(story, sid) {
       }
     }
   } catch (e) {
-    showError(reply, "Lost the connection to the TieTrace web server. Is it still running?");
+    handle(reply, "error", { message: "Lost the connection to the TieTrace web server. Is it still running?" });
   } finally {
     if (reader) reader.cancel().catch(() => {});  // stop reading (and let the server stop claude) on any exit
+    if (rec.events.some((e) => e[0] === "error" && e[1] && e[1].code === "SESSION_EXPIRED")) {
+      conv.expired = true; sessionId = null;   // the server no longer holds this session's names to hide
+    }
+    conv.session_id = conv.expired ? null : sessionId; saveHistory();
     busy = false; sendBtn.disabled = false; statusEl.textContent = ""; scrollDown();
   }
 }
 
+let replaying = false;   // true while a saved conversation is redrawn: no key handling, nothing saved again
 function handle(reply, event, d) {
-  if (event === "step") step(d);
+  if (reply.events && !replaying) { reply.events.push([event, d]); saveHistory(); }
+  if (event === "step") { autoEvidence(); step(d); }
   else if (event === "expert") card(reply, d);
   else if (event === "ambiguous") picker(reply, d);
   else if (event === "note") note(reply, d);
   else if (event === "text") replyText(reply, d.text);
-  else if (event === "error") { showError(reply, d.message); if (d.code === "AUTH" && provSel.value === "local") authHelp(reply.box); keyFail(d.code); }
+  else if (event === "error") {
+    showError(reply, d.message);
+    if (d.code === "SESSION_EXPIRED") {
+      const b = el("button", { type: "button", class: "primary", text: "Start a new check" });
+      b.addEventListener("click", () => { if (newCheck()) storyBox.focus(); });
+      reply.box.append(b);
+    }
+    if (d.code === "AUTH" && provSel.value === "local") authHelp(reply.box);
+    if (!replaying) keyFail(d.code);
+  }
   else if (event === "warning") reply.box.append(el("div", { class: "msg error", role: "status", text: d.message }));
   else if (event === "done") sessionId = d.session_id || sessionId;
   scrollDown();
@@ -264,6 +300,8 @@ function picker(reply, d) {
       const chosen = box.querySelector("input:checked");
       if (!chosen || busy) return;
       btn.disabled = true;
+      // An expired check cannot be continued: the new session would not know the story.
+      if (current && current.expired) { btn.textContent = "Too old to continue: start a new check"; return; }
       ask(`For ${d.name_ref}, use OpenAlex author ${chosen.value}. Continue the check.`, sessionId);
     });
   }
@@ -340,3 +378,156 @@ function excludeButton(li, doi, kase) {
   });
   return b;
 }
+
+// ---------- history: past conversations, kept in this browser only ----------
+// Each conversation is { id, title, created, provider, session_id, items }, where items are the reporter's messages
+// ({ role: "user", text }) and the server events each reply showed ({ role: "reply", events: [[event, data], ...] }).
+// Only what the page already shows is kept (experts are "Expert #n"; the server strips ORCIDs and institutions).
+// The API key is never part of it: nothing in this section touches the key box. Every storage call is in try/catch,
+// so the page works the same when storage is off or full.
+const HISTORY_KEY = "tietrace.history.v1", HISTORY_MAX = 50;  // ponytail: newest 50 kept; raise if reporters need more
+const historyList = $("history"), historyEmpty = $("history-empty"), search = $("sb-search");
+let convs = loadHistory(), current = null;
+
+function loadHistory() {
+  try {
+    const v = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
+    if (!Array.isArray(v)) return [];
+    return v.filter((c) => c && typeof c === "object" && typeof c.id === "string" && Array.isArray(c.items))
+      .map((c) => ({ ...c, title: typeof c.title === "string" ? c.title : "Story check" }));
+  } catch (e) { return []; }
+}
+function saveHistory() {
+  convs = convs.slice(0, HISTORY_MAX);
+  for (;;) {
+    try { localStorage.setItem(HISTORY_KEY, JSON.stringify(convs)); return; }
+    catch (e) { if (convs.length <= 1) return; convs.pop(); }   // full: drop the oldest and try again
+  }
+}
+
+// A safe title: the company and topic the story names (never a person's name), else a plain "Story check".
+// ponytail: matches the loaded cases only; add a pair here when a new case is built.
+const TITLE_COMPANIES = [[/coca[\s-]?cola|\bcoke\b/i, "Coca-Cola"], [/philip\s+morris|\bpmi\b/i, "Philip Morris"]];
+const TITLE_TOPICS = [[/obes|weight|diet/i, "obesity"], [/lung\s+cancer/i, "lung cancer"], [/tobacco|smok/i, "tobacco"]];
+function titleOf(story) {
+  const find = (list) => (list.find(([re]) => re.test(story)) || [])[1];
+  const company = find(TITLE_COMPANIES), topic = find(TITLE_TOPICS);
+  return company && topic ? `${company} × ${topic}` : company || (topic ? `Story on ${topic}` : "Story check");
+}
+function startConv(story) {
+  const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  current = { id, title: titleOf(story), created: Date.now(), provider: provSel.value, session_id: null, items: [] };
+  convs.unshift(current);
+  return current;
+}
+
+const rtf = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
+function ago(t) {
+  const s = (Number(t) - Date.now()) / 1000;
+  for (const [unit, n] of [["year", 31536000], ["month", 2592000], ["week", 604800], ["day", 86400], ["hour", 3600], ["minute", 60]])
+    if (Math.abs(s) >= n) return rtf.format(Math.round(s / n), unit);
+  return "just now";
+}
+
+function renderHistory() {
+  const q = search.value.trim().toLowerCase();
+  const shown = convs.filter((c) => !q || String(c.title).toLowerCase().includes(q));
+  historyList.replaceChildren(...shown.map((c) => {
+    const title = String(c.title), when = ago(c.created);
+    const open = el("button", { type: "button", class: "open", title: `${title} · ${when}`, "aria-label": `${title}, ${when}`, text: title });
+    open.addEventListener("click", () => openConv(c));
+    const del = el("button", { type: "button", class: "del", text: "×", "aria-label": `Delete the check ${title}` });
+    del.addEventListener("click", () => deleteConv(c));
+    const li = el("li", {}, open, del);
+    if (c === current) li.setAttribute("aria-current", "true");
+    return li;
+  }));
+  historyEmpty.hidden = shown.length > 0;
+  historyEmpty.textContent = convs.length ? "No checks match." : "No saved checks yet.";
+  $("top-title").textContent = current ? String(current.title) : "";
+}
+
+function setEmpty(on) { document.body.classList.toggle("is-empty", on); $("hero").hidden = !on; }
+function clearView() {
+  messages.replaceChildren($("hero"));
+  steps.replaceChildren(); $("ev-empty").hidden = false;
+  for (const k of Object.keys(running)) delete running[k];
+  setEmpty(true);
+}
+// Returns false while a check is running: switching then would mix two runs on one page.
+function newCheck() {
+  if (busy) { statusEl.textContent = "Wait for the running check to finish first."; return false; }
+  current = null; sessionId = null; clearView(); renderHistory(); closeDrawer(); storyBox.focus();
+  return true;
+}
+function openConv(c) {
+  if (busy) { statusEl.textContent = "Wait for the running check to finish first."; return; }
+  clearView(); current = c;
+  // The saved provider comes back; a key typed for another provider is never sent to this one.
+  if (c.provider && c.provider !== provSel.value && [...provSel.options].some((o) => o.value === c.provider)) {
+    provSel.value = c.provider; provSel.dispatchEvent(new Event("change"));   // the change handler clears the key box
+  }
+  replaying = true;
+  try {
+    for (const it of c.items) {
+      if (it.role === "user") userMsg(String(it.text));
+      else if (it.role === "reply" && Array.isArray(it.events)) {
+        const r = newReply();
+        for (const ev of it.events) {
+          try { if (Array.isArray(ev)) handle(r, String(ev[0]), ev[1] || {}); }
+          catch (e) { /* an odd stored shape: skip that one event, draw the rest */ }
+        }
+      }
+    }
+  } finally { replaying = false; }
+  sessionId = c.session_id || null;   // a follow-up continues the same session
+  setEmpty(c.items.length === 0);
+  renderHistory(); closeDrawer(); scrollDown();
+}
+function deleteConv(c) {
+  if (busy) { statusEl.textContent = "Wait for the running check to finish first."; return; }
+  if (!confirm(`Delete "${c.title}" from this browser?`)) return;
+  convs = convs.filter((x) => x !== c); saveHistory();
+  if (c === current) { if (!newCheck()) current = null; }
+  renderHistory();
+}
+$("clear-all").addEventListener("click", () => {
+  if (busy) { statusEl.textContent = "Wait for the running check to finish first."; return; }
+  if (!convs.length || !confirm("Delete every saved check from this browser?")) return;
+  convs = [];
+  try { localStorage.removeItem(HISTORY_KEY); } catch (e) { /* storage off: nothing was saved */ }
+  if (!newCheck()) current = null;
+  renderHistory();
+});
+$("new-check").addEventListener("click", newCheck);
+search.addEventListener("input", renderHistory);
+
+// ---------- sidebar and evidence panel toggles ----------
+const narrow = matchMedia("(max-width: 900px)");
+const sbToggle = $("sb-toggle"), sbOpen = $("sb-open"), evPanel = $("evidence"), evToggle = $("ev-toggle");
+function closeDrawer() { if (narrow.matches) setSidebar(false); }
+function setSidebar(open) {
+  if (narrow.matches) document.body.classList.toggle("sb-open", open);
+  else document.body.classList.toggle("sb-collapsed", !open);
+  $("scrim").hidden = !(narrow.matches && open);
+  $("sidebar").inert = narrow.matches && !open;   // a closed drawer is out of the Tab order
+  sbOpen.setAttribute("aria-expanded", String(open)); sbToggle.setAttribute("aria-expanded", String(open));
+}
+sbToggle.addEventListener("click", () => { setSidebar(false); sbOpen.focus(); });
+sbOpen.addEventListener("click", () => { setSidebar(true); sbToggle.focus(); });
+$("scrim").addEventListener("click", () => setSidebar(false));
+narrow.addEventListener("change", () => { document.body.classList.remove("sb-open", "sb-collapsed"); setSidebar(!narrow.matches); });
+setSidebar(!narrow.matches);
+addEventListener("keydown", (ev) => { if (ev.key === "Escape" && document.body.classList.contains("sb-open")) setSidebar(false); });
+let evTouched = false;
+function setEvidence(open) {
+  evPanel.hidden = !open;
+  evToggle.setAttribute("aria-expanded", String(open));
+  evToggle.setAttribute("aria-label", open ? "Hide the evidence panel" : "Show the evidence panel");
+}
+evToggle.addEventListener("click", () => { evTouched = true; setEvidence(evPanel.hidden); });
+$("ev-close").addEventListener("click", () => { evTouched = true; setEvidence(false); evToggle.focus(); });
+// The first live tool step opens the panel on a wide screen, unless the reporter has already opened or closed it.
+function autoEvidence() { if (!replaying && !evTouched && !narrow.matches) { evTouched = true; setEvidence(true); } }
+
+renderHistory();

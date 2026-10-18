@@ -1,6 +1,6 @@
 # TieTrace web app: design plan
 
-*Last updated by Aaryan, Oct 17 2026: section 8 decided (O1-O4); W1-W6 built in `web/` and `tests/test_web.py`. Earlier, Abdul, Oct 17 2026: first version, from the brainstorming session with Claude Code (layout and look chosen by Abdul in mockups).*
+*Last updated by Aaryan, Oct 18 2026: chat-app layout and browser-only history (section 3.1). Earlier, Aaryan, Oct 17 2026: section 8 decided (O1-O4); W1-W6 built in `web/` and `tests/test_web.py`. Earlier, Abdul, Oct 17 2026: first version, from the brainstorming session with Claude Code (layout and look chosen by Abdul in mockups).*
 
 **This is the file to follow for the web app.** `checklist_phase2.md` section P2-W points here. Items marked **(Abdul decided)** were chosen by Abdul in the brainstorm; items marked **(Claude's default)** are proposals nobody has agreed to yet; change them freely.
 
@@ -18,7 +18,7 @@ Judges and other people should be able to see and use TieTrace without Claude Co
 - A **deployable version** with a free-tier hosted model is planned now but built last (Abdul decided).
 
 **Non-goals**
-- No accounts, no database of its own, no user history beyond the existing newsroom memory graph.
+- No accounts, no database of its own, no server-side user history beyond the existing newsroom memory graph. Past conversations are kept only in the reporter's own browser (`localStorage`), never on the server and never with an API key (decided by Aaryan, Oct 18).
 - No new analysis, tiers or tools; no editing of data.
 - No public hosting in phase A.
 
@@ -32,6 +32,7 @@ Judges and other people should be able to see and use TieTrace without Claude Co
 ## 3. What the user sees
 
 ### 3.1 Chat page (Abdul decided: layout B, dark look)
+**Oct 18 layout (decided by Aaryan):** a chat-app layout. Left sidebar (collapsible; a drawer on phones): wordmark, search over past checks, "New check", links (How it works, Cases, Methodology, Boundaries), "Recents" and "Saved in this browser only.". Empty state: a centred serif greeting, a wide rounded composer (provider picker bottom-left, send button bottom-right, Enter sends, Shift+Enter is a new line), the example chips, and Abdul's landing sections below the fold. In a conversation: a centred thread (the story right-aligned, replies and cards left-aligned) with the composer pinned at the bottom. The evidence panel is toggled from the top-right icon and opens by itself on the first tool step on a wide screen. History: each conversation keeps its title (company × topic from the story, never a name), the story, the server events each reply showed, the `session_id` and the provider, so a click redraws it and a follow-up continues the same session; delete per check and "Clear all". A redrawn check's Approve and Exclude buttons are live again, each still behind a fresh one-time confirm; what was already approved or excluded is in the newsroom memory, not in the browser. **On a shared machine** the reporter's own story text stays in this browser until deleted, so use Clear all. **An old session is never continued:** the app holds the names to hide for 6 h and loses them on a restart, so `/api/ask` and `/api/agent/ask` refuse a session they no longer hold (410, "This check is too old to continue; start a new check") and the page offers a new check (decided by Aaryan, Oct 18, after review). The footer line is shown under the composer in both states.
 - Left: chat. The reporter pastes a story; replies appear as one card per expert with a **tier chip** (A1, A2, B, C, NONE), the DOIs as links, and for any NONE the scope line. No thick coloured side borders (a known generic look); use a chip and a quiet tint.
 - Right: **live evidence panel**: pipeline steps as they run (`resolve_experts`, `check_case`, `check_no_tie`, ...), and the exact Cypher each tool returned in its envelope (`cypher` field), in a monospace block.
 - "Try an example" buttons: Coca-Cola × obesity (GEBN) and Philip Morris × lung cancer.

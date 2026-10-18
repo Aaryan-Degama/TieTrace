@@ -18,6 +18,7 @@ import sys
 import tempfile
 import time
 import traceback
+import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -128,6 +129,240 @@ def test_pages_are_accessible_basics():
             assert 'aria-hidden="true"' in svg or "aria-label=" in svg, (url, svg)
     index = pages()["/"]
     assert '<label for="story">' in index and 'id="story"' in index and 'aria-live="polite"' in index
+
+
+# ---------- chat layout and browser-only history (Aaryan, Oct 18) ----------
+
+def test_sidebar_markup_and_new_text_have_no_banned_words():
+    index = pages()["/"]
+    for needle in ('id="sidebar"', 'id="new-check"', 'id="history"', 'id="sb-search"', 'id="clear-all"',
+                   "Saved in this browser only.", 'href="how.html"', 'aria-controls="evidence"', 'id="evidence"',
+                   'aria-label="Run check"', 'id="provider"', 'id="apikey"'):
+        assert needle in index, needle
+    for url in ("/landing.js", "/landing.css"):
+        r = CLIENT.get(url)
+        assert r.status_code == 200 and not BANNED.search(r.text), url
+    assert "verdict words" in visible_text(index)  # the reworded protocol line
+
+
+def test_history_script_never_stores_the_api_key_and_guards_every_storage_call():
+    js = (w.STATIC / "app.js").read_text(encoding="utf-8")
+    hist = js[js.index("// ---------- history"):js.index("// ---------- sidebar and evidence")]
+    assert "localStorage.setItem" in hist and "localStorage.getItem" in hist
+    for bad in ("keyInput", "apikey", "X-Provider-Key", "headers"):
+        assert bad not in hist, bad  # the history code never touches the key box or the request
+    outside = js.replace(hist, "")
+    assert "localStorage" not in outside, "storage is used only by the history section"
+    for bad in ("sessionStorage", "indexedDB", "document.cookie"):
+        assert bad not in js, bad
+    lines = js.splitlines()
+    for i, line in enumerate(lines):
+        if "localStorage" in line and "//" not in line.split("localStorage")[0]:
+            assert "try" in line or lines[i - 1].rstrip().endswith("try {"), (i + 1, line)
+    # the key is read in exactly one place: the request header of the run
+    assert js.count("keyInput.value.trim()") == 1 and "headers[\"X-Provider-Key\"] = key" in js
+
+
+_REPORT = r"""
+window.__report = (obj) => {  // inside the phone iframe the result goes to the outer page, which --dump-dom prints
+  if (window.parent !== window) { window.parent.postMessage(JSON.stringify(obj), "*"); return; }
+  const out = document.createElement("pre"); out.id = "RESULT"; out.textContent = JSON.stringify(obj); document.body.append(out);
+};
+"""
+
+
+def _run_page(pre, harness, width=1280):
+    """Runs the real page from files with `pre` before app.js and `harness` after landing.js. A width under 500 is
+    a phone: headless Chrome will not make a window that narrow, so the page runs in an iframe of that width."""
+    chrome = next((c for c in ("google-chrome", "chromium", "chromium-browser") if shutil.which(c)), None)
+    if not chrome:
+        return None
+    d = Path(tempfile.mkdtemp(prefix="zz-test-web-"))
+    for n in ("index.html", "app.js", "style.css", "landing.css", "landing.js"):
+        (d / n).write_text((ROOT / "web" / "static" / n).read_text(encoding="utf-8"), encoding="utf-8")
+    (d / "pre.js").write_text(_REPORT + pre, encoding="utf-8")
+    (d / "harness.js").write_text(harness, encoding="utf-8")
+    page = (d / "index.html").read_text(encoding="utf-8")
+    page = page.replace('<script src="app.js"></script>', '<script src="pre.js"></script><script src="app.js"></script>')
+    page = page.replace('<script src="landing.js"></script>', '<script src="landing.js"></script><script src="harness.js"></script>')
+    (d / "test.html").write_text(page, encoding="utf-8")
+    start = "test.html"
+    if width < 500:
+        (d / "outer.html").write_text(
+            f'<!doctype html><body style="margin:0"><iframe src="test.html" width="{width}" height="800" style="border:0">'
+            '</iframe><script>addEventListener("message", (e) => { const o = document.createElement("pre"); o.id = "RESULT";'
+            ' o.textContent = e.data; document.body.append(o); });</script></body>', encoding="utf-8")
+        start = "outer.html"
+    dom = os.popen(f"timeout 60 {chrome} --headless=new --disable-gpu --no-sandbox --user-data-dir={d / 'profile'} "
+                   f"--window-size={max(width, 800)},900 --virtual-time-budget=8000 --dump-dom file://{d / start} 2>/dev/null").read()
+    m = re.search(r'<pre id="RESULT">(.*?)</pre>', dom, re.S)
+    assert m, dom[-800:]
+    return json.loads(html.unescape(m.group(1)))
+
+
+_FAKE_SERVER = r"""
+window.__bodies = []; window.__errors = [];
+addEventListener("error", (e) => window.__errors.push(String(e.message)));
+window.fetch = async (url, opt) => {
+  if (url === "/api/agent/providers") return new Response(JSON.stringify({ providers: [], host_gemini: false, local_claude: false }));
+  window.__bodies.push({ url, body: JSON.parse(opt.body), key: opt.headers["X-Provider-Key"] || null });
+  const ev = (e, d) => `event: ${e}\ndata: ${JSON.stringify(d)}\n\n`;
+  return new Response(ev("step", { tool: "check_case", status: "running" }) + ev("step", { tool: "check_case", ok: true, cypher: [] })
+    + ev("expert", { expert_id: "e1", label: "Expert #1", tier: "A1", tier_basis: "test basis" })
+    + ev("text", { text: "**Expert #1**: ties found in the research record." }) + ev("done", { session_id: "sess-9" }));
+};
+"""
+_HISTORY_HARNESS = r"""
+(async () => {
+  const wait = async (n) => { for (let i = 0; i < 400 && (busy || __bodies.length < n); i++) await new Promise((r) => setTimeout(r, 10)); };
+  const stored = () => { try { return localStorage.getItem("tietrace.history.v1"); } catch (e) { return "OFF"; } };
+  keyInput.value = "sk-SECRET-123"; provSel.value = "gemini"; syncKeyBox();
+  storyBox.value = "Story: Coca-Cola and obesity. It quotes Jane Roe on diet."; form.requestSubmit(); await wait(1);
+  const raw = stored();
+  newCheck();
+  const cleared = document.body.classList.contains("is-empty") && messages.querySelectorAll(".msg").length === 0 && steps.children.length === 0;
+  provSel.value = "openai"; keyInput.value = "sk-OTHER-456";   // a key typed for another provider
+  openConv(convs[0]);
+  const switched = { prov: provSel.value, key: keyInput.value };
+  const redraw = { user: [...messages.querySelectorAll(".msg.user")].map((x) => x.textContent), cards: messages.querySelectorAll(".card").length,
+    steps: steps.children.length, sid: sessionId, rows: [...historyList.querySelectorAll(".open")].map((b) => b.textContent),
+    empty: document.body.classList.contains("is-empty") };
+  storyBox.value = "Follow-up question"; form.requestSubmit(); await wait(2);
+  const raw2 = stored();
+  __report({ raw, raw2, cleared, redraw, switched, bodies: __bodies, errors: __errors, convs: convs.length,
+    items: convs[0] && convs[0].items.length, overflow: document.documentElement.scrollWidth > innerWidth,
+    width: innerWidth, drawerInert: document.getElementById("sidebar").inert });
+})();
+"""
+
+
+def test_a_saved_conversation_redraws_continues_and_never_holds_the_key():
+    got = _run_page(_FAKE_SERVER, _HISTORY_HARNESS)
+    if got is None:
+        print("      (skipped: no Chrome)")
+        return "SKIP"
+    assert got["errors"] == [], got["errors"]
+    assert got["raw"] and "SECRET" not in got["raw"] and "SECRET" not in got["raw2"], got["raw"]
+    assert got["bodies"][0]["key"] == "sk-SECRET-123"  # the key still goes with the request, only never into storage
+    saved = json.loads(got["raw2"])
+    assert len(saved) == 1 and saved[0]["title"] == "Coca-Cola × obesity" and "Jane" not in saved[0]["title"], saved
+    assert saved[0]["session_id"] == "sess-9" and saved[0]["provider"] == "gemini" and len(saved[0]["items"]) == 4
+    assert got["cleared"], got
+    r = got["redraw"]
+    assert r["user"] == ["Story: Coca-Cola and obesity. It quotes Jane Roe on diet."] and r["cards"] == 1 and r["steps"] == 1, r
+    assert r["sid"] == "sess-9" and r["rows"] == ["Coca-Cola × obesity"] and r["empty"] is False, r
+    assert got["bodies"][1]["body"]["session_id"] == "sess-9", got["bodies"]  # the follow-up continues the session
+    assert got["convs"] == 1 and got["items"] == 4 and got["overflow"] is False, got
+    assert got["switched"] == {"prov": "gemini", "key": ""}, got  # reopening never sends another provider's key
+    assert got["bodies"][1]["key"] is None and "OTHER" not in got["raw2"], got
+
+
+def test_the_page_works_with_storage_switched_off_and_on_a_phone():
+    off = 'Object.defineProperty(window, "localStorage", { get() { throw new Error("storage off"); } });\n'
+    got = _run_page(off + _FAKE_SERVER, _HISTORY_HARNESS, width=390)
+    if got is None:
+        print("      (skipped: no Chrome)")
+        return "SKIP"
+    assert got["errors"] == [] and got["raw"] == "OFF", got
+    assert got["redraw"]["cards"] == 1 and got["redraw"]["sid"] == "sess-9", got  # kept in memory for this visit
+    assert got["bodies"][1]["body"]["session_id"] == "sess-9" and got["overflow"] is False, got
+    assert got["width"] == 390 and got["drawerInert"] is True, got  # really a phone; the closed drawer is out of Tab
+
+
+_XSS_SEED = r"""
+const X = '<img src=x onerror="window.__pwn=1"><script>window.__pwn=2</script>';
+const evs = [
+  ["step", { tool: X, status: "running" }],
+  ["step", { tool: X, ok: false, error: { code: X, message: X }, scope: { graph: X, hops: X }, warnings: [X], verdicts_applied: [X],
+             cypher: [{ graph: X, query: X, params: X, runs: X }] }],
+  ["expert", { expert_id: "e1", label: X, tier: 'A1" onclick="window.__pwn=3', tier_basis: X,
+               evidence: [{ doi: "javascript:window.__pwn=4//", kind: X, via: X, tier: X, topic_label: X, year: X }],
+               no_tie: { result: "NO_TIE_FOUND", hops: X, years: X, query_name: X } }],
+  ["expert", { expert_id: "__proto__", label: "Expert #9", tier: "B", polluted: "yes" }],
+  ["ambiguous", { name_ref: X, status: "AMBIGUOUS", candidates: [{ expert_id: '"><img src=x onerror="window.__pwn=5">', works_on_topic: X }] }],
+  ["note", { note_id: X, status: "verified", rejections: [{ claim_index: X, reason: X }], preview: X }],
+  ["text", { text: X + "\n- **" + X + "**\n`" + X + "` 10.1234/x" }],
+  ["warning", { message: X }],
+  ["error", { message: X, code: X }],
+  ["done", { session_id: "22222222-2222-2222-2222-222222222222" }],
+];
+localStorage.setItem("tietrace.history.v1", JSON.stringify([
+  { id: "a", title: X, created: X, provider: "local", session_id: "22222222-2222-2222-2222-222222222222",
+    items: [{ role: "user", text: X }, { role: "reply", events: evs }] },
+  { id: "b", title: "odd shapes", created: 1, provider: "nope", session_id: null,
+    items: [{ role: "reply", events: [["text", "a string"], ["expert", { expert_id: "z", evidence: "notalist" }], 5, null,
+                                      ["text", { text: "still drawn" }]] }, { role: "user", text: { a: 1 } }] },
+  { id: "c", title: { toString: 1 }, items: [] },
+  { id: "d", title: "bad items", items: "bad" },
+  "garbage", null,
+]));
+"""
+_XSS_HARNESS = r"""
+(async () => {
+  const R = {};
+  R.rows = [...historyList.querySelectorAll(".open")].map((b) => b.textContent);
+  try { openConv(convs[0]); R.open0 = "ok"; } catch (e) { R.open0 = "threw " + e.message; }
+  const scope = "#messages, #steps, #history, #top-title";
+  R.bad = document.querySelectorAll(scope.split(", ").map((s) => `${s} img, ${s} script`).join(", ")).length;
+  R.on = [...document.querySelectorAll(scope.split(", ").map((s) => `${s} *`).join(", "))]
+    .filter((n) => [...n.attributes].some((a) => a.name.startsWith("on"))).length;
+  R.hrefs = [...document.querySelectorAll("#messages a")].map((a) => a.getAttribute("href"));
+  R.userText = messages.querySelector(".msg.user") && messages.querySelector(".msg.user").textContent;
+  R.cards = messages.querySelectorAll(".card").length;
+  R.polluted = ({}).polluted === "yes" || ({}).node !== undefined;
+  try { openConv(convs[1]); R.open1 = "ok"; } catch (e) { R.open1 = "threw " + e.message; }
+  R.odd = messages.textContent.includes("still drawn") && messages.textContent.includes("[object Object]");
+  R.replayingAfter = replaying;
+  await new Promise((r) => setTimeout(r, 200));
+  R.pwn = window.__pwn || null; R.errors = __errors; R.convs = convs.length;
+  __report(R);
+})();
+"""
+
+
+_EXPIRED_HARNESS = r"""
+(async () => {
+  const wait = async (n) => { for (let i = 0; i < 400 && (busy || __bodies.length < n); i++) await new Promise((r) => setTimeout(r, 10)); };
+  storyBox.value = "Story: Coca-Cola and obesity."; form.requestSubmit(); await wait(1);
+  const first = convs[0];
+  window.__expire = true;   // the next request gets the server's 410
+  storyBox.value = "Follow-up"; form.requestSubmit(); await wait(2);
+  const offer = [...messages.querySelectorAll("button")].some((b) => b.textContent === "Start a new check");
+  const after = { expired: first.expired === true, sid: first.session_id, page: sessionId };
+  window.__expire = false;
+  storyBox.value = "Another follow-up"; form.requestSubmit(); await wait(3);
+  __report({ offer, after, bodies: __bodies.map((b) => b.body.session_id ?? null), convs: convs.length,
+    newest: convs[0] !== first, errors: __errors });
+})();
+"""
+
+
+def test_an_expired_check_offers_a_new_check_instead_of_continuing():
+    pre = _FAKE_SERVER.replace("window.__bodies.push(", 'if (window.__expire) { window.__bodies.push({ body: JSON.parse(opt.body) }); '
+                               'return new Response(JSON.stringify({ ok: false, error: { code: "SESSION_EXPIRED", message: '
+                               '"This check is too old to continue; start a new check." } }), { status: 410 }); }\n  window.__bodies.push(')
+    got = _run_page(pre, _EXPIRED_HARNESS)
+    if got is None:
+        print("      (skipped: no Chrome)")
+        return "SKIP"
+    assert got["errors"] == [] and got["offer"] is True, got
+    assert got["after"] == {"expired": True, "sid": None, "page": None}, got
+    assert got["bodies"] == [None, "sess-9", None] and got["convs"] == 2 and got["newest"] is True, got
+
+
+def test_hostile_stored_history_is_drawn_as_text_only():
+    # UI round 2: localStorage is not trusted. Every field the replay draws carries markup or a script.
+    got = _run_page(_FAKE_SERVER + _XSS_SEED, _XSS_HARNESS)
+    if got is None:
+        print("      (skipped: no Chrome)")
+        return "SKIP"
+    assert got["open0"] == "ok" and got["open1"] == "ok" and got["errors"] == [], got
+    assert got["bad"] == 0 and got["on"] == 0 and got["pwn"] is None and got["polluted"] is False, got
+    assert got["hrefs"] and all(h.startswith("https://doi.org/") for h in got["hrefs"]), got
+    assert got["userText"].startswith("<img src=x") and got["cards"] >= 2, got  # shown as text, and the cards drew
+    assert got["odd"] is True and got["replayingAfter"] is False and got["convs"] == 3, got
+    assert got["rows"][0].startswith("<img") and "Story check" in got["rows"], got
+
 
 
 # ---------- the claude command ----------
@@ -605,6 +840,48 @@ def test_at_most_two_runs_at_once_and_the_slot_comes_back():
         assert after and after[0][1]["code"] != "BUSY", after
     finally:
         w.TIMEOUT_S = old_t
+
+
+def test_an_expired_or_unknown_session_is_never_resumed_and_a_live_one_is():
+    # UI round 2 (Reviewer's must-fix): the browser keeps session ids for days, the app keeps the names to hide for 6 h
+    # and loses them on a restart. "Jane Roe is Tier A1" must never come back from a resume without those names.
+    sid = "5e55e55e-0000-4000-8000-000000000001"
+    d = Path(tempfile.mkdtemp(prefix="zz-test-web-"))
+    marker = d / "resumed"
+    run1 = [{"type": "system", "subtype": "init", "session_id": sid, "mcp_servers": [{"name": "tietrace", "status": "connected"}]},
+            call("t1", "resolve_experts", {"names": ["Jane Roe"], "topic": "obesity"}),
+            {"type": "assistant", "message": {"content": [{"type": "text", "text": "Name #1 is ambiguous."}]}},
+            {"type": "result", "subtype": "success", "is_error": False}]
+    run2 = [run1[0], {"type": "assistant", "message": {"content": [{"type": "text", "text": "Jane Roe is Tier A1."}]}},
+            {"type": "result", "subtype": "success", "is_error": False}]
+    f, _ = _stand_in("import sys, pathlib\nr1, r2 = " + repr([json.dumps(x) for x in run1]) + ", " + repr([json.dumps(x) for x in run2])
+                     + f"\nif '--resume' in sys.argv: pathlib.Path({str(marker)!r}).write_text('x')"
+                     + "\nprint('\\n'.join(r2 if '--resume' in sys.argv else r1))")
+    try:
+        _with_claude(f, lambda: run_events(w.ask_events("Story quoting Jane Roe")))
+        assert w.session_known(sid)
+        live = _with_claude(f, lambda: run_events(w.ask_events("For Name #1, use OpenAlex author A1.", sid)))
+        assert marker.exists() and "text" in [e for e, _ in live] and not has_name(json.dumps(live), "Jane Roe"), live
+        marker.unlink()
+        with w._tlock:
+            w._session_names[sid] = (w._session_names[sid][0], time.time() - 1)  # six hours later
+        evs = _with_claude(f, lambda: run_events(w.ask_events("For Name #1, use OpenAlex author A1.", sid)))
+        assert evs == [("error", {"code": "SESSION_EXPIRED", "message": "This check is too old to continue; start a new check."})], evs
+        assert not marker.exists()  # claude was never resumed
+        r = _with_claude(f, lambda: CLIENT.post("/api/ask", json={"story": "go on", "session_id": sid}))
+        assert r.status_code == 410 and r.json()["error"]["code"] == "SESSION_EXPIRED" and not marker.exists(), r.text
+        r = CLIENT.post("/api/ask", json={"story": "go on", "session_id": str(uuid.uuid4())})  # never seen (or a restart)
+        assert r.status_code == 410 and r.json()["error"]["message"] == w.ERROR_TEXT["SESSION_EXPIRED"], r.text
+        # a session that named nobody is recorded too, so it can be continued
+        w.remember_names("5e55e55e-0000-4000-8000-000000000002", [])
+        assert w.session_known("5e55e55e-0000-4000-8000-000000000002")
+        js = (ROOT / "web" / "static" / "app.js").read_text(encoding="utf-8")  # the page offers a fresh check instead
+        assert 'd.code === "SESSION_EXPIRED"' in js and "Start a new check" in js and "current.expired) newCheck()" in js
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+        with w._tlock:
+            w._session_names.pop(sid, None)
+            w._session_names.pop("5e55e55e-0000-4000-8000-000000000002", None)
 
 
 def test_names_stay_redacted_after_a_name_pick_resumes_the_session():

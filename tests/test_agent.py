@@ -510,9 +510,33 @@ def test_bad_provider_story_and_session_id_are_clean_400s():
         assert post({"provider": "gemini", "story": "   "}).status_code == 400
         assert post({"provider": "gemini", "story": "x" * (w.MAX_STORY + 1)}).status_code == 400
         assert post({"provider": "gemini", "story": "x", "session_id": "not-a-uuid"}).status_code == 400
-        assert post({"provider": "gemini", "story": "x", "session_id": str(uuid.uuid4())}).status_code == 200
+        r = post({"provider": "gemini", "story": "x", "session_id": str(uuid.uuid4())})
+        assert r.status_code == 410 and r.json()["error"]["code"] == "SESSION_EXPIRED", r.text  # unknown: refused
+        assert post({"provider": "gemini", "story": "x"}).status_code == 200
         big = CLI.post("/api/agent/ask", content=b"x" * (w.MAX_BODY + 10))
         assert big.status_code == 413
+
+
+def test_an_expired_or_forgotten_session_is_refused_and_a_live_one_is_not():
+    # UI round 2: the browser keeps session ids for days; the app keeps the names to hide for 6 h and loses them on a
+    # restart. A follow-up on a session it no longer holds must be refused, never run with an empty name list.
+    with hooks(lambda n: Script([text_turn("first")])):
+        sid = sse_events(post({"provider": "gemini", "story": "x"}))[-1][1]["session_id"]
+    assert w.session_known(sid)
+    with hooks(lambda n: Script([text_turn("second")])):
+        live = post({"provider": "gemini", "story": "again", "session_id": sid})
+    assert live.status_code == 200 and sse_events(live)[-1][0] == "done", live.text
+    calls = []
+    with hooks(lambda n: calls.append(n) or Script([text_turn("must not run")])):
+        w._session_names[sid] = (["Jane Roe"], time.time() - 1)  # the names expired
+        r = post({"provider": "gemini", "story": "again", "session_id": sid})
+        assert r.status_code == 410 and r.json()["error"] == {"code": "SESSION_EXPIRED",
+                                                               "message": w.ERROR_TEXT["SESSION_EXPIRED"]}, r.text
+        w._session_names[sid] = (["Jane Roe"], time.time() + 60)
+        w._agent_sessions.pop(sid)  # a restart: the conversation is gone even though the names are back
+        r = post({"provider": "gemini", "story": "again", "session_id": sid})
+        assert r.status_code == 410 and r.json()["error"]["code"] == "SESSION_EXPIRED", r.text
+    assert calls == [] and sid not in w._agent_sessions  # no provider was asked and no empty session was made
 
 
 def test_sessions_are_bounded():
@@ -558,7 +582,8 @@ def test_attack_a_second_request_on_a_busy_session_gets_409():
             while not gate.is_set():
                 await asyncio.sleep(0.05)
             return await super().turn(system, messages, tools, key)
-    sid = uuid.uuid4().hex
+    with hooks(lambda n: Script([text_turn("first")])):  # a session the app really holds (an unknown id is refused)
+        sid = sse_events(post({"provider": "gemini", "story": "x"}))[-1][1]["session_id"]
     res = {}
 
     def first():
@@ -649,7 +674,12 @@ def test_page_has_a_provider_choice_and_a_password_field_for_the_key():
 
 def test_the_key_is_never_written_to_storage_or_the_url():
     js = _read("app.js")
-    assert not re.search(r"localStorage|sessionStorage|document\.cookie|indexedDB", js)   # nothing stored at all
+    # Oct 18 (Aaryan): past conversations are kept in localStorage on purpose. Storage stays banned everywhere except
+    # the history section, and that section never touches the key box or a request header.
+    hist = js[js.index("// ---------- history"):js.index("// ---------- sidebar and evidence")]
+    assert not re.search(r"localStorage|sessionStorage|document\.cookie|indexedDB", js.replace(hist, ""))
+    assert not re.search(r"sessionStorage|document\.cookie|indexedDB", hist)
+    assert not re.search(r"keyInput|apikey|X-Provider-Key|headers", hist), "history code touches the key"
     assert "X-Provider-Key" in js
     body = re.findall(r"body: JSON\.stringify\(([^)]*\))?", js)
     assert not any("key" in b.lower() for b in body), body                # never in a body

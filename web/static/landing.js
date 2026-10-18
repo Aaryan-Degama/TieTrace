@@ -1,18 +1,17 @@
-// Landing page: reveal on scroll, light parallax, and the hand-off into the chat view.
-// Shares app.js's top-level names (form, storyBox, keyBox, keyInput); load it after app.js.
+// Abdul's sections below the fold of the empty state: reveal on scroll, light parallax, and the last form hands its
+// story to the main composer. Shares app.js's top-level names (form, storyBox, newCheck); load it after app.js.
 "use strict";
 (() => {
-  const landing = document.getElementById("landing"), appRoot = document.getElementById("app");
+  const more = document.getElementById("more"), main = document.getElementById("main");
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  // Reveal blocks as they enter the viewport; the graph also draws its edges then.
   const io = new IntersectionObserver((entries) => {
     for (const e of entries) if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); }
   }, { threshold: 0.15 });
-  landing.querySelectorAll(".rv").forEach((n) => io.observe(n));
+  more.querySelectorAll(".rv").forEach((n) => io.observe(n));
 
-  // Parallax: cards with data-speed drift against the scroll; reveals keep their own transform via --py.
-  const movers = [...landing.querySelectorAll("[data-speed]")];
+  // Parallax: cards with data-speed drift against the scroll (the main column scrolls, not the window).
+  const movers = [...more.querySelectorAll("[data-speed]")];
   function parallax() {
     const mid = innerHeight / 2;
     for (const n of movers) {
@@ -20,21 +19,22 @@
       n.style.setProperty("--py", `${((r.top + r.height / 2 - mid) * -Number(n.dataset.speed)).toFixed(1)}px`);
     }
   }
-  if (!reduce) { addEventListener("scroll", parallax, { passive: true }); parallax(); }
+  if (!reduce) { main.addEventListener("scroll", parallax, { passive: true }); parallax(); }
 
-  landing.querySelectorAll(".lp-chip").forEach((b) => b.addEventListener("click", () => {
-    const t = b.closest("section").querySelector("textarea"); t.value = b.dataset.story; t.focus();
+  // "Ready to verify your story?" form: run the check in the main composer.
+  more.querySelectorAll("[data-landing-form]").forEach((f) => f.addEventListener("submit", (ev) => {
+    ev.preventDefault();
+    const t = f.querySelector("textarea"), story = t.value.trim();
+    if (!story) return;
+    t.value = ""; main.scrollTo(0, 0); storyBox.value = story;
+    if (!keyBox.hidden && !keyInput.value) keyInput.focus(); else form.requestSubmit();
   }));
 
-  // Submitting a story swaps to the chat interface and runs the check there.
-  landing.querySelectorAll("[data-landing-form]").forEach((f) => f.addEventListener("submit", (ev) => {
+  // Sidebar links to a section (Methodology, Boundaries): the sections live on the empty state.
+  document.querySelectorAll("a[data-more]").forEach((a) => a.addEventListener("click", (ev) => {
+    if (!document.body.classList.contains("is-empty") && !newCheck()) { ev.preventDefault(); return; }
     ev.preventDefault();
-    const story = f.querySelector("textarea").value.trim();
-    if (!story) return;
-    landing.hidden = true; appRoot.hidden = false; document.body.classList.remove("is-landing");
-    scrollTo(0, 0);
-    storyBox.value = story;
-    // A key is needed and missing: leave the story in the box and ask for the key first.
-    if (!keyBox.hidden && !keyInput.value) keyInput.focus(); else form.requestSubmit();
+    closeDrawer();
+    document.querySelector(a.getAttribute("href")).scrollIntoView({ behavior: reduce ? "auto" : "smooth" });
   }));
 })();

@@ -6,40 +6,118 @@
 <title>TieTrace</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Newsreader:wght@700&family=Work+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Newsreader:wght@400;700&family=Work+Sans:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="landing.css">
 </head>
-<body class="is-landing">
-<div id="landing">
-<header class="lp-nav">
-  <a class="lp-brand" href="index.html" aria-label="TieTrace home"><span class="lp-logo">T</span><span><strong>TieTrace</strong><small>Public research record ledger</small></span></a>
-  <nav aria-label="Sections">
-    <a href="#lp-method">Methodology</a><a href="#lp-tiers">Evidence tiers</a><a href="#lp-scope">Scope disclosure</a><a href="#lp-gate">Editorial checkpoint</a><a href="#lp-bounds">Boundaries</a><a href="how.html">Full details</a>
+<body class="is-empty">
+<a class="skip" href="#story">Skip to the story box</a>
+<div class="app">
+<aside class="sb" id="sidebar" aria-label="Checks">
+  <div class="sb-top">
+    <button type="button" class="icon-btn" id="sb-toggle" aria-label="Close the sidebar" aria-controls="sidebar" aria-expanded="true">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="3.5" width="15" height="13" rx="2.5"/><line x1="8" y1="3.5" x2="8" y2="16.5"/></svg>
+    </button>
+    <a class="wordmark" href="index.html">TieTrace</a>
+  </div>
+  <label class="lp-sr" for="sb-search">Search past checks</label>
+  <div class="sb-search">
+    <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="9" cy="9" r="5.5"/><line x1="13" y1="13" x2="17" y2="17"/></svg>
+    <input type="search" id="sb-search" placeholder="Search checks" autocomplete="off">
+  </div>
+  <button type="button" class="new-check" id="new-check">
+    <svg viewBox="0 0 20 20" aria-hidden="true"><line x1="10" y1="4" x2="10" y2="16"/><line x1="4" y1="10" x2="16" y2="10"/></svg>New check
+  </button>
+  <nav class="sb-nav" aria-label="Main">
+    <a href="how.html"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 4.5h5a2 2 0 0 1 2 2V16a1.5 1.5 0 0 0-1.5-1.5H3zM17 4.5h-5a2 2 0 0 0-2 2V16a1.5 1.5 0 0 1 1.5-1.5H17z"/></svg>How it works</a>
+    <details class="sb-cases">
+      <summary><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2.5 6V15a1.5 1.5 0 0 0 1.5 1.5h12a1.5 1.5 0 0 0 1.5-1.5V7.5A1.5 1.5 0 0 0 16 6H9.5L8 4H4a1.5 1.5 0 0 0-1.5 1.5z"/></svg>Cases</summary>
+      <button type="button" class="example" data-story="Story: Coca-Cola and obesity. The article quotes Steven Blair and James O. Hill on exercise, diet and weight. Check how connected each of them is to Coca-Cola in the research record.">Coca-Cola × obesity</button>
+      <button type="button" class="example" data-story="I'm writing about lung cancer and Philip Morris. Suggest 5 experts on lung cancer with no ties found in the research record to Philip Morris.">Philip Morris × lung cancer</button>
+    </details>
+    <a href="#lp-method" data-more><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="5" cy="10" r="2"/><circle cx="15" cy="5" r="2"/><circle cx="15" cy="15" r="2"/><line x1="7" y1="9" x2="13" y2="6"/><line x1="7" y1="11" x2="13" y2="14"/></svg>Methodology</a>
+    <a href="#lp-bounds" data-more><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5 16 5v4.5c0 3.8-2.6 6.6-6 8-3.4-1.4-6-4.2-6-8V5z"/></svg>Boundaries</a>
   </nav>
-  <a class="lp-btn ghost" href="#lp-start">Run Check</a>
-</header>
+  <h2 class="sb-head" id="recents-h">Recents</h2>
+  <ul class="recents" id="history" aria-labelledby="recents-h"></ul>
+  <p class="sb-empty" id="history-empty">No saved checks yet.</p>
+  <div class="sb-foot">
+    <p>Saved in this browser only. <button type="button" class="linkish" id="clear-all">Clear all</button></p>
+    <p>Sourcing aid only. Human editorial review is required before publication.</p>
+  </div>
+</aside>
+<div class="scrim" id="scrim" hidden></div>
 
-<main>
+<main class="main" id="main">
+  <div class="topbar">
+    <button type="button" class="icon-btn" id="sb-open" aria-label="Open the sidebar" aria-controls="sidebar" aria-expanded="false">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="3.5" width="15" height="13" rx="2.5"/><line x1="8" y1="3.5" x2="8" y2="16.5"/></svg>
+    </button>
+    <span class="top-title" id="top-title"></span>
+    <button type="button" class="icon-btn" id="ev-toggle" aria-label="Show the evidence panel" aria-controls="evidence" aria-expanded="false">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="3.5" width="15" height="13" rx="2.5"/><line x1="12" y1="3.5" x2="12" y2="16.5"/></svg>
+    </button>
+  </div>
+
+  <div class="thread" id="messages" aria-live="polite">
+    <div class="greet" id="hero">
+      <span class="lp-logo" aria-hidden="true">T</span>
+      <h1 id="chat-title">Which story are we checking?</h1>
+    </div>
+  </div>
+
+  <div class="dock">
+    <form class="composer" id="ask-form">
+      <label for="story">Story text (or a question about it)</label>
+      <textarea id="story" name="story" required maxlength="20000" rows="1" placeholder="Paste a story or a quote…"></textarea>
+      <div class="keybox" id="keybox">
+        <label for="apikey">API key</label>
+        <input type="password" id="apikey" name="apikey" autocomplete="off" spellcheck="false" maxlength="500" aria-describedby="key-notice">
+        <p class="notice" id="key-notice">We do not save your API key. It is sent with each request and held only in this page's memory. Use a temporary key with a spend limit and revoke it afterwards.</p>
+      </div>
+      <div class="c-row">
+        <div class="provider">
+          <label class="lp-sr" for="provider">Model provider</label>
+          <select id="provider" name="provider">
+            <option value="gemini" selected>Gemini</option>
+            <option value="claude">Claude</option>
+            <option value="openai">OpenAI</option>
+          </select>
+          <button type="button" class="linkish" id="own-key" hidden>Use your own key instead</button>
+        </div>
+        <button type="submit" class="send" id="send" aria-label="Run check">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><line x1="10" y1="16" x2="10" y2="4"/><polyline points="5,9 10,4 15,9"/></svg>
+        </button>
+      </div>
+    </form>
+    <p class="status" id="status" role="status"></p>
+    <div class="chips" role="group" aria-label="Try a benchmark case">
+      <button type="button" class="example" data-story="Story: Coca-Cola and obesity. The article quotes Steven Blair and James O. Hill on exercise, diet and weight. Check how connected each of them is to Coca-Cola in the research record.">Coca-Cola × obesity</button>
+      <button type="button" class="example" data-story="I'm writing about lung cancer and Philip Morris. Suggest 5 experts on lung cancer with no ties found in the research record to Philip Morris.">Philip Morris × lung cancer</button>
+      <span>Experts appear as “Expert #n”.</span>
+    </div>
+    <footer class="disclaimer">Ties found in the research record. A missing tie is not proof.</footer>
+  </div>
+
+  <div class="more" id="more">
 <section class="lp-hero" id="lp-start">
   <p class="lp-pill"><span class="dot"></span>Case initiation</p>
-  <h1>Let’s follow the evidence.</h1>
+  <h2 class="lp-title">Let’s follow the evidence.</h2>
   <p class="lp-sub">Check how connected an expert quoted in a story is to a company, using documented public research records. Every tie reveals its DOI, and every “no tie found” reveals its searched scope.</p>
-  <form class="lp-box lp-form" data-landing-form>
-    <label class="lp-boxhead" for="lp-story-1">Paste manuscript, draft or quote excerpt</label>
-    <textarea id="lp-story-1" required maxlength="20000" placeholder="Paste the story here. Name the company and the experts to check."></textarea>
-    <div class="lp-boxfoot"><span>Experts appear as “Expert #n” in the results.</span><button class="lp-btn primary" type="submit">Run Check <span aria-hidden="true">→</span></button></div>
-  </form>
-  <div class="lp-chips" role="group" aria-label="Try a benchmark case"><span>Try benchmark case:</span>
-    <button type="button" class="lp-chip" data-story="Story: Coca-Cola and obesity. The article quotes Steven Blair and James O. Hill on exercise, diet and weight. Check how connected each of them is to Coca-Cola in the research record.">↗ Coca-Cola × obesity</button>
-    <button type="button" class="lp-chip" data-story="I'm writing about lung cancer and Philip Morris. Suggest 5 experts on lung cancer with no ties found in the research record to Philip Morris.">↗ Philip Morris × lung cancer</button>
+  <div class="bounds" role="group" aria-label="Investigation standard">
+    <p class="kicker">Investigation standard &amp; epistemic boundaries</p>
+    <div class="cols">
+      <div class="est"><h3>What a result establishes</h3>
+        <ul><li>A tie is a stored edge in the research record, shown with its DOI.</li><li>A “no tie” names its scope: hops, years and funder coverage.</li></ul></div>
+      <div class="not"><h3>What it does not prove</h3>
+        <ul><li>Intent, bias or editorial influence.</li><li>That a missing tie means there is none: absence is not proof.</li></ul></div>
+    </div>
   </div>
-  <a class="lp-scroll" href="#lp-blind">Scroll to see how it works<span aria-hidden="true">↓</span></a>
 </section>
 
 <section class="lp-sec split" id="lp-blind">
   <div class="rv">
-    <p class="lp-k">01 / The blindspot</p>
+    <p class="lp-k">The blindspot</p>
     <h2>Unseen ties in the quotation box.</h2>
     <p>When deadline pressure hits, reporters quote authoritative academics. But funding and affiliations are buried in publication records that no one has time to read in full. TieTrace reads them and shows each tie with the paper it rests on.</p>
     <div class="lp-note"><strong>Typical deadline failure:</strong><ul><li>The expert is quoted from a press release.</li><li>Funder lines sit at the end of a paper nobody opens.</li><li>The story publishes with no record context.</li></ul></div>
@@ -54,12 +132,12 @@
 </section>
 
 <section class="lp-sec center" id="lp-method">
-  <div class="rv"><p class="lp-k">02 / Pipeline</p><h2>Four steps from text to source record.</h2><p class="lp-lead">Claude Code reads the story and resolves it against the research graph with read-only queries.</p></div>
+  <div class="rv"><p class="lp-k">Pipeline</p><h2>Four steps from text to source record.</h2><p class="lp-lead">Claude Code reads the story and resolves it against the research graph with read-only queries.</p></div>
   <div class="lp-steps">
-    <div class="lp-step rv"><b>01</b><h3>Find the experts</h3><p>Reads the story and picks the research case for the company and topic.</p></div>
-    <div class="lp-step rv"><b>02</b><h3>Look up in graph</h3><p>Names resolve to OpenAlex authors. If a name is ambiguous, you pick; it never guesses.</p></div>
-    <div class="lp-step rv"><b>03</b><h3>Trace documented ties</h3><p>Funders, affiliations and co-authors, each query shown in the live evidence panel.</p></div>
-    <div class="lp-step rv"><b>04</b><h3>Write sourcing note</h3><p>DOIs for every tie, and the scope for every “no tie found”.</p></div>
+    <div class="lp-step rv"><b>Step one</b><h3>Find the experts</h3><p>Reads the story and picks the research case for the company and topic.</p></div>
+    <div class="lp-step rv"><b>Step two</b><h3>Look up in graph</h3><p>Names resolve to OpenAlex authors. If a name is ambiguous, you pick; it never guesses.</p></div>
+    <div class="lp-step rv"><b>Step three</b><h3>Trace documented ties</h3><p>Funders, affiliations and co-authors, each query shown in the live evidence panel.</p></div>
+    <div class="lp-step rv"><b>Step four</b><h3>Write sourcing note</h3><p>DOIs for every tie, and the scope for every “no tie found”.</p></div>
   </div>
   <div class="lp-box lp-graph rv" data-draw>
     <div class="lp-boxhead"><span>Graph traversal trace</span><b class="okc">Up to 3 hops</b></div>
@@ -80,7 +158,7 @@
 </section>
 
 <section class="lp-sec center" id="lp-tiers">
-  <div class="rv"><p class="lp-k">03 / Provenance hierarchy</p><h2>Tier A1, A2, B and C.</h2><p class="lp-lead">Every documented connection is sorted into a tier, so newsrooms know what is evidence and what is context.</p></div>
+  <div class="rv"><p class="lp-k">Provenance hierarchy</p><h2>Tier A1, A2, B and C.</h2><p class="lp-lead">Every documented connection is sorted into a tier, so newsrooms know what is evidence and what is context.</p></div>
   <div class="lp-tiers">
     <article class="lp-box tier a1 rv"><div class="th"><span>Tier A1 — direct</span><small>Direct evidence</small></div><h3>Funded or affiliated, on a small paper</h3><p>Authored a small paper (25 authors or fewer) funded by the company, or listed a company affiliation on one.</p><footer>Shown with DOIs</footer></article>
     <article class="lp-box tier a2 rv"><div class="th"><span>Tier A2 — direct</span><small>Direct evidence</small></div><h3>Grant, bottler, or large paper</h3><p>Foundation grant, bottler affiliation, or the only evidence is a large multi-author paper.</p><footer>Shown with DOIs and the reason</footer></article>
@@ -91,7 +169,7 @@
 
 <section class="lp-sec split" id="lp-scope">
   <div class="rv">
-    <p class="lp-k">04 / Epistemic honesty</p>
+    <p class="lp-k">Epistemic honesty</p>
     <h2>Why “no tie found” is never bare.</h2>
     <p>A missing tie can simply mean missing data. Claiming someone has “no ties” without showing what was queried is dangerous, so TieTrace prints the bounding box of every negative finding.</p>
     <blockquote class="lp-pull">Absence of a documented record within searched indices is not proof of non-existence.</blockquote>
@@ -110,7 +188,7 @@
 </section>
 
 <section class="lp-sec center" id="lp-metrics">
-  <div class="rv"><p class="lp-k">05 / Verifiable metrics</p><h2>What we tested, honestly.</h2><p class="lp-lead">Pass rules were fixed before the runs. Failures are shown with the passes.</p></div>
+  <div class="rv"><p class="lp-k">Verifiable metrics</p><h2>What we tested, honestly.</h2><p class="lp-lead">Pass rules were fixed before the runs. Failures are shown with the passes.</p></div>
   <div class="lp-metrics">
     <div class="lp-box rv"><small>E3 known case</small><strong class="ok">4 of 4</strong><p>Publicly confirmed GEBN leaders found as Tier A with DOIs.</p></div>
     <div class="lp-box rv"><small>E8 golden tests</small><strong class="ok">15 of 15</strong><p>Pass.</p></div>
@@ -129,7 +207,7 @@
     <p class="lp-center small">No verdict ever auto-publishes</p>
   </div>
   <div class="rv">
-    <p class="lp-k">06 / Editorial gatekeeping</p>
+    <p class="lp-k">Editorial gatekeeping</p>
     <h2>Who decides: a journalist approves every note.</h2>
     <p>The model never records a verdict and never approves a sourcing note. TieTrace provides the evidence trail and puts a human checkpoint between the graph data and your published article.</p>
     <ul class="lp-checks"><li>A sourcing note can be approved only after the Verifier checks every claim.</li><li>Verdicts and approvals need a second, confirming click.</li><li>The reviewer’s name is recorded with each decision.</li></ul>
@@ -137,7 +215,7 @@
 </section>
 
 <section class="lp-sec center" id="lp-bounds">
-  <div class="rv"><p class="lp-k">07 / Forensic boundaries</p><h2>Strict ethical boundaries.</h2><p class="lp-lead">We say “ties found in the research record”. We present documented relationships and never allege motive.</p></div>
+  <div class="rv"><p class="lp-k">Forensic boundaries</p><h2>Strict ethical boundaries.</h2><p class="lp-lead">We say “ties found in the research record”. We present documented relationships and never allege motive.</p></div>
   <div class="lp-two">
     <div class="lp-box est rv"><h3><i></i>What this establishes</h3><ol><li><b>Disclosed funding:</b> a funder named on a paper, with its DOI.</li><li><b>Declared affiliations:</b> an affiliation listed on a paper.</li><li><b>Traceability:</b> every tie maps to a stored edge and a DOI.</li></ol></div>
     <div class="lp-box not rv"><h3><i></i>What it does not prove</h3><ol><li><b>Bias or wrongdoing:</b> sponsorship is not proof of altered results.</li><li><b>Editorial influence:</b> ties do not show a funder shaped the conclusions.</li><li><b>Right of reply:</b> findings are leads that need a formal inquiry before publication.</li></ol></div>
@@ -153,92 +231,29 @@
   </form>
   <p class="lp-foot">Ties found in the research record · Strict non-inference · DOI on every tie</p>
 </section>
+  </div>
 </main>
-</div>
 
-<div id="app" hidden>
-<a class="skip" href="#story">Skip to the story box</a>
-<header class="lp-nav app-nav">
-  <a class="lp-brand" href="index.html" aria-label="TieTrace home"><span class="lp-logo">T</span><span><strong>TieTrace</strong><small>Public research record ledger</small></span></a>
-  <nav aria-label="Main"><a href="index.html" aria-current="page">Check a story</a><a href="how.html">How it works</a></nav>
-  <a class="lp-btn ghost" href="index.html">+ New investigation</a>
-</header>
-
-<div class="shell">
-  <aside class="side" aria-label="Workspace">
-    <a class="cta" href="index.html">+ New Investigation</a>
-    <p class="kicker">Workspace</p>
-    <a class="navtile" href="index.html" aria-current="page">Check a story</a>
-    <a class="navtile" href="how.html">How it works</a>
-    <p class="kicker">Case templates</p>
-    <div class="examples" role="group" aria-label="Try an example">
-      <button type="button" class="example" data-story="Story: Coca-Cola and obesity. The article quotes Steven Blair and James O. Hill on exercise, diet and weight. Check how connected each of them is to Coca-Cola in the research record.">Coca-Cola × obesity</button>
-      <button type="button" class="example" data-story="I'm writing about lung cancer and Philip Morris. Suggest 5 experts on lung cancer with no ties found in the research record to Philip Morris.">Philip Morris × lung cancer</button>
+<aside class="evidence" id="evidence" aria-labelledby="ev-title" hidden>
+  <div class="pane-head">
+    <div>
+      <p class="kicker">Evidence inspector</p>
+      <h2 id="ev-title">Live evidence</h2>
     </div>
-    <p class="legal">Sourcing aid only. Human editorial review is required before publication.</p>
-  </aside>
-
-  <main class="layout">
-    <section class="chat" aria-labelledby="chat-title">
-      <div class="scroll" id="messages" aria-live="polite">
-        <div class="intro" id="hero">
-          <p class="lp-pill"><span class="dot"></span>Case initiation</p>
-          <h1 id="chat-title">Let’s follow the evidence.</h1>
-          <p class="lead">Paste the story. TieTrace looks each quoted expert up in the research record and shows what it finds. Every tie has a DOI. Every “no tie” has a scope.</p>
-          <div class="bounds" role="group" aria-label="Investigation standard">
-            <p class="kicker">Investigation standard &amp; epistemic boundaries</p>
-            <div class="cols">
-              <div class="est"><h2>What a result establishes</h2>
-                <ul><li>A tie is a stored edge in the research record, shown with its DOI.</li><li>A “no tie” names its scope: hops, years and funder coverage.</li></ul></div>
-              <div class="not"><h2>What it does not prove</h2>
-                <ul><li>Intent, bias or editorial influence.</li><li>That a missing tie means there is none: absence is not proof.</li></ul></div>
-            </div>
-          </div>
-        </div>
-      </div>
-      <form class="composer" id="ask-form">
-        <label for="story">Story text (or a question about it)</label>
-        <textarea id="story" name="story" required maxlength="20000" placeholder="Paste the story here"></textarea>
-        <div class="provider">
-          <label for="provider">Model provider</label>
-          <select id="provider" name="provider">
-            <option value="gemini" selected>Gemini</option>
-            <option value="claude">Claude</option>
-            <option value="openai">OpenAI</option>
-          </select>
-        </div>
-        <div class="keybox" id="keybox">
-          <label for="apikey">API key</label>
-          <input type="password" id="apikey" name="apikey" autocomplete="off" spellcheck="false" maxlength="500" aria-describedby="key-notice">
-          <p class="notice" id="key-notice">We do not save your API key. It is sent with each request and held only in this page's memory. Use a temporary key with a spend limit and revoke it afterwards.</p>
-        </div>
-        <button type="button" class="linkish" id="own-key" hidden>Use your own key instead</button>
-        <div class="row">
-          <span class="status" id="status" role="status"></span>
-          <button type="submit" class="primary" id="send">Run Check</button>
-        </div>
-      </form>
-    </section>
-
-    <aside class="evidence" aria-labelledby="ev-title">
-      <div class="pane-head">
-        <p class="kicker">Evidence inspector</p>
-        <h2 id="ev-title">Live evidence</h2>
-        <p>Each tool as it runs, with the exact read-only Cypher it returned.</p>
-      </div>
-      <div class="scroll">
-        <p class="empty" id="ev-empty">Nothing has run yet.</p>
-        <ol class="steps" id="steps"></ol>
-      </div>
-      <div class="protocol">
-        <p class="kicker">Newsroom protocol</p>
-        <ol><li><strong>Experts are anonymous</strong> (“Expert #n”) unless the case is public.</li><li><strong>Ties found in the research record.</strong> We never say “independent” or “conflicted”.</li></ol>
-      </div>
-    </aside>
-  </main>
-</div>
-
-<footer class="foot">Ties found in the research record. A missing tie is not proof.</footer>
+    <button type="button" class="icon-btn" id="ev-close" aria-label="Hide the evidence panel">
+      <svg viewBox="0 0 20 20" aria-hidden="true"><line x1="5" y1="5" x2="15" y2="15"/><line x1="15" y1="5" x2="5" y2="15"/></svg>
+    </button>
+  </div>
+  <p class="pane-sub">Each tool as it runs, with the exact read-only Cypher it returned.</p>
+  <div class="scroll">
+    <p class="empty" id="ev-empty">Nothing has run yet.</p>
+    <ol class="steps" id="steps"></ol>
+  </div>
+  <div class="protocol">
+    <p class="kicker">Newsroom protocol</p>
+    <ol><li><strong>Experts are anonymous</strong> (“Expert #n”) unless the case is public.</li><li><strong>Ties found in the research record.</strong> We never use verdict words about a person.</li></ol>
+  </div>
+</aside>
 </div>
 <script src="app.js"></script>
 <script src="landing.js"></script>

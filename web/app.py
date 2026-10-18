@@ -151,6 +151,7 @@ ERROR_TEXT = {
     "TIMEOUT": "The check took too long and was stopped. Try a shorter story or fewer experts.",
     "PUBLIC_CASE": "The model asked for real names (public_case=true). The web app always shows Expert #n, so the "
                    "run was stopped. Please try again.",
+    "SESSION_EXPIRED": "This check is too old to continue; start a new check.",
 }
 
 
@@ -420,6 +421,9 @@ def _short(c):
 
 async def ask_events(prompt, session_id=None):
     """Async generator of (event, data) for one question. The process (and its MCP server child) is always killed."""
+    if session_id is not None and not session_known(session_id):
+        yield _err("SESSION_EXPIRED", ERROR_TEXT["SESSION_EXPIRED"])
+        return
     if not falkordb_up():
         yield _err("FALKORDB_DOWN", ERROR_TEXT["FALKORDB_DOWN"])
         return
@@ -541,8 +545,16 @@ def session_names(session_id):
     return names if exp >= time.time() else []
 
 
+def session_known(session_id):
+    """True while the app still holds this session's names to hide. A resumed run without them could show a real
+    name, so an unknown or expired session is never continued (review round 6: history keeps session ids for days)."""
+    with _tlock:
+        return session_id in _session_names and _session_names[session_id][1] >= time.time()
+
+
 def remember_names(session_id, names):
-    if not session_id or not names:
+    """Records every session, also one that named nobody, so session_known() can tell a live session from an old one."""
+    if not session_id:
         return
     with _tlock:
         now = time.time()
@@ -701,6 +713,8 @@ async def ask(body: Ask, request: Request):
             uuid.UUID(body.session_id)
         except ValueError:
             return _refuse(400, "bad session_id")
+        if not session_known(body.session_id):
+            return _session_expired()
 
     async def stream():
         async for event, data in ask_events(story, body.session_id):
@@ -793,21 +807,31 @@ def _agent_origin_ok(request):
         request.headers.get("x-forwarded-proto", "").lower() == "https"  # absent or http: the key could travel in clear
 
 
+def _session_expired():
+    return JSONResponse({"ok": False, "error": {"code": "SESSION_EXPIRED", "message": ERROR_TEXT["SESSION_EXPIRED"]}},
+                        status_code=410)
+
+
 def _agent_session(sid):
-    """The stored session for this id, or a new one. Expired ones are dropped; the oldest go when full."""
+    """The stored session for this id (None: no id, start a new one). Returns "unknown" for an id the app does not
+    hold (expired, evicted or from before a restart): it is never silently recreated empty, because its names to
+    hide are gone too. Returns "busy" when that session already has a run. Expired ones are dropped; the oldest go
+    when full."""
     now = time.time()
     with _tlock:
         for k in [k for k, v in _agent_sessions.items() if v["exp"] < now]:
             del _agent_sessions[k]
         entry = _agent_sessions.get(sid) if sid else None
+        if sid and entry is None:
+            return "unknown"
         if entry is None:
             while len(_agent_sessions) >= MAX_AGENT_SESSIONS:
                 idle = [k for k, v in _agent_sessions.items() if not v["busy"]]
                 del _agent_sessions[(idle or list(_agent_sessions))[0]]  # oldest idle one first
-            sid = sid or uuid.uuid4().hex
+            sid = uuid.uuid4().hex
             entry = _agent_sessions[sid] = {"s": {"id": sid, "messages": []}, "exp": 0, "busy": False}
         if entry["busy"]:
-            return None
+            return "busy"
         entry["busy"], entry["exp"] = True, now + SESSION_TTL_S
         return entry
 
@@ -855,8 +879,12 @@ async def agent_ask(body: AgentAsk, request: Request):
             sid = uuid.UUID(body.session_id).hex
         except ValueError:
             return _refuse(400, "bad session_id")
+    if sid is not None and not session_known(sid):
+        return _session_expired()
     entry = _agent_session(sid)
-    if entry is None:
+    if entry == "unknown":
+        return _session_expired()
+    if entry == "busy":
         return _refuse(409, "this session already has a check running")
     session = entry["s"]
     if len(session["messages"]) >= MAX_AGENT_MESSAGES or sum(
