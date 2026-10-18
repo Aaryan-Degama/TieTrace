@@ -29,7 +29,7 @@ We could have put every investigation and every newsroom into one graph and sepa
 
 1. **Different lifecycles.** A research graph is a derived artefact: it can be thrown away and rebuilt from the download cache. A newsroom graph is a record of human decisions (verdicts, approved notes) and cannot be rebuilt from anything. Keeping them apart means a rebuild can never damage memory.
 2. **Different trust levels.** The agent may only read research data, but it must write memory. With separate graphs that rule is a property of the *call* (`GRAPH.RO_QUERY` versus a fixed write), not a `WHERE` clause someone could forget.
-3. **Independent rebuilds and deletes.** Adding a Nestlé investigation did not touch the Coca-Cola graph. An idle case can be dropped with one `GRAPH.DELETE` to free RAM.
+3. **Separate rebuilds and deletes.** Adding a Nestlé investigation did not touch the Coca-Cola graph. An idle case can be dropped with one `GRAPH.DELETE` to free RAM.
 4. **Isolation by name.** A newsroom's memory lives at `newsroom:<id>`, and the server picks `<id>` from its environment. No query can wander into another newsroom by accident, because no query ever names it.
 
 ## Inside a research graph
