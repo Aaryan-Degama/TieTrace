@@ -12,13 +12,23 @@ The short version: one FalkorDB server holds several large research graphs, one 
 
 ## The shape of the system
 
-```mermaid
-flowchart LR
-  J([Journalist]) <--> A[Agent + MCP client<br/>Claude Code or web app]
-  A -->|13 tools, stdio| S[server.py<br/>no LLM calls]
-  S -->|GRAPH.RO_QUERY| R[(research:case<br/>one per investigation)]
-  S -->|fixed parameterised writes| N[(newsroom:id<br/>one per newsroom)]
-  L[loader.py] -->|build staging:case, then RENAME| R
+```text
+Journalist
+    |
+    v
+Agent + MCP client  (Claude Code or the web app)
+    |
+    |  13 tools, stdio
+    v
+server.py  (no LLM calls)
+    |                                   |
+    |  GRAPH.RO_QUERY (read-only)       |  fixed, parameterised writes
+    v                                   v
+research:<case>                     newsroom:<id>
+one per investigation               one per newsroom (memory)
+    ^
+    |  builds staging:<case>, then RENAME
+loader.py
 ```
 
 The server is a Python MCP server with 13 tools and no model calls. The agent (Claude Code, or our web app with the visitor's own Claude, Gemini or OpenAI key) decides which tool to call; Cypher does all the work on the data. Every tool returns the same envelope: `ok`, `data`, the exact `cypher` it ran with its parameters, the `scope` of the search, any `verdicts_applied`, and `warnings`. Any answer can be replayed by pasting its Cypher into the FalkorDB Browser.
@@ -78,13 +88,12 @@ Each graph also carries one `Meta` node: when it was built, the OpenAlex data ve
 
 The memory graph is small and append-only in spirit.
 
-```mermaid
-flowchart LR
-  Se[Session] -->|HAS_EVENT| E[Event<br/>one per tool call]
-  C[Case<br/>story, company, experts] -->|HAS_CHECK| K[Check<br/>tier, score, DOIs, scope]
-  K2[newer Check] -->|SUPERSEDES<br/>diff_json| K
-  V[Verdict<br/>human only] -->|AFFECTS<br/>before → after| K2
-  C -->|HAS_NOTE| No[Note<br/>approved by a human]
+```text
+Session     --HAS_EVENT-->                Event   (one per tool call)
+Case        --HAS_CHECK-->                Check   (tier, score, DOIs, scope)
+newer Check --SUPERSEDES {diff_json}-->   older Check
+Verdict     --AFFECTS {before -> after}-> Check   (human only)
+Case        --HAS_NOTE-->                 Note    (approved by a human)
 ```
 
 - A **`Session`** per server process and an **`Event`** per tool call (tool name, ok or error code, duration). Writing an event takes about 0.3 ms.
