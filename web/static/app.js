@@ -309,7 +309,7 @@ function card(reply, d) {
   if (c.evidence && c.evidence.length) {
     const ul = el("ul");
     for (const e of c.evidence) {
-      const li = el("li", {}, doiLink(e.doi), el("span", { class: "meta", text: `, ${e.kind === "FUNDED_BY" ? "funded by" : "affiliation with"} ${e.via}, tier ${e.tier}, ${e.topic_label}, ${e.year}` }), " ");
+      const li = el("li", { class: "ev" }, el("span", { class: "ev-text" }, doiLink(e.doi), el("span", { class: "meta", text: `, ${e.kind === "FUNDED_BY" ? "funded by" : "affiliation with"} ${e.via}, tier ${e.tier}, ${e.topic_label}, ${e.year}` })));
       if (!publicDemo) li.append(excludeButton(li, e.doi, c.case || null));
       ul.append(li);
     }
