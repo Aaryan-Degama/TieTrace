@@ -4,4 +4,4 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN uv sync --locked --no-dev
 COPY . .
-CMD ["uv", "run", "--no-sync", "uvicorn", "web.app:app", "--host", "127.0.0.1", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "127.0.0.1"]
+CMD ["uv", "run", "--no-sync", "uvicorn", "web.app:app", "--host", "127.0.0.1", "--port", "8000", "--no-proxy-headers"]
