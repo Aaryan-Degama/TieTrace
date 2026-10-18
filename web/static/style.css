@@ -224,7 +224,14 @@ pre.cypher {
 .protocol ol { margin: 0; padding-left: 18px; }
 .protocol strong { color: var(--text); }
 @media (prefers-reduced-motion: no-preference) {
-  .step.running .name::after { content: " …"; }
+  .dots i { animation: pulse 1.2s ease-in-out infinite; }
+  .dots i:nth-child(2) { animation-delay: .2s; }
+  .dots i:nth-child(3) { animation-delay: .4s; }
+  @keyframes pulse { 0%, 100% { opacity: .3; transform: scale(.8); } 50% { opacity: 1; transform: scale(1); } }
+  button.busy::before { animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .msg.progress { animation: fade-in .2s ease-out; }
+  @keyframes fade-in { from { opacity: 0; } }
   .evidence { animation: slide-in .18s ease-out; }
   @keyframes slide-in { from { transform: translateX(24px); opacity: 0; } }
 }
@@ -325,3 +332,19 @@ body.wiz-on .thread, body.wiz-on .dock { display: none; }
 }
 .about-head h2 { margin: 0; font: 600 15px var(--sans); }
 @media (max-width: 600px) { .about { width: 100vw; height: 100dvh; margin: 0; border-radius: 0; border: 0; } }
+
+/* progress row in the thread while a check runs (Aaryan, Oct 18). Without motion the dots stay still; the text still updates. */
+.dots { display: inline-flex; gap: 4px; align-items: center; vertical-align: middle; }
+.dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); opacity: .7; }
+.msg.progress { color: var(--body2); font-size: 14px; }
+.pg-head { display: flex; align-items: center; gap: 10px; }
+.pg-secs { color: var(--muted); font-size: 12.5px; }
+.pg-done { list-style: none; margin: 6px 0 0 28px; padding: 0; font-size: 12.5px; color: var(--muted); }
+.pg-done .tick { color: var(--ok); margin-right: 6px; }
+.pg-done .failed .tick { color: var(--bad); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+button.busy::before { content: ""; display: inline-block; width: 12px; height: 12px; margin-right: 6px; vertical-align: -2px;
+  border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; }
+button.busy:disabled { opacity: .8; cursor: progress; }
+.send.busy::before { margin: 0; }
+.send.busy svg { display: none; }

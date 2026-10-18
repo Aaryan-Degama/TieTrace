@@ -271,6 +271,62 @@ def test_a_saved_conversation_redraws_continues_and_never_holds_the_key():
     assert got["bodies"][1]["key"] is None and "OTHER" not in got["raw2"], got
 
 
+_PROGRESS_SERVER = r"""
+window.__errors = [];
+addEventListener("error", (e) => window.__errors.push(String(e.message)));
+window.fetch = async (url) => {
+  if (url === "/api/agent/providers") return new Response(JSON.stringify({ providers: [], host_gemini: false, local_claude: false }));
+  const enc = new TextEncoder();
+  const body = new ReadableStream({ start(c) { window.__push = (e, d) => c.enqueue(enc.encode(`event: ${e}\ndata: ${JSON.stringify(d)}\n\n`)); window.__close = () => c.close(); } });
+  return new Response(body);
+};
+"""
+_PROGRESS_HARNESS = r"""
+(async () => {
+  const tick = (ms = 50) => new Promise((r) => setTimeout(r, ms));
+  const row = () => messages.querySelector(".msg.progress");
+  const R = {};
+  provSel.value = "gemini"; storyBox.value = "Story: Coca-Cola and obesity."; form.requestSubmit(); await tick();
+  const r0 = row();
+  R.first = r0 && { role: r0.getAttribute("role"), live: r0.getAttribute("aria-live"), line: r0.querySelector(".pg-line").textContent,
+    dotsHidden: r0.querySelector(".dots").getAttribute("aria-hidden"), last: messages.lastElementChild === r0 };
+  R.sendBusy = sendBtn.disabled && sendBtn.classList.contains("busy");
+  __push("step", { tool: "check_case", status: "running" }); await tick();
+  R.line = row() && row().querySelector(".pg-line").textContent;
+  R.panelDots = !!steps.querySelector(".step.running .dots");
+  __push("step", { tool: "check_case", ok: true, cypher: [] }); await tick();
+  R.ticks = row() && [...row().querySelectorAll(".pg-done li")].map((li) => li.textContent);
+  __push("done", { session_id: "s1" }); await tick();
+  R.goneAfterDone = row() === null;
+  __close(); await tick();
+  R.sendFree = !sendBtn.disabled && !sendBtn.classList.contains("busy");
+  // An abnormal end (stream closes with no done event) still removes the row.
+  storyBox.value = "Follow-up"; form.requestSubmit(); await tick();
+  R.second = row() !== null;
+  __close(); await tick();
+  R.goneAfterClose = row() === null && busy === false;
+  R.saved = (() => { try { return localStorage.getItem("tietrace.history.v1"); } catch (e) { return ""; } })();
+  R.errors = __errors;
+  __report(R);
+})();
+"""
+
+
+def test_the_progress_row_follows_steps_goes_away_and_is_never_saved():
+    got = _run_page(_PROGRESS_SERVER, _PROGRESS_HARNESS)
+    if got is None:
+        print("      (skipped: no Chrome)")
+        return "SKIP"
+    assert got["errors"] == [], got["errors"]
+    assert got["first"] == {"role": "status", "live": "polite", "line": "Reading the story", "dotsHidden": "true", "last": True}, got
+    assert got["sendBusy"] is True and got["sendFree"] is True, got
+    assert got["line"] == "Checking ties for each expert" and got["panelDots"] is True, got
+    assert got["ticks"] == ["✓Checking ties for each expert"], got
+    assert got["goneAfterDone"] is True and got["second"] is True and got["goneAfterClose"] is True, got
+    assert got["saved"] and "progress" not in got["saved"] and "Reading the story" not in got["saved"], got["saved"]
+    assert "Checking ties" not in got["saved"], got["saved"]
+
+
 def test_the_page_works_with_storage_switched_off_and_on_a_phone():
     off = 'Object.defineProperty(window, "localStorage", { get() { throw new Error("storage off"); } });\n'
     got = _run_page(off + _FAKE_SERVER, _HISTORY_HARNESS, width=390)

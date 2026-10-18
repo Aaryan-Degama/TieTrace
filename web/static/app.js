@@ -87,7 +87,8 @@ function newReply() {
 
 async function ask(story, sid) {
   let reader = null;
-  busy = true; sendBtn.disabled = true; statusEl.textContent = "Checking… this can take a minute or two.";
+  busy = true; sendBtn.disabled = true; sendBtn.classList.add("busy"); sendBtn.setAttribute("aria-busy", "true");
+  statusEl.textContent = "Checking… this can take a minute or two.";
   setEmpty(false);
   // History: the story and every event shown are kept with this conversation (never the API key).
   const conv = current || startConv(story);
@@ -99,6 +100,7 @@ async function ask(story, sid) {
   userMsg(story);
   const reply = newReply();
   reply.events = rec.events;
+  const prog = reply.progress = progress();   // page only: it is not an event, so it never reaches history
   scrollDown();
   try {
     const prov = provSel.value, headers = { "Content-Type": "application/json" };
@@ -133,15 +135,16 @@ async function ask(story, sid) {
     if (rec.events.some((e) => e[0] === "error" && e[1] && e[1].code === "SESSION_EXPIRED")) {
       conv.expired = true; sessionId = null;   // the server no longer holds this session's names to hide
     }
+    prog.end();   // also on an abnormal end of the stream
     conv.session_id = conv.expired ? null : sessionId; saveHistory();
-    busy = false; sendBtn.disabled = false; statusEl.textContent = ""; scrollDown();
+    busy = false; sendBtn.disabled = false; sendBtn.classList.remove("busy"); sendBtn.removeAttribute("aria-busy"); statusEl.textContent = ""; scrollDown();
   }
 }
 
 let replaying = false;   // true while a saved conversation is redrawn: no key handling, nothing saved again
 function handle(reply, event, d) {
   if (reply.events && !replaying) { reply.events.push([event, d]); saveHistory(); }
-  if (event === "step") { autoEvidence(); step(d); }
+  if (event === "step") { autoEvidence(); step(d); if (reply.progress) reply.progress.step(d); }
   else if (event === "expert") card(reply, d);
   else if (event === "ambiguous") picker(reply, d);
   else if (event === "note") note(reply, d);
@@ -158,6 +161,7 @@ function handle(reply, event, d) {
   }
   else if (event === "warning") reply.box.append(el("div", { class: "msg error", role: "status", text: d.message }));
   else if (event === "done") sessionId = d.session_id || sessionId;
+  if ((event === "done" || event === "error") && reply.progress) reply.progress.end();
   scrollDown();
 }
 
@@ -192,6 +196,40 @@ function authHelp(parent) {
       el("li", { text: "Send your story again." })),
     el("p", { text: "Or, in a terminal in this folder, run:" }), el("code", { text: "claude auth login" }),
     el("div", { class: "row" }, login, again), link, note));
+}
+
+// ---------- progress row in the thread while a check runs (Aaryan, Oct 18) ----------
+// Plain words for the tool steps; the row is removed on done, error or any end of the stream.
+const STEP_WORDS = {
+  list_cases: "Finding the research case", resolve_experts: "Looking up the names in the research record",
+  open_case: "Opening the case", check_case: "Checking ties for each expert", tie_report: "Checking ties for each expert",
+  check_no_tie: "Checking the search scope", bridges: "Looking for co-author paths",
+  recall: "Reading the newsroom memory", recheck: "Reading the newsroom memory", draft_note: "Drafting the sourcing note",
+};
+const stepWords = (tool) => STEP_WORDS[String(tool).split("__").pop()] || "Working";
+const dots = () => el("span", { class: "dots", "aria-hidden": "true" }, el("i"), el("i"), el("i"));
+function progress() {
+  const line = el("span", { class: "pg-line", text: "Reading the story" });
+  const secs = el("span", { class: "pg-secs", "aria-hidden": "true", text: "0 s" });   // hidden: no announcement every second
+  const done = el("ul", { class: "pg-done" });
+  const row = el("div", { class: "msg progress", role: "status", "aria-live": "polite" },
+    el("div", { class: "pg-head" }, dots(), line, secs), done);
+  messages.append(row);
+  const t0 = Date.now();
+  const timer = setInterval(() => { secs.textContent = `${Math.round((Date.now() - t0) / 1000)} s`; }, 1000);
+  return {
+    step(d) {
+      const words = stepWords(d.tool);
+      if (d.status === "running") { line.textContent = words; return; }
+      const last = done.lastElementChild;
+      if (last && last.dataset.words === words) return;   // many check_case calls: one line is enough
+      const li = el("li", { "data-words": words }, el("span", { class: "tick", "aria-hidden": "true", text: d.ok ? "✓" : "×" }), words);
+      if (!d.ok) li.classList.add("failed");
+      done.append(li);
+      while (done.children.length > 4) done.firstElementChild.remove();   // keep it compact
+    },
+    end() { clearInterval(timer); row.remove(); },
+  };
 }
 
 function showError(reply, message) { reply.box.append(el("div", { class: "msg error", role: "alert", text: message })); }
@@ -232,7 +270,8 @@ const running = {};   // tool -> list of <li> still running
 function step(d) {
   $("ev-empty").hidden = true;
   if (d.status === "running") {
-    const li = el("li", { class: "step running" }, el("span", { class: "name", text: d.tool }), el("span", { class: "state", text: "running" }));
+    const li = el("li", { class: "step running" }, el("span", { class: "name", text: d.tool }),
+      el("span", { class: "state" }, dots(), el("span", { class: "sr-only", text: "running" })));
     (running[d.tool] = running[d.tool] || []).push(li);
     steps.append(li);
     return;
@@ -307,10 +346,12 @@ function picker(reply, d) {
       ev.preventDefault();
       const chosen = box.querySelector("input:checked");
       if (!chosen || busy) return;
-      btn.disabled = true;
+      btn.disabled = true;   // with the busy flag (set at once by ask), a double click cannot start two runs
       // An expired check cannot be continued: the new session would not know the story.
       if (current && current.expired) { btn.textContent = "Too old to continue: start a new check"; return; }
-      ask(`For ${d.name_ref}, use OpenAlex author ${chosen.value}. Continue the check.`, sessionId);
+      btn.textContent = "Checking…"; btn.classList.add("busy");
+      ask(`For ${d.name_ref}, use OpenAlex author ${chosen.value}. Continue the check.`, sessionId)
+        .finally(() => { btn.classList.remove("busy"); btn.textContent = "Author chosen"; });
     });
   }
   reply.box.append(box);
