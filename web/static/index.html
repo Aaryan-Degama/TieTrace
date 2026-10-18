@@ -57,6 +57,9 @@
       <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="3.5" width="15" height="13" rx="2.5"/><line x1="8" y1="3.5" x2="8" y2="16.5"/></svg>
     </button>
     <span class="top-title" id="top-title"></span>
+    <button type="button" class="icon-btn" id="graph-open" aria-label="Case graph" title="Case graph: no expert results in this check yet" aria-haspopup="dialog" aria-controls="graph" disabled>
+      <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="2.2"/><circle cx="4" cy="4.5" r="1.8"/><circle cx="16" cy="4.5" r="1.8"/><circle cx="4" cy="15.5" r="1.8"/><circle cx="16" cy="15.5" r="1.8"/><line x1="5.4" y1="5.7" x2="8.4" y2="8.5"/><line x1="14.6" y1="5.7" x2="11.6" y2="8.5"/><line x1="5.4" y1="14.3" x2="8.4" y2="11.5"/><line x1="14.6" y1="14.3" x2="11.6" y2="11.5"/></svg>
+    </button>
     <button type="button" class="icon-btn" id="ev-toggle" aria-label="Show the evidence panel" aria-controls="evidence" aria-expanded="false">
       <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="3.5" width="15" height="13" rx="2.5"/><line x1="12" y1="3.5" x2="12" y2="16.5"/></svg>
     </button>
@@ -147,6 +150,21 @@
   </div>
 </aside>
 </div>
+<dialog class="about graph-dlg" id="graph" aria-labelledby="graph-title">
+  <div class="about-head">
+    <h2 id="graph-title">Case graph</h2>
+    <span class="g-head-btns">
+      <button type="button" id="graph-back" hidden>Back to overview</button>
+      <button type="button" class="icon-btn" id="graph-close" aria-label="Close the case graph">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><line x1="5" y1="5" x2="15" y2="15"/><line x1="15" y1="5" x2="5" y2="15"/></svg>
+      </button>
+    </span>
+  </div>
+  <div class="g-body">
+    <div class="g-wrap"><svg id="graph-svg" role="group" aria-label="Case graph of this check"></svg></div>
+    <aside class="g-side" id="graph-side" aria-live="polite" aria-label="Selected node"></aside>
+  </div>
+</dialog>
 <dialog class="about" id="about" aria-labelledby="about-title">
   <div class="about-head">
     <h2 id="about-title">About TieTrace</h2>

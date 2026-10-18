@@ -298,7 +298,9 @@ function step(d) {
 
 // ---------- expert cards (Expert #n only: the server never sends a name) ----------
 
+const checkCards = Object.create(null);   // expert_id -> every expert event of this check, merged (the case graph's only data)
 function card(reply, d) {
+  checkCards[d.expert_id] = Object.assign(checkCards[d.expert_id] || {}, d); syncGraphBtn();
   const c = reply.byId[d.expert_id] = Object.assign(reply.byId[d.expert_id] || {}, d);
   if (!c.node) { c.node = el("article", { class: "card" }); reply.cards.append(c.node); }
   const n = c.node; n.replaceChildren();
@@ -502,6 +504,8 @@ function clearView() {
   messages.replaceChildren($("hero"));
   steps.replaceChildren(); $("ev-empty").hidden = false;
   for (const k of Object.keys(running)) delete running[k];
+  for (const k of Object.keys(checkCards)) delete checkCards[k];
+  syncGraphBtn(); if (gDlg.open) gDlg.close();
   setEmpty(true);
 }
 // Returns false while a check is running: switching then would mix two runs on one page.
@@ -579,5 +583,215 @@ evToggle.addEventListener("click", () => { evTouched = true; setEvidence(evPanel
 $("ev-close").addEventListener("click", () => { evTouched = true; setEvidence(false); evToggle.focus(); });
 // The first live tool step opens the panel on a wide screen, unless the reporter has already opened or closed it.
 function autoEvidence() { if (!replaying && !evTouched && !narrow.matches) { evTouched = true; setEvidence(true); } }
+
+// ---------- case graph (Aaryan, Oct 18) ----------
+// Drawn only from the expert events this check already showed (checkCards): no new request and no new query, so every
+// node and edge is an expert card or one of its evidence rows. Built with createElementNS and textContent only.
+const SVGNS = "http://www.w3.org/2000/svg";
+function sv(tag, attrs = {}, ...kids) {
+  const e = document.createElementNS(SVGNS, tag);
+  for (const [k, v] of Object.entries(attrs)) { if (k === "text") e.textContent = v; else e.setAttribute(k, v); }
+  for (const k of kids) if (k != null) e.append(k);
+  return e;
+}
+const gDlg = $("graph"), gSvg = $("graph-svg"), gSide = $("graph-side"), gBack = $("graph-back"), gOpen = $("graph-open");
+const TIERS = ["A1", "A2", "B", "C", "NONE"];
+const cut = (s, n = 28) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
+const papersWord = (n) => `${n} paper${n === 1 ? "" : "s"}`;
+const kindWord = (k) => (k === "FUNDED_BY" ? "funding" : "affiliation");
+const kindsText = (set) => [...set].sort().join(" and ");
+let gModel = null, gView = "overview", gLast = null;
+
+function syncGraphBtn() {
+  const n = Object.values(checkCards).filter((c) => c && !c.error).length;
+  gOpen.disabled = n === 0;
+  gOpen.title = n ? "Case graph" : "Case graph: no expert results in this check yet";
+}
+
+// Nodes: the check (centre), one per distinct via (funder or institution), one per expert, one per DOI.
+// rows: one per evidence row (expert, via, paper, kind), so a drill-down links only what a row says.
+function graphModel() {
+  const experts = [], vias = new Map(), papers = new Map(), rows = [], cases = new Set();
+  for (const c of Object.values(checkCards)) {
+    if (!c || c.error) continue;   // a failed check says nothing about the expert: no node
+    if (c.case) cases.add(String(c.case));
+    const label = /^Expert #\d+$/.test(String(c.label)) ? String(c.label) : "Expert #?";   // never anything but Expert #n
+    const tier = TIERS.includes(c.tier) ? c.tier : (c.no_tie ? "NONE" : "?");
+    const x = { type: "expert", label, tier, basis: c.tier_basis ? String(c.tier_basis) : "", noTie: c.no_tie || null,
+      listed: Array.isArray(c.evidence), links: new Map() };
+    experts.push(x);
+    for (const e of Array.isArray(c.evidence) ? c.evidence : []) {
+      if (!e || e.doi == null || e.via == null) continue;
+      const name = String(e.via), doi = String(e.doi), kind = kindWord(e.kind);
+      let v = vias.get(name);
+      if (!v) vias.set(name, v = { type: "via", label: name, kinds: new Set(), links: new Map() });
+      let p = papers.get(doi);
+      if (!p) papers.set(doi, p = { type: "paper", doi, year: e.year == null ? "year unknown" : String(e.year),
+        topic: e.topic_label == null ? "topic unknown" : String(e.topic_label) });
+      let l = x.links.get(v);
+      if (!l) { l = { kinds: new Set(), dois: new Set() }; x.links.set(v, l); v.links.set(x, l); }
+      v.kinds.add(kind); l.kinds.add(kind); l.dois.add(doi);
+      rows.push({ x, v, p, kind, tier: e.tier == null ? "?" : String(e.tier) });
+    }
+  }
+  const viaList = [...vias.values()];
+  const firstVia = (x) => { const i = viaList.findIndex((v) => x.links.has(v)); return i < 0 ? 1e9 : i; };
+  const num = (x) => Number(x.label.slice(8)) || 1e9;
+  experts.sort((a, b) => firstVia(a) - firstVia(b) || num(a) - num(b));   // tied experts sit near their funders
+  return { title: current ? String(current.title) : "This check", cases: [...cases], experts, vias: viaList, papers, rows };
+}
+
+function gNode(n, x, y, r, cls, lines, aria, act) {
+  const g = sv("g", { class: `gn ${cls}`, role: "button", tabindex: "0", "aria-label": aria, transform: `translate(${x} ${y})` },
+    sv("circle", { r }), ...lines.map((t, i) => sv("text", { y: r + 24 + i * 21, class: i ? "sub" : "", text: t })));
+  const go = (ev) => { ev.stopPropagation(); facts(n); if (act) act(); };
+  g.addEventListener("click", go);
+  g.addEventListener("keydown", (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); go(ev); } });
+  g.addEventListener("focus", () => facts(n));
+  n.el = g;
+  return g;
+}
+function gEdge(x1, y1, x2, y2, cls, label) {
+  const g = sv("g", {}, sv("line", { class: `ge ${cls}`, x1, y1, x2, y2 }));
+  // the label sits nearer the far end (the expert or the paper side), so it never hides under the centre node
+  if (label) g.append(sv("text", { class: "gl", x: x1 + (x2 - x1) * 0.62, y: y1 + (y2 - y1) * 0.62 + 5, text: label }));
+  return g;
+}
+const edgeCls = (kinds) => (kinds.has("funding") ? "fund" : "aff");
+const edgeText = (l) => `${papersWord(l.dois.size)}, ${kindsText(l.kinds)}`;
+const expertNote = (x) => (x.tier === "NONE" ? "no tie found (see scope)"
+  : x.links.size ? `Tier ${x.tier}` : `Tier ${x.tier}, no paper list here`);
+
+function gPaint(w, h, edges, nodes, back) {
+  gSvg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+  gSvg.style.minWidth = `${Math.round(w * 0.7)}px`;   // labels stay readable; the view scrolls on a phone
+  const bg = sv("rect", { class: "g-bg", x: 0, y: 0, width: w, height: h });
+  if (back) bg.addEventListener("click", overview);   // a click on the background goes back
+  gSvg.replaceChildren(bg, sv("g", { class: "g-layer" }, ...edges, ...nodes));
+}
+
+// The abstract view: the check in the centre, funders and institutions in the middle ring, experts in the outer ring.
+function overview() {
+  const m = gModel, C = 450, R1 = 205, R2 = 370;
+  gView = "overview"; gBack.hidden = true;
+  const at = (i, n, r) => { const a = -Math.PI / 2 + (2 * Math.PI * i) / Math.max(n, 1); return [C + r * Math.cos(a), C + r * Math.sin(a)]; };
+  const edges = [], nodes = [], centre = { type: "case", label: m.title };
+  m.vias.forEach((v, i) => { v.at = at(i, m.vias.length, R1); edges.push(gEdge(C, C, ...v.at, "hub")); });
+  m.experts.forEach((x, i) => {
+    x.at = at(i + (m.vias.length ? 0.5 : 0), m.experts.length, R2);
+    for (const [v, l] of x.links) edges.push(gEdge(...v.at, ...x.at, edgeCls(l.kinds), edgeText(l)));
+  });
+  nodes.push(gNode(centre, C, C, 44, "case", [cut(m.title, 32)], `${m.title}: this check`, null));
+  for (const v of m.vias) {
+    const n = v.links.size;
+    nodes.push(gNode(v, ...v.at, 26, "via", [cut(v.label), kindsText(v.kinds)],
+      `${v.label}, ${kindsText(v.kinds)}, linked to ${n} expert${n === 1 ? "" : "s"}. Press to show only its experts and papers.`, () => drill(v)));
+  }
+  for (const x of m.experts)
+    nodes.push(gNode(x, ...x.at, 30, `expert t-${x.tier}`, [x.label, expertNote(x)],
+      `${x.label}, ${expertNote(x)}.${x.links.size ? " Press to show the papers." : ""}`, () => drill(x)));
+  gPaint(900, 900, edges, nodes, false);
+  const back = gLast && gSvg.contains(gLast.el) ? gLast : centre;   // back on the node that was opened
+  back.el.focus(); facts(back);
+}
+
+// One expert (its funders and institutions, then its papers), or one funder or institution (its experts, then their papers).
+function drill(n) {
+  const rows = gModel.rows.filter((r) => (n.type === "expert" ? r.x : r.v) === n);
+  if (!rows.length) return;   // nothing to expand: the side panel already shows the facts
+  gView = "drill"; gLast = n; gBack.hidden = false;
+  const other = (r) => (n.type === "expert" ? r.v : r.x);
+  const mids = [...new Set(rows.map(other))], papers = [];
+  for (const mid of mids) for (const r of rows) if (other(r) === mid && !papers.includes(r.p)) papers.push(r.p);
+  const H = 64, top = 60, h = Math.max(520, top * 2 + papers.length * H), X0 = 110, X1 = 400, X2 = 640;
+  papers.forEach((p, i) => { p.at = [X2, top + i * H + H / 2]; });
+  for (const mid of mids) {
+    const ys = rows.filter((r) => other(r) === mid).map((r) => r.p.at[1]);
+    mid.at = [X1, (Math.min(...ys) + Math.max(...ys)) / 2];
+  }
+  const fy = h / 2, edges = [], nodes = [], seen = new Set();
+  for (const mid of mids) {
+    const l = n.type === "expert" ? n.links.get(mid) : mid.links.get(n);
+    edges.push(gEdge(X0, fy, ...mid.at, edgeCls(l.kinds), edgeText(l)));
+  }
+  for (const r of rows) {
+    const k = `${papers.indexOf(r.p)}:${mids.indexOf(other(r))}:${r.kind}`;
+    if (!seen.has(k)) { seen.add(k); edges.push(gEdge(...other(r).at, ...r.p.at, r.kind === "funding" ? "fund thin" : "aff thin")); }
+  }
+  nodes.push(gNode(n, X0, fy, 30, n.type === "expert" ? `expert t-${n.tier}` : "via",
+    n.type === "expert" ? [n.label, `Tier ${n.tier}`] : [cut(n.label, 22), kindsText(n.kinds)], `${n.label}: ${papersWord(papers.length)} shown`, null));
+  for (const mid of mids)
+    nodes.push(gNode(mid, ...mid.at, 22, mid.type === "expert" ? `expert t-${mid.tier}` : "via",
+      [mid.type === "expert" ? mid.label : cut(mid.label, 24)], mid.type === "expert" ? `${mid.label}, Tier ${mid.tier}` : mid.label, null));
+  for (const p of papers) nodes.push(paperNode(p, rows.filter((r) => r.p === p)));
+  gPaint(1040, h, edges, nodes, true);
+  n.el.focus(); facts(n);
+}
+
+function paperNode(p, rows) {
+  let href = null;
+  try { href = "https://doi.org/" + encodeURI(p.doi); } catch (e) { /* lone surrogate: no link */ }
+  const kinds = kindsText(new Set(rows.map((r) => r.kind)));
+  const aria = `Paper ${p.doi}, ${p.year}, ${p.topic}, ${kinds}.${href ? " Opens doi.org in a new tab." : ""}`;
+  const g = sv("g", { class: "gn paper", role: "link", tabindex: "0", "aria-label": aria, transform: `translate(${p.at[0]} ${p.at[1]})` },
+    sv("circle", { r: 9 }), sv("text", { x: 20, y: -3, text: cut(p.doi, 40) }), sv("text", { x: 20, y: 18, class: "sub", text: `${p.year}, ${p.topic}` }));
+  if (href) g.dataset.href = href;
+  const open = (ev) => { ev.stopPropagation(); facts(p, rows); if (href) window.open(href, "_blank", "noopener"); };
+  g.addEventListener("click", open);
+  g.addEventListener("keydown", (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); open(ev); } });
+  g.addEventListener("focus", () => facts(p, rows));
+  p.el = g;
+  return g;
+}
+
+// The side panel: the selected node's facts, in text.
+function facts(n, rows) {
+  for (const s of gSvg.querySelectorAll(".gn.sel")) s.classList.remove("sel");
+  if (n.el) n.el.classList.add("sel");
+  const dl = el("dl"), m = gModel;
+  const add = (k, v) => dl.append(el("dt", { text: k }), el("dd", {}, v));
+  const count = (pick) => String(new Set(m.rows.filter(pick).map((r) => r.p)).size);
+  let head = n.label;
+  if (n.type === "case") {
+    if (m.cases.length) add("Research case", m.cases.join(", "));
+    add("Experts", String(m.experts.length));
+    add("Funders and institutions", String(m.vias.length));
+    add("Papers", String(m.papers.size));
+  } else if (n.type === "via") {
+    add("Link", kindsText(n.kinds));
+    add("Experts", [...n.links.keys()].map((x) => x.label).join(", "));
+    add("Papers", count((r) => r.v === n));
+  } else if (n.type === "expert") {
+    add("Tier", n.tier);
+    if (n.basis) add("Basis", n.basis);
+    add("Papers", n.listed ? count((r) => r.x === n) : "no paper list in this check");
+    const t = n.noTie;
+    if (t && t.result === "NO_TIE_FOUND")
+      add("Scope", `No tie found in the research record within ${t.hops} co-author hops, years ${t.years} (${t.query_name}). Absence is not proof.`);
+    else if (t && t.result)
+      add("Scope", `A Tier-A person is within ${t.nearest ? t.nearest.hops : "?"} co-author hops (${t.query_name}; searched ${t.hops} hops, years ${t.years}). Network context only.`);
+    else if (t) add("Scope", "The no-tie search failed; nothing is said about this expert.");
+  } else {
+    head = "Paper";
+    add("DOI", doiLink(n.doi));
+    add("Year", n.year);
+    add("Topic", n.topic);
+    for (const r of rows || []) add("Evidence", `${r.kind === "funding" ? "funded by" : "affiliation with"} ${r.v.label}, ${r.x.label}, tier ${r.tier}`);
+  }
+  gSide.replaceChildren(el("h3", { text: head }), dl,
+    el("p", { class: "g-note", text: "Built only from the results this check showed. Ties found in the research record; a missing tie is not proof." }));
+}
+
+gOpen.addEventListener("click", () => {
+  gModel = graphModel(); gLast = null;
+  if (!gDlg.open) gDlg.showModal();
+  overview();
+});
+const focusOpener = () => { if (!gOpen.disabled) gOpen.focus(); };
+$("graph-close").addEventListener("click", () => { gDlg.close(); focusOpener(); });
+gBack.addEventListener("click", overview);
+// Escape in a drill-down goes back to the overview; Escape on the overview closes the graph.
+gDlg.addEventListener("cancel", (ev) => { if (gView !== "overview") { ev.preventDefault(); overview(); } });
+gDlg.addEventListener("close", () => { gView = "overview"; focusOpener(); });
 
 renderHistory();

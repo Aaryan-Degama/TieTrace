@@ -339,6 +339,129 @@ def test_the_page_works_with_storage_switched_off_and_on_a_phone():
     assert got["width"] == 390 and got["drawerInert"] is True, got  # really a phone; the closed drawer is out of Tab
 
 
+# ---------- case graph (Aaryan, Oct 18) ----------
+
+_GRAPH_SERVER = r"""
+window.__errors = []; window.__opened = [];
+addEventListener("error", (e) => window.__errors.push(String(e.message)));
+window.open = (...a) => { window.__opened.push(a); return null; };
+const F = "The Coca-Cola Company", I = "Coca-Cola Institute <img src=x onerror=window.__pwn=1>";
+window.fetch = async (url) => {
+  if (url === "/api/agent/providers") return new Response(JSON.stringify({ providers: [], host_gemini: false, local_claude: false }));
+  const ev = (e, d) => `event: ${e}\ndata: ${JSON.stringify(d)}\n\n`;
+  const row = (doi, via, kind, year, topic, tier) => ({ doi, via, kind, year, topic_label: topic, tier });
+  return new Response(
+    ev("expert", { expert_id: "e1", label: "Expert #1", tier: "A1", tier_basis: "direct evidence", case: "obesity-coke" })
+    + ev("expert", { expert_id: "e1", label: "Expert #1", tier: "A1", case: "obesity-coke", evidence: [
+        row("10.1/a", F, "FUNDED_BY", 2015, "on-topic", "A1"), row("10.1/b", F, "FUNDED_BY", 2016, "off-topic", "A1"),
+        row("10.1/c", I, "affiliation", 2012, "on-topic", "A1")] })
+    + ev("expert", { expert_id: "e2", label: "Expert #2", tier: "A2", evidence: [row("10.1/d", F, "FUNDED_BY", 2019, "on-topic", "A2")] })
+    + ev("expert", { expert_id: "e3", label: "Expert #3", tier: "NONE", no_tie: { result: "NO_TIE_FOUND", hops: 3, years: "1990-2025", query_name: "Q5" } })
+    + ev("expert", { expert_id: "e4", label: "Jane Roe", tier: "B" })
+    + ev("expert", { expert_id: "e5", label: "Expert #5", error: "DB_ERROR" })
+    + ev("done", { session_id: "s1" }));
+};
+"""
+_GRAPH_HARNESS = r"""
+(async () => {
+  const R = {}, tick = (ms = 60) => new Promise((r) => setTimeout(r, ms));
+  const btn = document.getElementById("graph-open"), dlg = document.getElementById("graph");
+  const nodes = (cls) => [...dlg.querySelectorAll(`.gn.${cls}`)];
+  const labels = (cls) => nodes(cls).map((g) => g.querySelector("text").textContent);
+  R.before = { disabled: btn.disabled, title: btn.title, aria: btn.getAttribute("aria-label") };
+  provSel.value = "gemini"; storyBox.value = "Story: Coca-Cola and obesity. It quotes Jane Roe on diet."; form.requestSubmit();
+  for (let i = 0; i < 200 && busy; i++) await tick(10);
+  R.after = { disabled: btn.disabled, title: btn.title };
+  btn.click(); await tick();
+  R.open = dlg.open; R.focusInside = dlg.contains(document.activeElement);
+  R.centre = labels("case"); R.experts = labels("expert"); R.vias = labels("via");
+  R.expertNotes = nodes("expert").map((g) => g.querySelectorAll("text")[1].textContent);
+  R.edges = [...dlg.querySelectorAll(".gl")].map((t) => t.textContent).sort();
+  R.roles = [...dlg.querySelectorAll(".gn")].every((g) => g.getAttribute("role") && g.getAttribute("tabindex") === "0" && g.getAttribute("aria-label"));
+  R.side = document.getElementById("graph-side").textContent;
+  const ex1 = nodes("expert").find((g) => g.querySelector("text").textContent === "Expert #1");
+  const click = (n) => n.dispatchEvent(new MouseEvent("click", { bubbles: true }));   // SVG elements have no .click()
+  click(ex1); await tick();
+  R.drillPapers = nodes("paper").map((g) => [...g.querySelectorAll("text")].map((t) => t.textContent).join(" | "));
+  R.drillVias = labels("via"); R.backShown = !document.getElementById("graph-back").hidden;
+  R.drillEdges = [...dlg.querySelectorAll(".gl")].map((t) => t.textContent).sort();
+  click(nodes("paper")[0]); R.opened = window.__opened;
+  R.hrefs = nodes("paper").map((g) => g.dataset.href);
+  const esc = new Event("cancel", { cancelable: true }); dlg.dispatchEvent(esc); await tick();   // Escape in a drill-down
+  R.drillEscapeKept = esc.defaultPrevented;
+  R.afterEscape = { open: dlg.open, experts: nodes("expert").length, papers: nodes("paper").length, focus: document.activeElement.getAttribute("aria-label") };
+  const via = nodes("via").find((g) => g.querySelector("text").textContent === "The Coca-Cola Company");
+  via.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); await tick();
+  R.viaDrill = { experts: labels("expert"), papers: nodes("paper").length };
+  click(document.querySelector("#graph-svg .g-bg")); await tick();
+  R.afterBg = nodes("paper").length === 0 && nodes("expert").length === 4;
+  nodes("expert").find((g) => g.querySelector("text").textContent === "Expert #2").dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true })); await tick();
+  R.spacePapers = nodes("paper").length;
+  document.getElementById("graph-back").click(); await tick();
+  R.afterBack = nodes("paper").length === 0;
+  R.text = dlg.textContent + " " + [...dlg.querySelectorAll("[aria-label]")].map((n) => n.getAttribute("aria-label")).join(" ");
+  R.bad = dlg.querySelectorAll("img, script").length;
+  R.on = [...dlg.querySelectorAll("*")].filter((n) => [...n.attributes].some((a) => a.name.startsWith("on"))).length;
+  const esc2 = new Event("cancel", { cancelable: true }); dlg.dispatchEvent(esc2);
+  R.closesOnEscape = !esc2.defaultPrevented;   // on the overview the browser's own Escape closes the dialog
+  document.getElementById("graph-close").click();
+  R.focusBack = !dlg.open && document.activeElement === btn;   // closed, and focus is back on the button
+  newCheck(); R.disabledAfterNew = btn.disabled;
+  R.overflow = document.documentElement.scrollWidth > innerWidth;
+  R.pwn = window.__pwn || null; R.errors = __errors;
+  __report(R);
+})();
+"""
+
+
+def test_case_graph_draws_only_this_checks_results_and_drills_down():
+    got = _run_page(_GRAPH_SERVER, _GRAPH_HARNESS)
+    if got is None:
+        print("      (skipped: no Chrome)")
+        return "SKIP"
+    assert got["errors"] == [] and got["pwn"] is None and got["bad"] == 0 and got["on"] == 0, got
+    assert got["before"]["disabled"] is True and "no expert results" in got["before"]["title"], got["before"]
+    assert got["before"]["aria"] == "Case graph" and got["after"] == {"disabled": False, "title": "Case graph"}, got
+    assert got["open"] is True and got["focusInside"] is True and got["roles"] is True, got
+    assert got["centre"] == ["Coca-Cola × obesity"], got["centre"]
+    # the failed check (#5) gets no node; a label that is not Expert #n is never shown
+    assert sorted(got["experts"]) == ["Expert #1", "Expert #2", "Expert #3", "Expert #?"], got["experts"]
+    assert len(got["vias"]) == 2 and "The Coca-Cola Company" in got["vias"], got["vias"]
+    assert got["edges"] == ["1 paper, affiliation", "1 paper, funding", "2 papers, funding"], got["edges"]
+    assert "no tie found (see scope)" in got["expertNotes"], got["expertNotes"]
+    assert "obesity-coke" in got["side"], got["side"]
+    assert got["drillPapers"] == ["10.1/a | 2015, on-topic", "10.1/b | 2016, off-topic", "10.1/c | 2012, on-topic"], got["drillPapers"]
+    assert len(got["drillVias"]) == 2 and got["backShown"] is True, got
+    assert got["drillEdges"] == ["1 paper, affiliation", "2 papers, funding"], got["drillEdges"]
+    assert got["opened"] == [["https://doi.org/10.1/a", "_blank", "noopener"]], got["opened"]
+    assert all(h.startswith("https://doi.org/10.1/") for h in got["hrefs"]), got["hrefs"]
+    assert got["afterEscape"]["open"] is True and got["afterEscape"]["papers"] == 0, got["afterEscape"]
+    assert got["afterEscape"]["experts"] == 4 and got["afterEscape"]["focus"].startswith("Expert #1"), got["afterEscape"]
+    assert got["viaDrill"] == {"experts": ["Expert #1", "Expert #2"], "papers": 3}, got["viaDrill"]
+    assert got["afterBg"] is True and got["spacePapers"] == 1 and got["afterBack"] is True, got
+    assert got["drillEscapeKept"] is True and got["closesOnEscape"] is True and got["focusBack"] is True, got
+    assert got["disabledAfterNew"] is True and got["overflow"] is False, got
+    assert not has_name(got["text"], "Jane Roe"), got["text"]
+    assert set(re.findall(r"Expert #(\S)", got["text"])) == {"1", "2", "3", "?"}, got["text"]
+    assert "Roe" not in got["text"] and "Jane" not in got["text"], got["text"]
+
+
+def test_case_graph_works_on_a_phone():
+    got = _run_page(_GRAPH_SERVER, _GRAPH_HARNESS, width=390)
+    if got is None:
+        print("      (skipped: no Chrome)")
+        return "SKIP"
+    assert got["errors"] == [] and got["open"] is True and got["overflow"] is False, got
+    assert len(got["drillPapers"]) == 3 and got["viaDrill"]["papers"] == 3, got
+
+
+def test_page_scripts_never_use_innerhtml():
+    for n in ("app.js", "case.js", "landing.js"):
+        code = re.sub(r"(?<!:)//[^\n]*", "",(w.STATIC / n).read_text(encoding="utf-8"))
+        for bad in ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "DOMParser", "createContextualFragment"):
+            assert bad not in code, (n, bad)
+
+
 _XSS_SEED = r"""
 const X = '<img src=x onerror="window.__pwn=1"><script>window.__pwn=2</script>';
 const evs = [
