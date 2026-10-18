@@ -1,0 +1,15 @@
+{
+ "_note": "SYNTHETIC test fixture (not a real Wikidata reply): the shape of the round-4 statement-form SPARQL reply, with made-up QIDs Q900001-Q900004. Q900001 has one P355 link that ended in 1989; Q900002 has an ended P127 link and a current P355 link (so it is current); Q900003 has no English label (the label service returned the QID) but a description; Q900004 has a German label only. Never copy into a case.",
+ "results": {"bindings": [
+  {"item": {"value": "http://www.wikidata.org/entity/Q900001"}, "itemLabel": {"value": "Old Media Holdings"}, "enLabel": {"value": "Old Media Holdings"},
+   "dir": {"value": "child"}, "prop": {"value": "P355"}, "end": {"value": "1989-01-01T00:00:00Z"}, "classLabel": {"value": "company"}, "isOrg": {"value": "true"}},
+  {"item": {"value": "http://www.wikidata.org/entity/Q900002"}, "itemLabel": {"value": "Still Owned Bottlers"}, "enLabel": {"value": "Still Owned Bottlers"},
+   "dir": {"value": "child"}, "prop": {"value": "P127"}, "end": {"value": "2001-05-01T00:00:00Z"}, "classLabel": {"value": "company"}, "isOrg": {"value": "true"}},
+  {"item": {"value": "http://www.wikidata.org/entity/Q900002"}, "itemLabel": {"value": "Still Owned Bottlers"}, "enLabel": {"value": "Still Owned Bottlers"},
+   "dir": {"value": "child"}, "prop": {"value": "P355"}, "classLabel": {"value": "company"}, "isOrg": {"value": "true"}},
+  {"item": {"value": "http://www.wikidata.org/entity/Q900003"}, "itemLabel": {"value": "Q900003"}, "itemDescription": {"value": "beverage company in Chile"},
+   "dir": {"value": "child"}, "prop": {"value": "P355"}, "classLabel": {"value": "business"}, "isOrg": {"value": "true"}},
+  {"item": {"value": "http://www.wikidata.org/entity/Q900004"}, "itemLabel": {"value": "Getränke Beispiel GmbH"},
+   "dir": {"value": "child"}, "prop": {"value": "P355"}, "classLabel": {"value": "business"}, "isOrg": {"value": "true"}}
+ ]}
+}

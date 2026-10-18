@@ -87,7 +87,10 @@ def test_seed_by_id_and_sources():
                            "lei": "UWJKFUJFZ02DKWI3RY53", "cik": None}
     seed = out["rows"][0]
     assert seed["id_source"] == "seed" and seed["rel_suggested"] == "parent" and seed["openalex_id"] == "I1312732213"
-    assert out["counts"] == {"ror": 0, "wikidata_raw_items": 5, "wikidata": 3, "gleif": 4, "sec": 0}, out["counts"]
+    assert out["counts"] == {"ror": 0, "wikidata_raw_items": 5, "wikidata": 3, "gleif": 4, "sec": 0,
+                             "merged_same_body": 0, "funders_dropped_shareholder_ror": 0}, out["counts"]
+    assert seed["status"] == "proposed" and not seed["also_from"]  # the same-name LEI never merges into the seed
+    assert not [r for r in out["rows"] if r["label_note"]]  # every fixture item has an English label
     assert all(r["status"] in family.STATUSES for r in out["rows"])
     assert (DIR / "candidates.json").exists()
     assert any("SEC" in w and "skipped" in w and "SEC_USER_AGENT" in w for w in out["warnings"])
@@ -275,19 +278,28 @@ def test_shareholder_cannot_be_approved_by_one_command():
 
 
 def test_shareholder_funder_inherits_status():
-    """A funder found through a shareholder's ROR is a shareholder row too (in-test OpenAlex reply)."""
+    """Round 4: a funder found ONLY through a shareholder's ROR is not created at all (Lubrizol came only through
+    Berkshire Hathaway), and the drop is counted. One also reached through a family ROR is kept, marked.
+    (In-test OpenAlex replies, made up.)"""
     seed = {"qid": "Q3295867", "name": "The Coca-Cola Company"}
     items = {"Q1": {"name": "Some Asset Manager", "dirs": {"parent"}, "props": {"P127"}, "classes": {"company"},
-                    "ror": "0aaaaaaa1", "lei": None, "is_org": True}}
-    fake = {"institutions?ror:0aaaaaaa1": {"results": []},
-            "funders?ror:0aaaaaaa1": {"results": [{"id": "https://openalex.org/F1", "display_name": "Some Asset Manager"}]}}
+                    "ror": "0aaaaaaa1", "lei": None, "is_org": True},
+             "Q5": {"name": "Family Unit", "dirs": {"child"}, "props": {"P355"}, "classes": {"company"},
+                    "ror": "0aaaaaaa6", "lei": None, "is_org": True}}
+    only = {"id": "https://openalex.org/F1", "display_name": "Lubrizol-like Funder"}
+    both = {"id": "https://openalex.org/F2", "display_name": "Shared Funder"}
+    fake = {"institutions?ror:0aaaaaaa1": {"results": []}, "institutions?ror:0aaaaaaa6": {"results": []},
+            "funders?ror:0aaaaaaa1": {"results": [only, both]}, "funders?ror:0aaaaaaa6": {"results": [both]}}
     old, family.openalex = family.openalex, lambda path, params: fake[f"{path}?{params['filter']}"]
-    try:
-        rows = family.map_openalex(family.from_wikidata(seed, items), seed["name"])
+    counts = {}
+    try:  # the shareholder row comes first here, so the family-first ordering inside map_openalex is tested too
+        rows = family.map_openalex(family.from_wikidata(seed, items), seed["name"], counts)
     finally:
         family.openalex = old
-    f = [r for r in rows if r["entity"] == "funder"][0]
+    assert not [r for r in rows if r["openalex_id"] == "F1"] and counts["funders_dropped_shareholder_ror"] == 1
+    f = [r for r in rows if r["openalex_id"] == "F2"][0]
     assert f["status"] == "needs_human_source" and f["reason"] == family.SHAREHOLDER and f["kind"] == "company"
+    assert f["flag"] == "shareholder"
     # and apply refuses it without a source
     fresh()
     base_case()
@@ -361,6 +373,131 @@ def test_review_hints_foundation_like_institution():
     assert not [x for x in lines if "(foundation-like name)" in x and " funder " in x]  # institutions only
     assert "(foundation-like name)" not in [x for x in lines if "BlackRock" in x][0]
     assert "flag: shareholder" in [x for x in lines if "BlackRock" in x][0]
+
+
+WD_SYN = json.loads((Path(__file__).resolve().parent / "fixtures" / "family" / "wikidata_r4_synthetic.json")
+                    .read_text(encoding="utf-8"))
+
+
+def synthetic_items():
+    old, family.http_json = family.http_json, lambda url, params=None: WD_SYN
+    try:
+        return family.wikidata_items("Q3295867")
+    finally:
+        family.http_json = old
+
+
+def test_sparql_uses_statements_end_time_and_rank():
+    q = family.SPARQL
+    assert all(x in q for x in ("p:P355", "ps:P355", "p:P749", "p:P127", "pq:P582", "wikibase:DeprecatedRank", "?enLabel"))
+    assert "wdt:P355" not in q and "wdt:P749 ?" not in q  # truthy form hides end times
+
+
+def test_past_link_is_kept_but_never_suggested():
+    items = synthetic_items()
+    assert items["Q900001"]["ended"] == "1989" and items["Q900002"]["ended"] is None
+    assert items["Q900002"]["props"] == {"P355"}  # the ended P127 link does not count; the current P355 does
+    rows = {r["source_id"]: r for r in family.from_wikidata({"qid": "Q3295867", "name": "The Coca-Cola Company"}, items)}
+    old = rows["Q900001"]
+    assert old["status"] == "needs_human_source" and old["reason"] == "past link (ended 1989)" and old["rel_suggested"] is None
+    assert "end time (P582)" in old["evidence"] and not family.own_text_problems(old)
+    cur = rows["Q900002"]
+    assert cur["status"] == "proposed" and cur["rel_suggested"] == "bottler" and family.STAKE not in cur["evidence"]
+
+
+def test_qid_only_name_falls_back_and_is_marked():
+    items = synthetic_items()
+    assert items["Q900003"]["name"] == "beverage company in Chile" and items["Q900003"]["no_en_label"]
+    assert items["Q900004"]["name"] == "Getränke Beispiel GmbH" and items["Q900004"]["no_en_label"]
+    assert not items["Q900001"]["no_en_label"]
+    rows = {r["source_id"]: r for r in family.from_wikidata({"qid": "Q3295867", "name": "The Coca-Cola Company"}, items)}
+    assert rows["Q900003"]["label_note"] == family.NO_EN and family.NO_EN in rows["Q900003"]["evidence"]
+    assert rows["Q900001"]["label_note"] is None
+
+
+def inst(src, sid, name, lei=None, ror=None, status="proposed", linked=True):
+    r = family.row(src, sid, name, "The Coca-Cola Company", "subsidiary", f"{src} test row", None,
+                   status=status, lei=lei, ror=ror, linked=linked)
+    return r
+
+
+def test_merge_same_body_by_name_across_sources_and_by_id():
+    """Made-up rows. Same normalised name across sources merges; same source, a different "(Country)",
+    a fuzzy name, a name-search hit or the seed never merge by name; a shared LEI merges whatever the names."""
+    rows = [inst("seed", "00yc8qw13", "The Coca-Cola Company", lei="UWJ"),
+            inst("wikidata", "Q1", "Coca-Cola Beverages Africa", status="needs_human_source"),
+            inst("gleif", "L1", "COCA-COLA BEVERAGES AFRICA LIMITED", lei="L1"),
+            inst("wikidata", "Q2", "Coca-Cola Beverages Africa"),                 # same source: stays apart
+            inst("wikidata", "Q3", "Coca-Cola (Japan)"), inst("gleif", "L3", "Coca-Cola (Mexico)", lei="L3"),
+            inst("wikidata", "Q4", "Costa Coffee", lei="L4"), inst("gleif", "L4", "COSTA LIMITED", lei="L4"),
+            inst("gleif", "L5", "Costa Coffee Holdings", lei="L5"),               # fuzzy name, no shared id
+            inst("gleif-name", "L6", "THE COCA-COLA COMPANY", lei="L6", status="same_name_collision", linked=False),
+            inst("wikidata", "Q7", "Some Unit", ror="0bbbbbbb1"), inst("ror", "0bbbbbbb1", "Some Unit Ltd", ror="0bbbbbbb1")]
+    out = family.merge_same_body(rows)
+    by = {r["source_id"]: r for r in out}
+    assert len(out) == 9, [r["name"] for r in out]
+    ccba = by["Q1"]
+    assert [x["source_id"] for x in ccba["also_from"]] == ["L1"] and ccba["lei"] == "L1"
+    assert ccba["status"] == "needs_human_source"  # the more careful status wins
+    assert "Q2" in by and "L3" in by and "L5" in by and "L6" in by
+    assert [x["source_id"] for x in by["Q4"]["also_from"]] == ["L4"]  # Costa: shared LEI
+    assert [x["source_id"] for x in by["Q7"]["also_from"]] == ["0bbbbbbb1"]  # shared ROR
+    assert by["00yc8qw13"]["status"] == "proposed" and not by["00yc8qw13"]["also_from"]
+
+
+def test_same_name_hit_and_seed_never_merge_with_a_same_named_child():
+    """Added by the Reviewer (round 4). A real child that has the seed's own name (made up here: GLEIF child
+    "The Coca-Cola Company" in another country, no "(Country)" in the name) must not swallow the Australian
+    name-search hit, and must not merge into the seed, because neither is ID-linked as a name match."""
+    rows = [inst("seed", "00yc8qw13", "The Coca-Cola Company", lei="UWJ", ror="00yc8qw13"),
+            inst("gleif-name", "8945007BLGJ517U74C54", "The Coca-Cola Company", lei="8945007BLGJ517U74C54",
+                 status="same_name_collision", linked=False),
+            inst("gleif", "L9", "THE COCA-COLA COMPANY", lei="L9"),
+            inst("wikidata", "Q9", "The Coca-Cola Company")]  # same name, other source: may merge with L9 only
+    out = family.merge_same_body(rows)
+    by = {r["source_id"]: r for r in out}
+    assert set(by) == {"00yc8qw13", "8945007BLGJ517U74C54", "L9"}, [(r["source_id"], r["also_from"]) for r in out]
+    assert not by["00yc8qw13"]["also_from"] and not by["8945007BLGJ517U74C54"]["also_from"]
+    assert by["8945007BLGJ517U74C54"]["status"] == "same_name_collision"
+    assert [x["source_id"] for x in by["L9"]["also_from"]] == ["Q9"]
+
+
+def test_propose_runs_merge_before_openalex():
+    """Added by the Reviewer (round 4): propose must call merge_same_body, and before map_openalex."""
+    calls, real_merge, real_map = [], family.merge_same_body, family.map_openalex
+    family.merge_same_body = lambda rows: calls.append("merge") or real_merge(rows)
+    family.map_openalex = lambda *a, **k: calls.append("map") or real_map(*a, **k)
+    try:
+        fresh()
+    finally:
+        family.merge_same_body, family.map_openalex = real_merge, real_map
+    assert calls == ["merge", "map"], calls
+
+
+def test_merge_into_lets_the_more_careful_status_win_both_ways():
+    a, b = inst("wikidata", "Q1", "X"), inst("gleif", "L1", "X", status="same_name_collision")
+    family.merge_into(a, b)
+    assert a["status"] == "same_name_collision"
+    c, d = inst("wikidata", "Q2", "Y", status="needs_human_source"), inst("gleif", "L2", "Y")
+    family.merge_into(c, d)
+    assert c["status"] == "needs_human_source"
+
+
+def test_review_tags_gleif_children_and_set_prints_one_line():
+    import contextlib
+    import io
+    fresh()
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        family.review(SLUG)
+        family.set_row(SLUG, 0, "approved", rel="parent")
+    lines = buf.getvalue().splitlines()
+    costa = [x for x in lines if "COSTA LIMITED" in x][0]
+    assert "[gleif: legal parent record]" in costa
+    assert "[gleif: legal parent record]" not in [x for x in lines if "8945007BLGJ517U74C54" in x or
+                                                  ("THE COCA-COLA COMPANY" in x.upper() and "same_name_collision" in x)][0]
+    assert "[gleif: legal parent record]" not in [x for x in lines if "BlackRock" in x][0]
+    assert lines[-1] == "row 0: approved (rel=parent)", lines[-1]
 
 
 def test_p127_only_child_says_stake_unknown():

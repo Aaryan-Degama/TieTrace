@@ -98,12 +98,14 @@ def live_agent():
     """A2: run_agent with real Gemini + the real McpClient + the real graph (FALKORDB_PORT=6500, newsroom
     zz-test-agent-a2, deleted after). Events are already redacted by web.app.Parser; say() checks for the key."""
     import json
-    key = env_key("GEMINI_API_KEY")
+    prov = os.environ.get("AGENT_LIVE_PROVIDER", "gemini")  # Aaryan, Oct 18: also groq etc.
+    key = env_key({"gemini": "GEMINI_API_KEY", "groq": "GROQ_API_KEY", "claude": "TEST_KEY_CLAUDE",
+                   "openai": "TEST_KEY_OPENAI"}[prov])
     if not key:
-        say("SKIP  agent live: not run: no key")
+        say(f"SKIP  agent live ({prov}): not run: no key")
         return
     os.environ["TIETRACE_NEWSROOM"] = "zz-test-agent-a2"
-    os.environ["FALKORDB_PORT"] = "6500"
+    os.environ.setdefault("FALKORDB_PORT", "6500")  # Abdul's port; Aaryan's machine uses 6379
     from web.agent.loop import run_agent
     from web.agent.mcp_client import McpClient
     BLAIR, HILL = "A5105003630", "A5031318756"
@@ -114,7 +116,7 @@ def live_agent():
         evs = []
         session = {}
         async with McpClient() as c:
-            async for ev in run_agent(get_provider("gemini"), key, story, max_turns=8, client=c, session=session):
+            async for ev in run_agent(get_provider(prov), key, story, max_turns=8, client=c, session=session):
                 evs.append(ev)
             # "Steven Blair" has a split OpenAlex profile (golden test), so the model must stop at the picker.
             # Do what the page does when the reporter clicks "Use this author": same session, same sentence.
@@ -122,7 +124,7 @@ def live_agent():
             if pick:
                 say("  (reporter picks Blair's candidate in the picker, same session)")
                 follow = f"For {pick[0]['name_ref']}, use OpenAlex author {BLAIR}. Continue the check."
-                async for ev in run_agent(get_provider("gemini"), key, follow, max_turns=8, client=c, session=session):
+                async for ev in run_agent(get_provider(prov), key, follow, max_turns=8, client=c, session=session):
                     evs.append(ev)
         return evs
     try:
@@ -156,7 +158,7 @@ def live_agent():
     for secret in ("Steven Blair", "Blair", "Hill", "James O."):
         assert secret not in dumped, secret
     assert "orcid.org" not in dumped and evs[-1][0] == "done"
-    say("PASS  agent live (Blair A1, Hill A2, labels Expert #n, no names, no key)")
+    say(f"PASS  agent live {prov} (Blair A1, Hill A2, labels Expert #n, no names, no key)")
 
 
 if __name__ == "__main__":

@@ -22,8 +22,9 @@ addEventListener("pagehide", () => { keyInput.value = ""; });
 fetch("/api/agent/providers").then((r) => r.json()).then((j) => {
   hostGemini = j.host_gemini === true;
   for (const p of j.providers || []) {
-    const o = [...provSel.options].find((x) => x.value === p.id);
-    if (o) o.textContent = `${p.label} (${p.model})`;
+    // A provider the page has no option for yet (e.g. groq) gets one, so new providers appear by themselves.
+    const o = [...provSel.options].find((x) => x.value === p.id) || provSel.appendChild(el("option", { value: p.id }));
+    o.textContent = `${p.label} (${p.model})`;
   }
   if (j.local_claude === true) {
     provSel.append(el("option", { value: "local", text: "Local (Claude Code login)" }));

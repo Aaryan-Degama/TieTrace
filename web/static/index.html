@@ -29,6 +29,7 @@
     <svg viewBox="0 0 20 20" aria-hidden="true"><line x1="10" y1="4" x2="10" y2="16"/><line x1="4" y1="10" x2="16" y2="10"/></svg>New check
   </button>
   <nav class="sb-nav" aria-label="Main">
+    <button type="button" class="sb-link" id="new-case"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2.5 6V15a1.5 1.5 0 0 0 1.5 1.5h12a1.5 1.5 0 0 0 1.5-1.5V7.5A1.5 1.5 0 0 0 16 6H9.5L8 4H4a1.5 1.5 0 0 0-1.5 1.5z"/><line x1="10" y1="8.5" x2="10" y2="13.5"/><line x1="7.5" y1="11" x2="12.5" y2="11"/></svg>+ New case</button>
     <a href="how.html"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 4.5h5a2 2 0 0 1 2 2V16a1.5 1.5 0 0 0-1.5-1.5H3zM17 4.5h-5a2 2 0 0 0-2 2V16a1.5 1.5 0 0 1 1.5-1.5H17z"/></svg>How it works</a>
     <details class="sb-cases">
       <summary><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2.5 6V15a1.5 1.5 0 0 0 1.5 1.5h12a1.5 1.5 0 0 0 1.5-1.5V7.5A1.5 1.5 0 0 0 16 6H9.5L8 4H4a1.5 1.5 0 0 0-1.5 1.5z"/></svg>Cases</summary>
@@ -58,6 +59,29 @@
       <svg viewBox="0 0 20 20" aria-hidden="true"><rect x="2.5" y="3.5" width="15" height="13" rx="2.5"/><line x1="12" y1="3.5" x2="12" y2="16.5"/></svg>
     </button>
   </div>
+
+  <section class="wizard" id="wizard" aria-labelledby="wz-title" hidden>
+    <h1 id="wz-title">Create a research case</h1>
+    <p class="wz-sub">Every step here is your click; the model never builds a case. Three gates: you tick the company family and topic, you read the estimate, and you confirm the build.</p>
+    <form class="wz-step" id="wz-describe">
+      <h2>Describe the case</h2>
+      <label for="wz-company">Company</label>
+      <input type="text" id="wz-company" required maxlength="120" autocomplete="off" placeholder="Philip Morris">
+      <label for="wz-topic">Topic words</label>
+      <input type="text" id="wz-topic" required maxlength="120" autocomplete="off" placeholder="lung cancer">
+      <div class="wz-row">
+        <span><label for="wz-y0">First year</label><input type="number" id="wz-y0" required min="1900" max="2100"></span>
+        <span><label for="wz-y1">Last year</label><input type="number" id="wz-y1" required min="1900" max="2100"></span>
+      </div>
+      <label for="wz-slug">Case name (slug): lower case letters, digits and -</label>
+      <input type="text" id="wz-slug" required maxlength="40" pattern="[a-z0-9][a-z0-9\-]{1,39}" autocomplete="off" spellcheck="false">
+      <div class="row"><button type="submit" class="primary" id="wz-find">Find candidates</button></div>
+    </form>
+    <div class="wz-step" id="wz-pick" hidden></div>
+    <div class="wz-step" id="wz-estimate" hidden></div>
+    <div class="wz-step" id="wz-build" hidden></div>
+    <p class="status" id="wz-status" role="status"></p>
+  </section>
 
   <div class="thread" id="messages" aria-live="polite">
     <div class="greet" id="hero">
@@ -256,6 +280,7 @@
 </aside>
 </div>
 <script src="app.js"></script>
+<script src="case.js"></script>
 <script src="landing.js"></script>
 </body>
 </html>

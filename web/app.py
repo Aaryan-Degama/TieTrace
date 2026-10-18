@@ -10,7 +10,9 @@ Env:  TIETRACE_NEWSROOM (default alpha), FALKORDB_HOST/FALKORDB_PORT (default 12
       FALKORDB_PASSWORD (optional, passed on to the MCP server), TIETRACE_CLAUDE (default claude), TIETRACE_WEB_TIMEOUT (seconds, default 420).
 """
 import asyncio
+import contextlib
 import hashlib
+import io
 import json
 import os
 import re
@@ -25,6 +27,7 @@ import tempfile
 import threading
 import time
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -39,6 +42,7 @@ os.environ.setdefault("TIETRACE_NEWSROOM", "alpha")
 sys.path.insert(0, str(ROOT))
 import server  # noqa: E402  (imported, not run: the stdio loop only starts under __main__)
 import verifier  # noqa: E402
+import discover  # noqa: E402  (the case wizard calls its search functions in-process)
 
 NEWSROOM = server.NEWSROOM
 SERVER_NAME = "tietrace"
@@ -46,6 +50,7 @@ P = f"mcp__{SERVER_NAME}__"
 ALLOWED = ["resolve_experts", "find_experts", "tie_report", "check_no_tie", "bridges", "check_case", "list_cases",
            "open_case", "recall", "recheck", "draft_note"]
 HUMAN_ONLY = ["record_verdict", "approve_note"]  # never given to the model (O2)
+CONFIRM_ACTIONS = HUMAN_ONLY + ["build_case"]   # one-time confirm tokens; build_case is a web wizard click, not a tool
 TIMEOUT_S = float(os.environ.get("TIETRACE_WEB_TIMEOUT", "420"))
 BUDGET_USD = os.environ.get("TIETRACE_WEB_BUDGET_USD", "2.00")  # claude --max-budget-usd, per run
 MAX_RUNS = 2            # claude runs at the same time; more get a BUSY error
@@ -633,6 +638,15 @@ def _local_origin(request):
     return urlparse(origin).hostname in ("127.0.0.1", "localhost")
 
 
+def _local_host(request):
+    """For GET endpoints (a same-origin GET may carry no Origin): the Host must be this machine, the same hostname
+    test as _local_origin, so a DNS-rebinding name cannot read them."""
+    try:
+        return urlparse(f"http://{request.headers.get('host', '')}").hostname in ("127.0.0.1", "localhost")
+    except ValueError:
+        return False
+
+
 def _refuse(status, message):
     return JSONResponse({"ok": False, "error": {"code": "REFUSED", "message": message}}, status_code=status)
 
@@ -660,8 +674,10 @@ def claude_logged_in():
 
 
 @app.get("/api/auth")
-def auth_status():
+def auth_status(request: Request):
     """Only a yes/no: no email or account detail is passed on to the page."""
+    if not _local_host(request):
+        return _refuse(403, "only this page may call the API")
     return {"ok": True, "logged_in": claude_logged_in()}
 
 
@@ -732,7 +748,7 @@ def confirm(body: Confirm, request: Request):
     """Step one of a human gate: the page shows what will happen and gets a one-time token for exactly that."""
     if not _local_origin(request):
         return _refuse(403, "only this page may call the API")
-    if body.action not in HUMAN_ONLY:
+    if body.action not in CONFIRM_ACTIONS:
         return _refuse(400, "unknown action")
     out = {"ok": True, "token": issue_token(body.action, body.params), "expires_in_s": TOKEN_TTL_S}
     if body.action == "approve_note" and isinstance(body.params.get("note_id"), str):
@@ -812,10 +828,11 @@ def _session_expired():
                         status_code=410)
 
 
-def _agent_session(sid):
+def _agent_session(sid, provider=None):
     """The stored session for this id (None: no id, start a new one). Returns "unknown" for an id the app does not
     hold (expired, evicted or from before a restart): it is never silently recreated empty, because its names to
-    hide are gone too. Returns "busy" when that session already has a run. Expired ones are dropped; the oldest go
+    hide are gone too. Returns "busy" when that session already has a run, and "provider" when it was started with
+    another provider (its raw turns would be sent to the wrong API). Expired ones are dropped; the oldest go
     when full."""
     now = time.time()
     with _tlock:
@@ -829,9 +846,12 @@ def _agent_session(sid):
                 idle = [k for k, v in _agent_sessions.items() if not v["busy"]]
                 del _agent_sessions[(idle or list(_agent_sessions))[0]]  # oldest idle one first
             sid = uuid.uuid4().hex
-            entry = _agent_sessions[sid] = {"s": {"id": sid, "messages": []}, "exp": 0, "busy": False}
+            entry = _agent_sessions[sid] = {"s": {"id": sid, "messages": []}, "exp": 0, "busy": False,
+                                            "provider": provider}
         if entry["busy"]:
             return "busy"
+        if entry.get("provider") != provider:
+            return "provider"
         entry["busy"], entry["exp"] = True, now + SESSION_TTL_S
         return entry
 
@@ -843,8 +863,10 @@ class AgentAsk(BaseModel):
 
 
 @app.get("/api/agent/providers")
-def agent_providers():
+def agent_providers(request: Request):
     from web.agent.providers import MODELS
+    if not _deployed() and not _local_host(request):  # deployed: served on the host's own public name
+        return _refuse(403, "only this page may call the API")
     return {"ok": True, "providers": [{"id": k, "label": v["label"], "model": v["model"]} for k, v in MODELS.items()],
             "local_claude": not _deployed() and shutil.which(os.environ.get("TIETRACE_CLAUDE", "claude")) is not None,
             "host_gemini": _host_gemini()}
@@ -881,11 +903,13 @@ async def agent_ask(body: AgentAsk, request: Request):
             return _refuse(400, "bad session_id")
     if sid is not None and not session_known(sid):
         return _session_expired()
-    entry = _agent_session(sid)
+    entry = _agent_session(sid, body.provider)
     if entry == "unknown":
         return _session_expired()
     if entry == "busy":
         return _refuse(409, "this session already has a check running")
+    if entry == "provider":
+        return _refuse(409, "this check was started with another provider; start a new check to switch provider")
     session = entry["s"]
     if len(session["messages"]) >= MAX_AGENT_MESSAGES or sum(
             len(str(m.get("text") or m.get("result") or "")) for m in session["messages"]) > MAX_AGENT_CHARS:
@@ -917,6 +941,300 @@ async def agent_ask(body: AgentAsk, request: Request):
                 _runs.release()
             entry["busy"] = False
     return StreamingResponse(stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
+
+
+# ---------- create a case: a human-click wizard, no model (decided by Aaryan, Oct 18) ----------
+# Every step is a click on the page, handled by the plain code below; the model's tools are unchanged and it can
+# reach none of this. The three gates of .claude/skills/case-builder: GATE 0 the human ticks the family and topic
+# from discover.py's candidates, GATE 1 the human reads the dry-run estimate, GATE 2 the human confirms the build
+# with a one-time token (the same pattern as approve_note).
+
+loader = server.loader
+ID_OK = {"funders": re.compile(r"F\d{1,15}"), "institutions": re.compile(r"I\d{1,15}"), "topics": re.compile(r"T\d{1,15}")}
+REVIEWER_RE = re.compile(r"[A-Za-z][A-Za-z .'-]{0,59}")  # check_config wants decided_by as "Name, Mon D"
+TEXT_MAX = 120
+CASE_DEFAULTS = {k: loader.load_config("philip-morris-lung")[k]
+                 for k in ("topic_cap", "small_paper", "recent_year", "works_count_anomaly", "max_api_calls")}
+MONTHS = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split()
+# Prices from code, not from README/results: the search price is discover.py's docstring, the list price is
+# loader.USD_PER_LIST_CALL. The page also draws the 2010 default and CASE_DEFAULTS at runtime (see AI_USE.md, Oct 18).
+COST_NOTE = (f"Each search costs about $0.001 (one search call) plus a few list calls at "
+             f"${loader.USD_PER_LIST_CALL} each.")
+# discover and the dry run set loader's module state (KEY, api_calls, SLUG and the other case globals). Any new
+# in-process user of those globals in this app must take _case_lock too.
+_case_lock = threading.Lock()
+_build_lock = threading.Lock()
+_build = {"proc": None, "slug": None, "log": None}  # the one build this app started
+BUILD_POPEN = subprocess.Popen  # tests put a fake here: no test ever starts a real build
+LOG_TAIL = 65536  # bytes of the build log read per status poll
+
+
+def _bad_slug(slug):
+    return None if isinstance(slug, str) and loader.SLUG_RE.fullmatch(slug) else \
+        "the slug must be 2 to 40 lower case letters, digits or -, starting with a letter or digit"
+
+
+def _text_ok(s):
+    return 2 <= len(s.strip()) <= TEXT_MAX and re.search(r"\w", s) is not None
+
+
+def _api_key():
+    try:
+        return loader.api_key()
+    except Exception:
+        return None
+
+
+def _scrub(text, key):
+    """Every line that holds the API key is replaced whole, before it leaves the server."""
+    if not key:
+        return text
+    return "\n".join("[line hidden: it held the API key]" if key in ln else ln for ln in text.split("\n"))
+
+
+def _failed(code, e, key):
+    return JSONResponse({"ok": False, "error": {"code": code, "message": _scrub(f"{type(e).__name__}: {e}"[:300], key)}},
+                        status_code=502)
+
+
+class CaseDiscover(BaseModel):
+    slug: str
+    company: str
+    topic: str
+
+
+@app.post("/api/case/discover")
+def case_discover(body: CaseDiscover, request: Request):
+    """Step 2 (GATE 0): discover.py's funders, institutions and topics searches, in-process. Saves each result as
+    cases/<slug>/candidates_<kind>_<query>.json, like `discover.py --case`; step 3 takes names only from there."""
+    if not _local_origin(request):
+        return _refuse(403, "only this page may call the API")
+    if bad := _bad_slug(body.slug):
+        return _refuse(400, bad)
+    if (loader.CASES / body.slug / "case.json").exists():
+        return _refuse(409, f"case {body.slug} already exists; pick another slug")
+    if not (_text_ok(body.company) and _text_ok(body.topic)):
+        return _refuse(400, f"company and topic need 2 to {TEXT_MAX} characters each")
+    if not _case_lock.acquire(blocking=False):
+        return _refuse(409, "another discovery or estimate is running; try again in a moment")
+    key, found = _api_key(), {}
+    try:
+        loader.KEY, loader.api_calls, discover.cost[0] = key, 0, 0.0
+        # loader.get prints its retries. ponytail: redirect_stdout swaps sys.stdout for the whole process, so a print
+        # from another thread during these seconds is swallowed too (uvicorn logs to stderr; nothing else prints).
+        with contextlib.redirect_stdout(io.StringIO()):
+            for kind, q in (("funders", body.company.strip()), ("institutions", body.company.strip()),
+                            ("topics", body.topic.strip())):
+                found[kind] = {"kind": kind, "query": q, "fetched_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                               **getattr(discover, kind)(q)}
+        calls, cost = loader.api_calls, round(discover.cost[0], 5)
+    except (Exception, SystemExit) as e:  # SystemExit: loader.get stops on a used-up budget
+        return _failed("DISCOVER_FAILED", e, key)
+    finally:
+        _case_lock.release()
+    folder = loader.CASES / body.slug
+    folder.mkdir(parents=True, exist_ok=True)
+    for kind, res in found.items():
+        (folder / f"candidates_{kind}_{discover.query_slug(res['query'])}.json").write_text(
+            json.dumps(res, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+    return {"ok": True, "slug": body.slug, **{k: v["candidates"] for k, v in found.items()},
+            "phrase_works": found["topics"].get("phrase_works"), "api_calls": calls, "cost_usd": cost,
+            "cost_note": COST_NOTE, "defaults": CASE_DEFAULTS}
+
+
+class Pick(BaseModel):
+    id: str
+    kind: str | None = None  # funders: company or foundation
+    rel: str | None = None   # institutions: parent, subsidiary or bottler
+
+
+class CaseWrite(BaseModel):
+    slug: str
+    company: str
+    years: list[int]
+    reviewer: str
+    funders: list[Pick] = []
+    institutions: list[Pick] = []
+    topics: list[Pick] = []
+
+
+def _candidate_names(slug):
+    """id -> name of every candidate discover saved in cases/<slug>/: only these ids may go into case.json."""
+    names = {}
+    for f in (loader.CASES / slug).glob("candidates_*.json"):
+        try:
+            cards = json.loads(f.read_text(encoding="utf-8")).get("candidates", [])
+        except (OSError, ValueError, AttributeError):
+            continue
+        names.update({c["id"]: c["name"] for c in cards if isinstance(c, dict) and isinstance(c.get("id"), str)
+                      and isinstance(c.get("name"), str)})
+    return names
+
+
+@app.post("/api/case/write")
+def case_write(body: CaseWrite, request: Request):
+    """Step 3: case.json in the philip-morris-lung shape, checked by loader.check_config, never over an existing one."""
+    if not _local_origin(request):
+        return _refuse(403, "only this page may call the API")
+    if bad := _bad_slug(body.slug):
+        return _refuse(400, bad)
+    path = loader.CASES / body.slug / "case.json"
+    if path.exists():
+        return _refuse(409, f"case {body.slug} already exists; it is never overwritten")
+    if not _text_ok(body.company):
+        return _refuse(400, f"company needs 2 to {TEXT_MAX} characters")
+    reviewer = body.reviewer.strip()
+    if not REVIEWER_RE.fullmatch(reviewer):
+        return _refuse(400, "give the reviewer's name (letters, spaces and . ' -, up to 60 characters)")
+    names, items = _candidate_names(body.slug), {}
+    for kind, extra in (("funders", "kind"), ("institutions", "rel"), ("topics", None)):
+        picks = getattr(body, kind)
+        if len(picks) > loader.MAX_IDS:
+            return _refuse(400, f"at most {loader.MAX_IDS} {kind}")
+        items[kind] = []
+        for p in picks:
+            if not ID_OK[kind].fullmatch(p.id) or p.id not in names:
+                return _refuse(400, f"{p.id[:20]!r} is not a {kind} candidate that discovery found for this case")
+            items[kind].append({"id": p.id, "name": names[p.id], **({extra: getattr(p, extra) or ""} if extra else {})})
+    now = datetime.now()
+    stamp = f"{reviewer}, {MONTHS[now.month - 1]} {now.day}"
+    cfg = {"slug": body.slug, "company": body.company.strip(), **items, "years": body.years,
+           "topic_cap": CASE_DEFAULTS["topic_cap"], "public_ids": [],
+           **{k: CASE_DEFAULTS[k] for k in ("small_paper", "recent_year", "works_count_anomaly", "max_api_calls")},
+           "decided_by": {k: stamp for k in loader.DECISIONS},
+           "notes": f"Created with the web app's case wizard. GATE 0 approved by {stamp} (on-page click). Candidates "
+                    f"from discover.py, saved in this folder as candidates_*.json. Thresholds copied from "
+                    f"philip-morris-lung. No public_ids: not a public case."}
+    try:
+        loader.check_config(cfg, body.slug)
+    except ValueError as e:
+        return _refuse(400, str(e))
+    try:
+        with open(path, "x", encoding="utf-8") as f:  # "x": fails if the file appeared meanwhile
+            f.write(json.dumps(cfg, indent=2, ensure_ascii=False) + "\n")
+    except FileExistsError:
+        return _refuse(409, f"case {body.slug} already exists; it is never overwritten")
+    return {"ok": True, "slug": body.slug, "path": f"cases/{body.slug}/case.json", "case": cfg}
+
+
+class CaseSlug(BaseModel):
+    slug: str
+    confirm: str | None = None
+
+
+def ram_check(slug):
+    """The loader's own RAM check (loader.ram_problem) for this case; problem is None when the build fits."""
+    mb, source = loader.graph_estimate_mb(slug)
+    try:
+        info = loader.connect().connection.info("memory")
+    except Exception as e:
+        return {"estimate_mb": mb, "source": source, "problem": f"FalkorDB is not reachable ({type(e).__name__})"}
+    return {"estimate_mb": mb, "source": source, "problem": loader.ram_problem(info, mb)}
+
+
+@app.post("/api/case/estimate")
+def case_estimate(body: CaseSlug, request: Request):
+    """Step 4 (GATE 1): the loader's dry run, in-process. A few OpenAlex count calls; it writes nothing."""
+    if not _local_origin(request):
+        return _refuse(403, "only this page may call the API")
+    if bad := _bad_slug(body.slug):
+        return _refuse(400, bad)
+    try:
+        loader.load_config(body.slug)
+    except (ValueError, OSError) as e:
+        return _refuse(400, f"no valid case.json for {body.slug}: {type(e).__name__}")
+    if not _case_lock.acquire(blocking=False):
+        return _refuse(409, "another discovery or estimate is running; try again in a moment")
+    key = _api_key()
+    try:
+        loader.use_case(body.slug)
+        loader.KEY, loader.api_calls = key, 0
+        with contextlib.redirect_stdout(io.StringIO()):  # process-wide, as in case_discover
+            numbers = loader.dry_run()
+    except (Exception, SystemExit) as e:
+        return _failed("ESTIMATE_FAILED", e, key)
+    finally:
+        try:
+            loader.use_case(loader.DEFAULT_CASE)  # the module state goes back to what the rest of the app expects
+        finally:
+            _case_lock.release()  # even when the restore raises: a held lock would block every later estimate
+    return {"ok": True, "slug": body.slug, "estimate": numbers, "ram": ram_check(body.slug)}
+
+
+def build_cmd(slug):
+    """The exact build command. Never the re-download flag: a new case has no cache, so its first build downloads."""
+    return ["uv", "run", "--directory", str(ROOT), "python", "-u", "loader.py", "--case", slug]
+
+
+def other_build_running():
+    """True while any loader build holds its Redis lock build-lock:<slug>, also one started in a terminal."""
+    try:
+        return next(iter(loader.connect().connection.scan_iter("build-lock:*")), None) is not None
+    except Exception:
+        return False  # FalkorDB down: ram_check refuses the build anyway
+
+
+@app.post("/api/case/build")
+def case_build(body: CaseSlug, request: Request):
+    """Step 5 (GATE 2): only with the one-time token from /api/confirm for exactly this slug. One build at a time."""
+    if not _local_origin(request):
+        return _refuse(403, "only this page may call the API")
+    if bad := _bad_slug(body.slug):
+        return _refuse(400, bad)
+    if not take_token(body.confirm, "build_case", {"slug": body.slug}):
+        return _refuse(403, "confirm on the page first (the confirm token is missing, wrong, used or expired)")
+    try:
+        loader.load_config(body.slug)
+    except (ValueError, OSError) as e:
+        return _refuse(400, f"no valid case.json for {body.slug}: {type(e).__name__}")
+    with _build_lock:
+        p = _build["proc"]
+        if p is not None and p.poll() is None:
+            return _refuse(409, f"a build of {_build['slug']} is running; one build at a time")
+        if other_build_running():
+            return _refuse(409, "another build is running (a loader build lock is held); wait for it to finish")
+        ram = ram_check(body.slug)
+        if ram["problem"]:
+            return _refuse(409, f"RAM check failed: {ram['problem']}")
+        RUN_DIR.mkdir(exist_ok=True)
+        log = RUN_DIR / f"build-{body.slug}.log"
+        with open(log, "w", encoding="utf-8") as f:
+            proc = BUILD_POPEN(build_cmd(body.slug), cwd=ROOT, stdin=subprocess.DEVNULL, stdout=f,
+                               stderr=subprocess.STDOUT, start_new_session=True)
+        _build.update(proc=proc, slug=body.slug, log=log)
+    return {"ok": True, "slug": body.slug, "ram": ram}
+
+
+@app.get("/api/case/status")
+def case_status(slug: str, request: Request):
+    """Polled by the page: the build's state, status.json and the last log lines (key lines hidden)."""
+    if not _local_host(request):
+        return _refuse(403, "only this page may call the API")
+    if bad := _bad_slug(slug):
+        return _refuse(400, bad)
+    p = _build["proc"] if _build["slug"] == slug else None
+    running = p is not None and p.poll() is None
+    code = None if p is None or running else p.returncode
+    try:
+        st = json.loads((loader.CASES / slug / "status.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        st = {}
+    st = st if isinstance(st, dict) else {}
+    try:
+        data = _build["log"].read_bytes() if p is not None else b""
+    except OSError:
+        data = b""
+    if len(data) > LOG_TAIL:  # the cut may land inside a line (and inside the key): drop that partial first line
+        data = data[-LOG_TAIL:].split(b"\n", 1)[1] if b"\n" in data[-LOG_TAIL:] else b""
+    tail = data.decode("utf-8", errors="replace")
+    listed = None
+    if code == 0:  # the build ended well: is the case now loaded in list_cases?
+        cases = (server.list_cases().get("data") or {}).get("cases", [])
+        listed = any(c.get("case") == slug and c.get("graph_exists") for c in cases)
+    return {"ok": True, "slug": slug, "running": running, "returncode": code,
+            "status": st.get("status"), "error": _scrub(str(st["error"]), _api_key()) if st.get("error") else None, "counts": st.get("counts"),
+            "data_version": st.get("data_version"), "log": _scrub(tail, _api_key()).splitlines()[-200:],
+            "listed": listed}
 
 
 app.mount("/", StaticFiles(directory=STATIC), name="static")  # last: style.css, app.js, how.html (relative links, so the pages also open from a file)

@@ -643,10 +643,11 @@ DEFAULT_GRAPH_MB = 1000  # no earlier build of this case: the largest graph so f
 RAM_SHARE = 0.9          # refuse when used + new graph would pass 90% of the limit
 
 
-def graph_estimate_mb():
-    """(MB, where it came from) for the new graph: the last build's total_graph_sz_mb, else DEFAULT_GRAPH_MB."""
+def graph_estimate_mb(slug=None):
+    """(MB, where it came from) for the new graph: the last build's total_graph_sz_mb, else DEFAULT_GRAPH_MB.
+    slug: another case than the current one (the web wizard checks RAM before it starts a build)."""
     try:
-        mb = json.loads((CASES / SLUG / "status.json").read_text(encoding="utf-8")).get("total_graph_sz_mb")
+        mb = json.loads((CASES / (slug or SLUG) / "status.json").read_text(encoding="utf-8")).get("total_graph_sz_mb")
     except (OSError, ValueError):
         mb = None
     if isinstance(mb, (int, float)) and mb > 0:
@@ -726,7 +727,8 @@ def cached(name, key):
 
 def dry_run():
     """Counts only: per_page=1 probes read meta.count, plus one group_by for the topic years.
-    Writes nothing (no graph, no cache, no status). Prints the expected calls, works, cost and RAM."""
+    Writes nothing (no graph, no cache, no status). Prints the expected calls, works, cost and RAM, and returns
+    the same numbers (the web wizard shows them)."""
     def count(params):
         return get("works", {"filter": params["filter"], "per_page": 1, "select": "id"})["meta"]["count"]
 
@@ -753,6 +755,10 @@ def dry_run():
     print(f"expected cost: about ${calls * USD_PER_LIST_CALL:.3f}; projected graph RAM: about "
           f"{works * MB_PER_WORK:.0f} MB (GRAPH.MEMORY; a rebuild needs this much again while the old graph lives)")
     print(f"this dry run used {api_calls} API calls; it wrote nothing")
+    return {"case": SLUG, "works": works, "api_calls": calls, "author_calls": author_calls,
+            "cost_usd": round(calls * USD_PER_LIST_CALL, 3), "graph_mb": round(works * MB_PER_WORK),
+            "max_api_calls": MAX_API_CALLS, "dry_run_calls": api_calls,
+            "queries": [{"name": n, "works": k, "how": how} for n, k, how in rows]}
 
 
 def main():

@@ -41,19 +41,26 @@ STATUSES = {"proposed", "approved", "rejected", "needs_human_source", "same_name
 
 # Children and parents of the seed. The class filter keeps only items that are an instance of
 # (a subclass of) organization Q43229, so brands, patents, drinks and buildings drop out.
-SPARQL = """SELECT ?item ?itemLabel ?dir ?prop ?classLabel ?ror ?lei ?isOrg WHERE {
-  { SELECT ?item ?dir ?prop WHERE {
+# Statement form (p:/ps:) so a link's end time (P582) is seen and deprecated statements are dropped;
+# ?enLabel tells a real English label from the label service's fallback (round 4).
+SPARQL = """SELECT ?item ?itemLabel ?itemDescription ?enLabel ?dir ?prop ?end ?classLabel ?ror ?lei ?isOrg WHERE {
+  { SELECT ?item ?dir ?prop ?end WHERE {
       VALUES ?seed { wd:%s }
-      { ?seed wdt:P355 ?item BIND("child" AS ?dir) BIND("P355" AS ?prop) }
-      UNION { ?item wdt:P749 ?seed BIND("child" AS ?dir) BIND("P749" AS ?prop) }
-      UNION { ?item wdt:P127 ?seed BIND("child" AS ?dir) BIND("P127" AS ?prop) }
-      UNION { ?seed wdt:P749 ?item BIND("parent" AS ?dir) BIND("P749" AS ?prop) }
-      UNION { ?seed wdt:P127 ?item BIND("parent" AS ?dir) BIND("P127" AS ?prop) } } }
+      { ?seed p:P355 ?st . ?st ps:P355 ?item BIND("child" AS ?dir) BIND("P355" AS ?prop) }
+      UNION { ?item p:P749 ?st . ?st ps:P749 ?seed BIND("child" AS ?dir) BIND("P749" AS ?prop) }
+      UNION { ?item p:P127 ?st . ?st ps:P127 ?seed BIND("child" AS ?dir) BIND("P127" AS ?prop) }
+      UNION { ?seed p:P749 ?st . ?st ps:P749 ?item BIND("parent" AS ?dir) BIND("P749" AS ?prop) }
+      UNION { ?seed p:P127 ?st . ?st ps:P127 ?item BIND("parent" AS ?dir) BIND("P127" AS ?prop) }
+      FILTER NOT EXISTS { ?st wikibase:rank wikibase:DeprecatedRank }
+      OPTIONAL { ?st pq:P582 ?end } } }
   OPTIONAL { ?item wdt:P31 ?class }
   OPTIONAL { ?item wdt:P6782 ?ror }
   OPTIONAL { ?item wdt:P1278 ?lei }
+  OPTIONAL { ?item rdfs:label ?enLabel FILTER(LANG(?enLabel) = "en") }
   BIND(EXISTS { ?item wdt:P31 ?c . ?c wdt:P279* wd:Q43229 } AS ?isOrg)
-  SERVICE wikibase:label { bd:serviceParam wikibase:language "en". } }"""
+  SERVICE wikibase:label { bd:serviceParam wikibase:language "en,mul,de,fr,es,it,nl,pt,sv,ja". } }"""
+NO_EN = "no English label"
+CAREFUL = {"proposed": 0, "needs_human_source": 1, "same_name_collision": 2}  # higher = more careful
 
 
 def http_json(url, params=None):
@@ -113,6 +120,7 @@ def row(id_source, source_id, name, seed_name, rel, evidence, url, status="propo
     return {"id_source": id_source, "source_id": source_id, "name": name, "norm_name": norm(name),
             "match_type": match_type(name, seed_name, linked), "entity": "institution",
             "rel_suggested": rel, "rel": None, "kind": None, "human_source": None, "flag": None,
+            "also_from": [], "label_note": None,
             "source_url": url, "evidence": evidence, "ror": ror, "lei": lei,
             "openalex_id": None, "openalex_name": None, "status": status, "reason": None}
 
@@ -152,15 +160,27 @@ def from_ror(seed):
 
 
 def wikidata_items(qid):
-    """Raw SPARQL rows grouped by item: {qid: {name, dirs, props, classes, ror, lei, is_org}}."""
-    items = {}
+    """Raw SPARQL rows grouped by item: {qid: {name, dirs, props, classes, ror, lei, is_org, ended, no_en_label}}.
+    dirs/props come from the links that have no end time; ended is the last end year when every link has ended."""
+    items, links = {}, {}
     for b in http_json(WD_SPARQL, {"query": SPARQL % qid, "format": "json"})["results"]["bindings"]:
         v = lambda k: b.get(k, {}).get("value")
-        it = items.setdefault(short(v("item")), {"name": v("itemLabel"), "dirs": set(), "props": set(), "classes": set(),
-                                                 "ror": None, "lei": None, "is_org": v("isOrg") == "true"})
-        it["dirs"].add(v("dir")), it["props"].add(v("prop"))
+        q = short(v("item"))
+        label, en = v("itemLabel"), v("enLabel")
+        if not en:  # the label service fell back to another language, or to the bare QID
+            label = label if label and not re.fullmatch(r"Q\d+", label) else v("itemDescription") or q
+        it = items.setdefault(q, {"name": en or label, "dirs": set(), "props": set(), "classes": set(), "ror": None,
+                                  "lei": None, "is_org": v("isOrg") == "true", "ended": None, "no_en_label": not en})
+        end = v("end")
+        links.setdefault(q, set()).add((v("dir"), v("prop"), (end[:4] if end[:4].isdigit() else "date unknown") if end else None))
         it["classes"].add(v("classLabel") or "?")
         it["ror"], it["lei"] = it["ror"] or v("ror"), it["lei"] or v("lei")
+    for q, it in items.items():
+        live = [x for x in links[q] if x[2] is None]
+        for d, prop, _ in live or links[q]:
+            it["dirs"].add(d), it["props"].add(prop)
+        if not live:
+            it["ended"] = max(x[2] for x in links[q])
     return items
 
 
@@ -181,10 +201,18 @@ def from_wikidata(seed, items):
             ev = f"Wikidata: {seed['qid']} is owned by / part of {q} ({props}); classes {sorted(it['classes'])}"
             if "P749" not in it["props"]:  # P127 only: a shareholder (BlackRock, Vanguard), not a parent
                 shareholder = True
+        if it.get("ended"):
+            ev += f"; every link has an end time (P582), last {it['ended']}"
+        if it.get("no_en_label"):
+            ev += f"; {NO_EN}, name from another language or the description"
         r = row("wikidata", q, it["name"], seed["name"], rel, ev, f"https://www.wikidata.org/wiki/{q}",
                 ror=it["ror"], lei=it["lei"])
+        if it.get("no_en_label"):
+            r["label_note"] = NO_EN
         if shareholder:
             mark_shareholder(r)
+        elif it.get("ended"):  # a past holding (Merv Griffin, Sunbow): kept for the record, never suggested
+            r.update(status="needs_human_source", reason=f"past link (ended {it['ended']})", rel_suggested=None)
         out.append(r)
     return out
 
@@ -257,19 +285,65 @@ def from_sec(seed, warnings):
                 f"SEC: Exhibit 21 of 10-K {acc} (CIK {cik}) lists {n!r}", folder + ex21) for n in names]
 
 
-def map_openalex(rows, seed_name):
+def merge_into(a, b):
+    """b is the same body as a: keep a, list b's source in also_from; the more careful status wins."""
+    a["also_from"] += [{k: b[k] for k in ("id_source", "source_id", "name", "source_url")}] + b["also_from"]
+    a["evidence"] += " | " + b["evidence"]
+    a["ror"], a["lei"] = a["ror"] or b["ror"], a["lei"] or b["lei"]
+    if CAREFUL.get(b["status"], 0) > CAREFUL.get(a["status"], 0):
+        a.update(status=b["status"], reason=b["reason"], rel_suggested=b["rel_suggested"])
+    a["flag"] = a["flag"] or b["flag"]
+
+
+def sources(r):
+    return {r["id_source"]} | {x["id_source"] for x in r["also_from"]}
+
+
+def merge_same_body(rows):
+    """One row per body: same LEI or ROR, or (across sources, ID-linked rows only, never the seed) the same
+    normalised name including any "(Country)". A name search hit (gleif-name, manual) never merges by name,
+    and Costa Coffee / COSTA LIMITED merge only because they share an LEI."""
+    # ponytail: first match wins; two groups that a later row would join are not merged with each other
+    out, index = [], {}
+    for r in rows:
+        paren = re.search(r"\(([^)]*)\)\s*$", r["name"] or "")  # the "(Country)" that norm() strips
+        paren = norm_name(paren.group(1)) if paren else ""
+        keys = [("lei", r["lei"]), ("ror", r["ror"])]
+        if r["match_type"] == "id" and r["id_source"] != "seed" and r["entity"] == "institution":
+            keys.append(("name", r["norm_name"], paren))
+        keys = [k for k in keys if k[1]]
+        g = next((index[k] for k in keys if k in index and (k[0] != "name" or r["id_source"] not in sources(index[k]))), None)
+        if g is None:
+            g = r
+            out.append(r)
+        else:
+            merge_into(g, r)
+        for k in keys:
+            index.setdefault(k, g)
+    return out
+
+
+def map_openalex(rows, seed_name, counts=None):
     """ROR -> OpenAlex institution id; every OpenAlex funder with that ROR becomes its own funder row (D4:
-    the Coca-Cola company and foundation funders share one ROR but are different funders)."""
-    funders = []
-    for r in [r for r in rows if r["ror"]]:
+    the Coca-Cola company and foundation funders share one ROR but are different funders). A shareholder's
+    ROR creates no funder row (Lubrizol came only through Berkshire Hathaway); it only marks a funder that
+    a family row already brought in."""
+    funders, dropped = [], set()
+    # family rows first, shareholders last, so the order of the rows cannot decide a funder's mark
+    for r in sorted([r for r in rows if r["ror"]], key=lambda r: r["flag"] == "shareholder"):
         hits = openalex("institutions", {"filter": f"ror:{r['ror']}", "select": "id,display_name"})["results"]
         if hits:
             r["openalex_id"], r["openalex_name"] = short(hits[0]["id"]), hits[0]["display_name"]
         for f in openalex("funders", {"filter": f"ror:{r['ror']}", "select": "id,display_name,description"})["results"]:
             fid = short(f["id"])
-            if any(x["openalex_id"] == fid for x in funders):
-                if r["flag"] == "shareholder":  # also reached through a shareholder's ROR: the careful mark wins
-                    mark_shareholder(next(x for x in funders if x["openalex_id"] == fid))
+            have = next((x for x in funders if x["openalex_id"] == fid), None)
+            if r["flag"] == "shareholder":
+                if have:  # also reached through a family row: keep it, with the careful mark
+                    mark_shareholder(have)
+                else:
+                    dropped.add(fid)
+                continue
+            if have:
                 continue
             ev = f"OpenAlex funder {fid} has ROR {r['ror']} (the ROR of row {r['name']!r}, from {r['id_source']})"
             if f.get("description"):
@@ -277,16 +351,14 @@ def map_openalex(rows, seed_name):
             fr = row("openalex-funder", fid, f["display_name"], seed_name, None, ev,
                      f"https://api.openalex.org/funders/{fid}", ror=r["ror"])
             fr.update(entity="funder", openalex_id=fid, openalex_name=f["display_name"], kind=guess_kind(f["display_name"]))
-            if r["flag"] == "shareholder":  # a shareholder's funder is a shareholder too
-                mark_shareholder(fr)
             funders.append(fr)
+    if counts is not None:
+        counts["funders_dropped_shareholder_ror"] = len(dropped)
     merged = {}
     for r in rows + funders:  # one row per OpenAlex id; the evidence of each source is kept
         key = (r["entity"], r["openalex_id"]) if r["openalex_id"] else id(r)
         if key in merged:
-            merged[key]["evidence"] += " | " + r["evidence"]
-            if r["flag"] == "shareholder":  # the more careful status wins
-                mark_shareholder(merged[key])
+            merge_into(merged[key], r)
         else:
             merged[key] = r
     return list(merged.values())
@@ -326,7 +398,10 @@ def propose(slug, ror=None, qid=None, force=False, skip_wikidata=False):
     rows += (r := from_wikidata(seed, items)); counts["wikidata_raw_items"], counts["wikidata"] = len(items), len(r)
     rows += (r := from_gleif(seed, warnings)); counts["gleif"] = len(r)
     rows += (r := from_sec(seed, warnings)); counts["sec"] = len(r)
-    rows = map_openalex(rows, seed["name"])
+    n = len(rows)
+    rows = merge_same_body(rows)
+    counts["merged_same_body"] = n - len(rows)
+    rows = map_openalex(rows, seed["name"], counts)
     for r in rows:
         check_text(r)
     out = {"seed": {k: v for k, v in seed.items() if k != "ror_record"}, "counts": counts, "warnings": warnings,
@@ -349,6 +424,9 @@ def review(slug):
         hint = " (foundation-like name)" if r["entity"] == "institution" and guess_kind(r["name"]) == "foundation" else ""
         print(f"{i:>3} {r['status']:<19} {r['entity']:<11} {r['match_type']:<10} rel={r['rel'] or '(' + str(r['rel_suggested']) + '?)':<14}{hint}"
               f" kind={str(r['kind']):<10} {r['openalex_id'] or 'unmapped':<12} {r['name'][:50]}  [{r['id_source']}]"
+              + (" [gleif: legal parent record]" if "gleif" in sources(r) else "")
+              + (f" [{r['label_note']}]" if r.get("label_note") else "")
+              + (f" also from {sorted(sources(r) - {r['id_source']})}" if r.get("also_from") else "")
               + (f"  reason: {r['reason']}" if r["reason"] else "") + (f"  flag: {r['flag']}" if r.get("flag") else ""))
     print("warnings: " + "; ".join(data["warnings"]))
 
@@ -372,6 +450,8 @@ def set_row(slug, i, status, rel=None, kind=None, reason=None, oa_id=None, sourc
         r["evidence"] += f" | human source: {source}"
     check_text(r)
     (CASES / slug / "candidates.json").write_text(json.dumps(data, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
+    detail = f"kind={r['kind']}" if r["entity"] == "funder" else f"rel={r['rel']}"
+    print(f"row {i}: {status} ({detail}" + (f", reason: {r['reason']}" if status == "rejected" else "") + ")")
 
 
 def add(slug, name, note):

@@ -1,5 +1,5 @@
 {
- "_note": "Trimmed from real replies recorded live on 2026-10-17 (ROR v2, Wikidata, GLEIF, OpenAlex) for The Coca-Cola Company; FSFW funder from OpenAlex F4320318650. Test fixture only.",
+ "_note": "Trimmed from real replies recorded live on 2026-10-17 (ROR v2, Wikidata, GLEIF, OpenAlex) for The Coca-Cola Company; FSFW funder from OpenAlex F4320318650. Test fixture only. Round 4 (Oct 17): the SPARQL query changed to statement form with ?enLabel/?end/?itemDescription, and Wikidata answered 429 (wait 1000 s) to the one re-recording attempt, so ?enLabel was ADDED BY HAND to these old bindings as a copy of ?itemLabel (these items have English labels); no ?end means no end time. Past links and QID-only labels are tested with tests/fixtures/family/wikidata_r4_synthetic.json.",
  "http": {
   "https://api.ror.org/v2/organizations/00yc8qw13": {
    "id": "https://ror.org/00yc8qw13",
@@ -96,6 +96,11 @@
        "datatype": "http://www.w3.org/2001/XMLSchema#boolean",
        "type": "literal",
        "value": "true"
+      },
+      "enLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "BlackRock"
       }
      },
      {
@@ -137,6 +142,11 @@
        "datatype": "http://www.w3.org/2001/XMLSchema#boolean",
        "type": "literal",
        "value": "true"
+      },
+      "enLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "BlackRock"
       }
      },
      {
@@ -178,6 +188,11 @@
        "datatype": "http://www.w3.org/2001/XMLSchema#boolean",
        "type": "literal",
        "value": "true"
+      },
+      "enLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "BlackRock"
       }
      },
      {
@@ -215,6 +230,11 @@
        "datatype": "http://www.w3.org/2001/XMLSchema#boolean",
        "type": "literal",
        "value": "true"
+      },
+      "enLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "Coca-Cola HBC"
       }
      },
      {
@@ -252,6 +272,11 @@
        "datatype": "http://www.w3.org/2001/XMLSchema#boolean",
        "type": "literal",
        "value": "true"
+      },
+      "enLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "Coca-Cola HBC"
       }
      },
      {
@@ -289,6 +314,11 @@
        "datatype": "http://www.w3.org/2001/XMLSchema#boolean",
        "type": "literal",
        "value": "true"
+      },
+      "enLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "Coca-Cola HBC"
       }
      },
      {
@@ -326,6 +356,11 @@
        "datatype": "http://www.w3.org/2001/XMLSchema#boolean",
        "type": "literal",
        "value": "true"
+      },
+      "enLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "Coca-Cola HBC"
       }
      },
      {
@@ -363,6 +398,11 @@
        "datatype": "http://www.w3.org/2001/XMLSchema#boolean",
        "type": "literal",
        "value": "true"
+      },
+      "enLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "Coca-Cola HBC"
       }
      },
      {
@@ -400,6 +440,11 @@
        "datatype": "http://www.w3.org/2001/XMLSchema#boolean",
        "type": "literal",
        "value": "true"
+      },
+      "enLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "Coca-Cola HBC"
       }
      },
      {
@@ -433,6 +478,11 @@
        "datatype": "http://www.w3.org/2001/XMLSchema#boolean",
        "type": "literal",
        "value": "false"
+      },
+      "enLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "Dasani"
       }
      },
      {
@@ -466,6 +516,11 @@
        "datatype": "http://www.w3.org/2001/XMLSchema#boolean",
        "type": "literal",
        "value": "false"
+      },
+      "enLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "Dasani"
       }
      },
      {
@@ -499,6 +554,11 @@
        "datatype": "http://www.w3.org/2001/XMLSchema#boolean",
        "type": "literal",
        "value": "false"
+      },
+      "enLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "Dasani"
       }
      },
      {
@@ -532,6 +592,11 @@
        "datatype": "http://www.w3.org/2001/XMLSchema#boolean",
        "type": "literal",
        "value": "false"
+      },
+      "enLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "Coca-Cola Baltimore Branch Factory"
       }
      },
      {
@@ -569,6 +634,11 @@
        "datatype": "http://www.w3.org/2001/XMLSchema#boolean",
        "type": "literal",
        "value": "true"
+      },
+      "enLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "Coca-Cola Consolidated, Inc."
       }
      },
      {
@@ -606,6 +676,11 @@
        "datatype": "http://www.w3.org/2001/XMLSchema#boolean",
        "type": "literal",
        "value": "true"
+      },
+      "enLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "Coca-Cola Consolidated, Inc."
       }
      },
      {
@@ -643,6 +718,11 @@
        "datatype": "http://www.w3.org/2001/XMLSchema#boolean",
        "type": "literal",
        "value": "true"
+      },
+      "enLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "Coca-Cola Consolidated, Inc."
       }
      },
      {
@@ -680,6 +760,11 @@
        "datatype": "http://www.w3.org/2001/XMLSchema#boolean",
        "type": "literal",
        "value": "true"
+      },
+      "enLabel": {
+       "xml:lang": "en",
+       "type": "literal",
+       "value": "Coca-Cola Consolidated, Inc."
       }
      }
     ]
