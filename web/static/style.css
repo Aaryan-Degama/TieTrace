@@ -55,9 +55,9 @@ textarea, input[type="text"], input[type="password"], input[type="search"], sele
   border-radius: 10px; padding: 9px 10px;
 }
 .linkish { background: none; border: 0; padding: 0; color: var(--accent-hover); text-decoration: underline; font-size: inherit; }
-.icon-btn { display: inline-grid; place-items: center; width: 34px; height: 34px; padding: 0; background: transparent; border: 0; color: var(--muted); border-radius: 8px; flex: none; }
+.icon-btn { display: inline-grid; place-items: center; width: 42px; height: 42px; padding: 0; background: transparent; border: 0; color: var(--muted); border-radius: 8px; flex: none; }
 .icon-btn:hover { background: var(--panel-2); color: var(--text); }
-.icon-btn svg { width: 20px; height: 20px; }
+.icon-btn svg { width: 26px; height: 26px; }
 code { font: 13px var(--sans); background: var(--panel-2); padding: 1px 5px; border-radius: 4px; }
 .status { color: var(--muted); font-size: 15px; }
 
@@ -69,7 +69,7 @@ code { font: 13px var(--sans); background: var(--panel-2); padding: 1px 5px; bor
 }
 body.sb-collapsed .sb { display: none; }
 .sb-top { display: flex; align-items: center; gap: 8px; padding: 2px 4px 8px; }
-.wordmark { font: 500 22px/1 var(--display); color: var(--text); text-decoration: none; letter-spacing: -.01em; }
+.wordmark { font: 500 28px/1 var(--display); color: var(--text); text-decoration: none; letter-spacing: -.01em; }
 .sb-search { position: relative; margin: 0 2px 6px; }
 .sb-search svg { position: absolute; left: 10px; top: 50%; width: 16px; height: 16px; transform: translateY(-50%); color: var(--muted); }
 .sb-search input { padding: 8px 10px 8px 34px; border-radius: 10px; background: var(--bg); border-color: var(--line-soft); font-size: 16px; }
@@ -110,7 +110,7 @@ body.sb-collapsed .sb { display: none; }
 
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; position: relative; overflow: hidden; }
 .topbar { display: flex; align-items: center; gap: 8px; padding: 10px 14px; flex: none; }
-.top-title { flex: 1; min-width: 0; font-size: 16px; color: var(--body2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.top-title { flex: 1; min-width: 0; font-size: 19px; color: var(--body2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #sb-open { visibility: hidden; }
 body.sb-collapsed #sb-open { visibility: visible; }
 
