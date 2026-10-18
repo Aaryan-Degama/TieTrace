@@ -15,7 +15,12 @@ services:
     network_mode: host
     depends_on: [falkordb]
     environment:
-      TIETRACE_NEWSROOM: alpha
+      # Public-mode guards (DEPLOY.md, same as deploy/tietrace.service); the app refuses to start on a non-demo newsroom.
+      TIETRACE_PUBLIC: "1"
+      TIETRACE_NEWSROOM: demo
+      FALKORDB_PORT: "6379"
+      TIETRACE_TRUST_PROXY: "1"
+      TIETRACE_ALLOWED_HOSTS: tietrace.kavyan.fun
       TIETRACE_DEPLOYED: "1"
       TIETRACE_ALLOWED_ORIGIN: https://tietrace.kavyan.fun
   # One-off: docker compose run --rm loader --case <slug> --rebuild (reads data/ and cases/*/raw, 0 API calls)
